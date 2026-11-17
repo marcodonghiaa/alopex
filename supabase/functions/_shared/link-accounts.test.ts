@@ -71,3 +71,15 @@ Deno.test("linkAccounts: no session id from Enable Banking keeps the session and
   assertEquals([row.bank_session_id, row.sync_error], ["old", "HTTP_401"]);
   assertEquals(eb.calls.some((c) => c.startsWith("DELETE")), false, eb.calls.join("\n"));
 });
+
+Deno.test("linkAccounts: a new account shared by the renewal reads from the new session", async () => {
+  const db = memoryDb(stored());
+  const added = { uid: "eb-usd", currency: "USD", identification_hash: "h2", account_id: { iban: IBAN } };
+  const eb = fakeEb({ session_id: "new", accounts: [ebAccount, added], access: { valid_until: "2027-05-01T00:00:00Z" } });
+  try {
+    await linkAccounts(db, "u", "code");
+  } finally {
+    eb.restore();
+  }
+  assertEquals(db.tables.accounts.find((a) => a.uid === "eb-usd")?.bank_session_id, "new");
+});

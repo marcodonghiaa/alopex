@@ -1,6 +1,6 @@
 // In-memory stand-in for the supabase query builder, for tests: honors the filters the
 // post-sync steps use (is/eq/in/not/gte, filter match, order, limit, range) and applies updates and deletes to the
-// matching rows, so tests check data, not call shapes. insert appends rows.
+// matching rows, so tests check data, not call shapes. insert and upsert append rows.
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
 
@@ -20,6 +20,7 @@ export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "
         update: (u: Row) => ((patch = u), q),
         delete: () => ((remove = true), q),
         insert: (rows: Row | Row[]) => ((added = [rows].flat()), q),
+        upsert: (rows: Row | Row[]) => ((added = [rows].flat()), q), // appends; tests need no conflict merge
         is: (c: string, v: unknown) => (filters.push((r) => (r[c] ?? null) === v), q),
         eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), q),
         in: (c: string, vs: unknown[]) => (filters.push((r) => vs.includes(r[c])), q),

@@ -144,4 +144,33 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     apply({ shares: [share(201, { booking_date: '2026-11-10', description: 'Pizza', amount: '15.00' })] });
     assert.strictEqual(sql(`select count(*) from public.splitwise_expenses where lower(btrim(description)) = 'pizza' and booking_date <= '2026-11-11'`), '1');
   });
+
+  await t.test('#3: undoing a CSV import keeps the rows (and links) the sync adopted', () => {
+    const B3 = '33333333-0000-0000-0000-000000000003';
+    pay('p3-paid', 90, '2026-10-20');
+    sql(`update public.transactions set personal_amount = 30, import_batch_id = '${B3}' where entry_reference = 'p3-paid';
+      insert into public.splitwise_expenses (user_id, group_name, fingerprint, booking_date, description, amount, currency, batch_id, linked_account_uid, linked_entry_reference)
+      values ('${A}', 'Trip', 'c3-taxi', '2026-10-12', 'Taxi', 8, 'EUR', '${B3}', null, null),
+             ('${A}', 'Trip', 'c3-train', '2026-10-20', 'Train', 30, 'EUR', '${B3}', '${ACC}', 'p3-paid'),
+             ('${A}', 'Trip', 'c3-only', '2026-10-13', 'Museum', 5, 'EUR', '${B3}', null, null)`);
+    assert.deepStrictEqual(apply({ shares: [share(301, { group_name: 'Trip', booking_date: '2026-10-12', description: 'Taxi', amount: '8.00' })],
+      reviews: [review(302, { group_name: 'Trip', booking_date: '2026-10-20', description: 'Train', cost: '90', my_share: '30', my_paid: '90' })] }),
+    { new: 0, adopted: 2, review: 0, deleted: 0 });
+    assert.deepStrictEqual(JSON.parse(owner(`select public.undo_splitwise_import('${B3}')`)), { shares: 1, links: 0 });
+    assert.strictEqual(sql(`select string_agg(coalesce(splitwise_id::text, fingerprint), ',' order by fingerprint) from public.splitwise_expenses where group_name = 'Trip'`), '301,302');
+    assert.strictEqual(tx('p3-paid'), '30|-|-', 'the adopted link still counts my share only');
+    assert.strictEqual(sql('select status || linked_entry_reference from public.splitwise_review where splitwise_id = 302'), 'linkedp3-paid');
+  });
+
+  // ---- rollback (keep last) ----
+  await t.test('the rollback brings back the functions this migration redefines', () => {
+    // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take
+    // a CSV balance saved in two currencies after the migration (the audit-gap case above).
+    sql(`delete from public.splitwise_balances where group_name = 'Legacy' and currency = 'USD'`);
+    applySql(DOWN);
+    const def = (fn) => sql(`select pg_get_functiondef('public.${fn}'::regproc)`);
+    assert.doesNotMatch(def('undo_splitwise_import'), /splitwise_id/, '20261116000000 version');
+    applySql(UP);
+    assert.match(def('undo_splitwise_import'), /splitwise_id is null/);
+  });
 });

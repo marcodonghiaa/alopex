@@ -248,6 +248,33 @@ begin
 end;
 $function$;
 
+-- Same as 20261116000000, except that Undo leaves what the sync adopted (splitwise_id set): those
+-- rows are the sync's now, and an incremental sync would not bring them back. Their bank links stay.
+create or replace function public.undo_splitwise_import(p_batch uuid) returns jsonb
+language plpgsql
+set search_path = public
+as $function$
+declare
+  uid uuid := auth.uid();
+  n_shares int;
+  n_links int;
+begin
+  if uid is null then raise exception 'Not signed in'; end if;
+  update transactions t
+     set personal_amount = null,
+         flow_type = case when flow_type = 'transfer' then null else flow_type end,
+         import_batch_id = null
+   where t.user_id = uid and t.import_batch_id = p_batch
+     and not exists (select 1 from splitwise_expenses s
+                      where s.user_id = uid and s.splitwise_id is not null
+                        and s.linked_account_uid = t.account_uid and s.linked_entry_reference = t.entry_reference);
+  get diagnostics n_links = row_count;
+  delete from splitwise_expenses where user_id = uid and batch_id = p_batch and splitwise_id is null;
+  get diagnostics n_shares = row_count;
+  return jsonb_build_object('shares', n_shares, 'links', n_links);
+end;
+$function$;
+
 -- ---- Shared steps ----
 
 -- Frees what Alopex did for these Splitwise expenses and removes their shares: a bank payment's

@@ -102,3 +102,26 @@ begin
   return jsonb_build_object('shares', n_shares, 'links', n_links);
 end;
 $function$;
+
+-- undo_splitwise_import as it was (20261116000000_splitwise_undo_keeps_flow.sql).
+create or replace function public.undo_splitwise_import(p_batch uuid) returns jsonb
+language plpgsql
+set search_path = public
+as $function$
+declare
+  uid uuid := auth.uid();
+  n_shares int;
+  n_links int;
+begin
+  if uid is null then raise exception 'Not signed in'; end if;
+  update transactions
+     set personal_amount = null,
+         flow_type = case when flow_type = 'transfer' then null else flow_type end,
+         import_batch_id = null
+   where user_id = uid and import_batch_id = p_batch;
+  get diagnostics n_links = row_count;
+  delete from splitwise_expenses where user_id = uid and batch_id = p_batch;
+  get diagnostics n_shares = row_count;
+  return jsonb_build_object('shares', n_shares, 'links', n_links);
+end;
+$function$;

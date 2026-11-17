@@ -32,7 +32,7 @@ begin
     )
     from public.accounts a
     where not a.manual
-      -- Ended today still syncs: sync-bank marks an early end as today, the day it saw it.
+      -- An ended consent stops syncing at once (sync-bank marks an early end as today); a renewal brings it back.
       and (a.consent_valid_until is null or a.consent_valid_until > now());
 end;
 $function$;

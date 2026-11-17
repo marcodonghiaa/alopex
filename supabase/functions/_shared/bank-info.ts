@@ -37,3 +37,15 @@ export async function fetchAspsps(token: string, country: string, fetchFn: typeo
     return null;
   }
 }
+
+// start-bank-consent's valid_until: the bank's own maximum, looked up in its country. Best effort:
+// a failed lookup asks for the usual 180 days.
+export async function consentEnd(
+  token: string,
+  country: string,
+  bankName: string,
+  now: number,
+  fetchFn: typeof fetch = fetch,
+): Promise<string> {
+  return consentValidUntil(await fetchAspsps(token, country, fetchFn), bankName, now);
+}

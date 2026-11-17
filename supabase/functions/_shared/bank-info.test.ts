@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { bankLogo, consentValidUntil, fetchAspsps } from "./bank-info.ts";
+import { bankLogo, consentEnd, consentValidUntil, fetchAspsps } from "./bank-info.ts";
 
 const aspsps = [
   { name: "Fineco", logo: "https://enablebanking.com/brands/IT/Fineco/" },
@@ -56,4 +56,19 @@ Deno.test("fetchAspsps gives null on a refused call, a bad body or a network err
   assertEquals(await fetchAspsps("tok", "IT", respond(200, {})), null);
   const down = (() => Promise.reject(new TypeError("down"))) as unknown as typeof fetch;
   assertEquals(await fetchAspsps("tok", "IT", down), null);
+});
+
+// Polish 5 F1: start-bank-consent asks for the bank's own maximum, looked up for its country.
+Deno.test("consentEnd: looks the bank up in its country and asks for no more than its maximum", async () => {
+  const urls: string[] = [];
+  const fetchFn = ((url: string) => {
+    urls.push(url);
+    return Promise.resolve(Response.json({ aspsps: [{ name: "B", maximum_consent_validity: 90 * 86400 }] }));
+  }) as unknown as typeof fetch;
+  assertEquals(await consentEnd("tok", "IT", "B", NOW, fetchFn), new Date(NOW + 90 * DAY - 60_000).toISOString());
+  assertEquals(urls, ["https://api.enablebanking.com/aspsps?country=IT"]);
+});
+Deno.test("consentEnd: a failed lookup asks for the usual 180 days", async () => {
+  const fail = (() => Promise.resolve(new Response(null, { status: 500 }))) as unknown as typeof fetch;
+  assertEquals(await consentEnd("tok", "IT", "B", NOW, fail), new Date(NOW + 180 * DAY).toISOString());
 });

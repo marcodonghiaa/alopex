@@ -41,6 +41,7 @@ function setup(opts: {
   key?: string | null;
   apply?: (args: Record<string, unknown>) => { data: unknown; error: unknown };
   tables?: Record<string, Record<string, unknown>[]>;
+  attemptError?: unknown;
 } = {}) {
   const db = memoryDb({ splitwise_connections: (opts.connections ?? [conn()]).map((c) => ({ ...c })), ...opts.tables });
   const calls: RpcCall[] = [];
@@ -50,6 +51,11 @@ function setup(opts: {
     rpc: (fn, args) => {
       calls.push({ fn, args });
       if (fn === "splitwise_read_key") return Promise.resolve({ data: opts.key === undefined ? "k" : opts.key, error: null });
+      if (fn === "splitwise_attempt") { // as the SQL: at most p_max per user and kind (here, ever)
+        if (opts.attemptError) return Promise.resolve({ data: null, error: opts.attemptError });
+        const same = calls.filter((c) => c.fn === fn && c.args.p_user === args.p_user && c.args.p_kind === args.p_kind);
+        return Promise.resolve({ data: same.length <= (args.p_max as number), error: null });
+      }
       const a = args as { p_shares: unknown[]; p_review: unknown[]; p_deleted: unknown[] };
       return Promise.resolve(opts.apply?.(args) ?? {
         data: { new: a.p_shares.length, adopted: 0, review: a.p_review.length, deleted: a.p_deleted.length },
@@ -252,13 +258,29 @@ Deno.test("handler: Sync now syncs only the caller's connection", async () => {
   assertEquals((await call(handler(s), user({}, "Bearer other"))).status, 404);
 });
 
-Deno.test("handler: preview is a dry run, any time; a real sync waits a minute between runs", async () => {
-  const s = setup({ connections: [conn({ last_synced_at: new Date(NOW - 30_000).toISOString() })] });
-  assertEquals((await call(handler(s), user({}))).status, 429);
-  const res = await call(handler(s), user({ preview: true }));
-  assertEquals(res.status, 200);
-  assertEquals(s.applies().map((a) => a.p_preview), [true]);
-  assertEquals((await call(handler(s), { headers: { Authorization: "Bearer good" }, body: "not json" })).status, 429);
+// polish-2 #1: each Sync now and each preview claims its once-a-minute attempt before any work, so a
+// failed run, a preview or parallel calls cannot reach Splitwise more often (the SQL test runs them in parallel).
+Deno.test("handler: Sync now and preview each take their once-a-minute attempt before any work", async () => {
+  const s = setup({ connections: [conn({ last_synced_at: null })] });
+  assertEquals((await call(handler(s), user({}))).status, 200);
+  const again = await call(handler(s), user({}));
+  assertEquals([again.status, again.body.error], [429, "Synced a moment ago. Try again in a minute."]);
+  assertEquals((await call(handler(s), user({ preview: true }))).status, 200); // its own allowance
+  assertEquals((await call(handler(s), user({ preview: true }))).status, 429);
+  assertEquals(s.asked.length, 2);
+  assertEquals(s.applies().map((a) => a.p_preview), [false, true]);
+  assertEquals(s.calls.filter((c) => c.fn === "splitwise_attempt").map((c) => c.args),
+    [{ p_user: "u1", p_kind: "sync", p_max: 1, p_window: "1 minute" }, { p_user: "u1", p_kind: "sync", p_max: 1, p_window: "1 minute" },
+     { p_user: "u1", p_kind: "preview", p_max: 1, p_window: "1 minute" }, { p_user: "u1", p_kind: "preview", p_max: 1, p_window: "1 minute" }]);
+  // A failed sync used its attempt too.
+  const failed = setup({ connections: [conn({ last_synced_at: null })], expenses: new TypeError("network") });
+  assertEquals((await call(handler(failed), user({}))).status, 502);
+  assertEquals((await call(handler(failed), user({}))).status, 429);
+  assertEquals(failed.asked.length, 1);
+  // The check itself failing stops the sync too.
+  const down = setup({ attemptError: { code: "57014" } });
+  assertEquals((await call(handler(down), user({}))).status, 502);
+  assertEquals(down.asked.length, 0);
 });
 
 Deno.test("handler: a refused key, a rate limit and other failures each say what to do", async () => {

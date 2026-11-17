@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
-const { execFileSync } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 
 const url = process.env.RLS_TEST_DATABASE_URL;
 const skip = url ? false : 'set RLS_TEST_DATABASE_URL to run';
@@ -277,6 +277,31 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
       assert.match(owner(`select public.link_splitwise_review('${id}', '${ACC}', ${ref})`), /Missing bank transaction/, ref.slice(0, 12));
     }
     assert.strictEqual(sql('select status from public.splitwise_review where splitwise_id = 7001'), 'pending');
+  });
+
+  // N calls at once, each its own psql session and transaction, as service_role: the answers.
+  // A gate (an advisory lock held for a second) lines them up, so they run together.
+  const psqlAsync = (q) => new Promise((resolve, reject) =>
+    execFile('psql', [dbUrl(), '-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-c', q], { encoding: 'utf8' },
+      (err, out) => (err ? reject(err) : resolve(out.trim()))));
+  const attemptsAtOnce = async (n, kind, max, window) => {
+    const gate = psqlAsync('select pg_advisory_lock(424242); select pg_sleep(1);');
+    await new Promise((r) => setTimeout(r, 300));
+    const answers = await Promise.all(Array.from({ length: n }, () => psqlAsync(`begin; set local role service_role;
+      select pg_advisory_xact_lock_shared(424242); select public.splitwise_attempt('${A}', '${kind}', ${max}, '${window}'); commit;`)));
+    await gate;
+    return answers.map((a) => a.split('\n').pop());
+  };
+
+  await t.test('phase 2 #1: Sync now attempts are claimed atomically, once a minute, even in parallel', async () => {
+    const answers = await attemptsAtOnce(8, 'sync', 1, '1 minute');
+    assert.deepStrictEqual(answers.filter((a) => a === 't').length, 1, answers.join(','));
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'preview', 1, '1 minute'), ['t']); // a kind of its own
+    sql(`update public.splitwise_attempts set at = at - interval '61 seconds' where user_id = '${A}' and kind = 'sync'`);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'sync', 1, '1 minute'), ['t']);
+    assert.strictEqual(sql(`select count(*) from public.splitwise_attempts where user_id = '${A}' and kind = 'sync'`), '1');
+    assert.match(owner(`select public.splitwise_attempt('${A}', 'sync', 9, '1 minute')`), /permission denied/);
+    assert.match(owner('select * from public.splitwise_attempts'), /permission denied/);
   });
 
   // ---- rollback (keep last) ----

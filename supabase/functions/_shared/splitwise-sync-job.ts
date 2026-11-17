@@ -23,7 +23,6 @@ const OVERLAP_MS = DAY;
 const FULL_EVERY_MS = 7 * DAY;
 const CHUNK = 5000; // splitwise_sync_apply's limit per array
 const PAGE = 1000; // PostgREST caps a response at 1000 rows
-const SYNC_NOW_GAP_MS = 60_000;
 const MAX_SURE_GONE = 10; // a full check may always remove this many
 const CONNECTION_COLS = "user_id, splitwise_user_id, cursor_updated_at, last_full_check_at, last_synced_at";
 const RECONNECT = "Splitwise refused the API key. Connect again with a new key.";
@@ -198,6 +197,13 @@ export const syncNowHandler = (deps: HandlerDeps) => async (req: Request, json: 
 
   const body = await req.json().catch(() => null);
   const preview = body?.preview === true;
+  // Claimed before any work, a failed run's included: Sync now and its preview, once a minute each.
+  const attempt = await deps.rpc("splitwise_attempt", { p_user: userId, p_kind: preview ? "preview" : "sync", p_max: 1, p_window: "1 minute" });
+  if (attempt.error) {
+    console.error(`sync-splitwise: attempt check failed: ${errorTag(attempt.error)}`);
+    return json({ error: "Couldn't sync with Splitwise. Try again later." }, 502);
+  }
+  if (attempt.data !== true) return json({ error: "Synced a moment ago. Try again in a minute." }, 429);
   const { data, error } = await deps.db.from("splitwise_connections").select(CONNECTION_COLS).eq("user_id", userId).limit(1);
   if (error) {
     console.error(`sync-splitwise: connection read failed: ${errorTag(error)}`);
@@ -205,9 +211,6 @@ export const syncNowHandler = (deps: HandlerDeps) => async (req: Request, json: 
   }
   const c = (data as Connection[])[0];
   if (!c) return json({ error: "Splitwise is not connected" }, 404);
-  if (!preview && c.last_synced_at && deps.now() - Date.parse(c.last_synced_at) < SYNC_NOW_GAP_MS) {
-    return json({ error: "Synced a moment ago. Try again in a minute." }, 429);
-  }
   try {
     return json(await syncUser(deps, c, { preview }));
   } catch (err) {

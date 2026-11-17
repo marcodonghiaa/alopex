@@ -127,6 +127,38 @@ alter table public.splitwise_expenses add constraint splitwise_expenses_source_c
 create unique index if not exists splitwise_expenses_splitwise_id
   on public.splitwise_expenses (user_id, splitwise_id) where splitwise_id is not null;
 
+-- ---- Attempt limits ----
+
+-- What the Edge Functions limit per user, server-side: Sync now and its preview (once a minute
+-- each) and connect tries (a few per 10 minutes). Rows older than the window are deleted as it goes.
+create table public.splitwise_attempts (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  kind text not null check (kind in ('sync', 'preview', 'connect')),
+  at timestamptz not null default now()
+);
+create index splitwise_attempts_user_kind on public.splitwise_attempts (user_id, kind, at);
+alter table public.splitwise_attempts enable row level security;
+revoke all on table public.splitwise_attempts from anon, authenticated;
+
+-- Claims one attempt, before any work: true when fewer than p_max were made in p_window, else
+-- false. Parallel calls for one user and kind wait on each other, so only p_max get through.
+create or replace function public.splitwise_attempt(p_user uuid, p_kind text, p_max int, p_window interval)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtext('splitwise_attempt'), hashtext(p_user::text || ':' || p_kind));
+  delete from splitwise_attempts where user_id = p_user and kind = p_kind and at <= clock_timestamp() - p_window;
+  if (select count(*) from splitwise_attempts where user_id = p_user and kind = p_kind) >= p_max then
+    return false;
+  end if;
+  insert into splitwise_attempts (user_id, kind, at) values (p_user, p_kind, clock_timestamp());
+  return true;
+end;
+$$;
+
 -- ---- Review list ----
 
 create table public.splitwise_review (
@@ -876,10 +908,12 @@ $$;
 revoke execute on function public.splitwise_save_connection(uuid, text, bigint, text) from public, anon, authenticated;
 revoke execute on function public.splitwise_read_key(uuid) from public, anon, authenticated;
 revoke execute on function public.splitwise_disconnect(uuid, boolean) from public, anon, authenticated;
+revoke execute on function public.splitwise_attempt(uuid, text, int, interval) from public, anon, authenticated;
 revoke execute on function public.splitwise_sync_apply(uuid, jsonb, jsonb, bigint[], jsonb, timestamptz, boolean, boolean) from public, anon, authenticated;
 grant execute on function public.splitwise_save_connection(uuid, text, bigint, text) to service_role;
 grant execute on function public.splitwise_read_key(uuid) to service_role;
 grant execute on function public.splitwise_disconnect(uuid, boolean) to service_role;
+grant execute on function public.splitwise_attempt(uuid, text, int, interval) to service_role;
 grant execute on function public.splitwise_sync_apply(uuid, jsonb, jsonb, bigint[], jsonb, timestamptz, boolean, boolean) to service_role;
 -- Internal steps: only the functions above (running as their owner) call them.
 revoke execute on function public.splitwise_sync_write(uuid, jsonb, jsonb, bigint[], jsonb, timestamptz, boolean) from public, anon, authenticated, service_role;

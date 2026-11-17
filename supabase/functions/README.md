@@ -93,8 +93,9 @@ and commit the updated lock.
   for the ones you paid and settle-ups, edits, deletions and balances per currency. Changes since
   the last run (minus a day), everything once a week. pg_cron calls it every 6 hours (job
   `sync-splitwise`) with a project secret key on `apikey`, like `post-sync`; the signed-in dashboard
-  calls it for "Sync now" (own connection only, once a minute) or with `{ "preview": true }` for a
-  dry run returning `{ new, adopted, review, deleted }`. A refused key sets the connection to
+  calls it for "Sync now" (own connection only) or with `{ "preview": true }` for a
+  dry run returning `{ new, adopted, review, deleted }`, each once a minute per user (counted in
+  `splitwise_attempts` before any work, failed runs included). A refused key sets the connection to
   `needs_reconnect`; a 429 from Splitwise ends the run. `verify_jwt: false`.
 
 ## Secrets

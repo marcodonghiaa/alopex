@@ -6,6 +6,8 @@ select cron.unschedule(jobname) from cron.job where jobname = 'sync-splitwise';
 
 delete from public.splitwise_connections; -- the trigger deletes each Vault secret
 drop table if exists public.splitwise_connections;
+drop function if exists public.splitwise_attempt(uuid, text, int, interval);
+drop table if exists public.splitwise_attempts;
 drop function if exists public.splitwise_connection_forget_key();
 drop function if exists public.splitwise_save_connection(uuid, text, bigint, text);
 drop function if exists public.splitwise_read_key(uuid);

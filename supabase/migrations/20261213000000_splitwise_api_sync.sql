@@ -530,6 +530,37 @@ begin
     end if;
   end loop;
 
+  -- A settle-up the CSV import already marked as a transfer: adopted, linked to that payment.
+  -- The import kept no record of which settle-up it was, so the payment is found like the CSV
+  -- matcher does: right direction, same amount and currency, 3 days before to 7 after, not
+  -- linked to another settle-up yet; the closest date wins.
+  for r in
+    select distinct on (x.splitwise_id) x.* from jsonb_to_recordset(coalesce(p_review, '[]'))
+      as x(splitwise_id bigint, kind text, group_name text, booking_date date, description text, cost numeric,
+           my_share numeric, my_paid numeric, currency text, splitwise_updated_at timestamptz)
+     where x.kind in ('settle_out', 'settle_in')
+       and not exists (select 1 from public.splitwise_review rv where rv.user_id = p_user and rv.splitwise_id = x.splitwise_id)
+  loop
+    select t.account_uid, t.entry_reference into v_acc, v_ref
+      from public.transactions t
+     where t.user_id = p_user and t.flow_type = 'transfer' and t.import_batch_id is not null and t.deleted_at is null
+       and t.credit_debit_indicator = case r.kind when 'settle_out' then 'DBIT' else 'CRDT' end
+       and t.amount = r.my_share and t.currency = r.currency
+       and t.booking_date between r.booking_date - 3 and r.booking_date + 7
+       and not exists (select 1 from public.splitwise_review rv
+                        where rv.user_id = p_user and rv.linked_account_uid = t.account_uid
+                          and rv.linked_entry_reference = t.entry_reference)
+     order by abs(t.booking_date - r.booking_date), t.booking_date, t.entry_reference
+     limit 1;
+    if found then
+      insert into public.splitwise_review (user_id, splitwise_id, kind, group_name, booking_date, description, cost,
+          my_share, my_paid, currency, splitwise_updated_at, status, linked_account_uid, linked_entry_reference)
+        values (p_user, r.splitwise_id, r.kind, r.group_name, r.booking_date, r.description, r.cost, r.my_share,
+                r.my_paid, r.currency, r.splitwise_updated_at, 'linked', v_acc, v_ref);
+      n_adopted := n_adopted + 1;
+    end if;
+  end loop;
+
   -- Review rows: a row you dismissed, linked or counted keeps its status unless its amounts changed.
   with up as (
     insert into public.splitwise_review (user_id, splitwise_id, kind, group_name, booking_date, description, cost,

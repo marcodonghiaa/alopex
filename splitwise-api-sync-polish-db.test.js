@@ -178,6 +178,19 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(sql(`select string_agg(coalesce(splitwise_id::text, fingerprint), ',' order by fingerprint) from public.splitwise_expenses where group_name = 'Corr'`), 'c4-new,401');
   });
 
+  await t.test('#10: a settle-up the CSV import already marked as a transfer is adopted as linked', () => {
+    pay('p10-out', 25, '2026-08-05');
+    pay('p10-in', 25, '2026-08-06', 'CRDT');
+    sql(`update public.transactions set flow_type = 'transfer', import_batch_id = gen_random_uuid() where entry_reference in ('p10-out', 'p10-in')`);
+    const settle = (id, kind, date) => review(id, { kind, booking_date: date, description: 'Payment', cost: '25', my_share: '25', my_paid: kind === 'settle_out' ? '25' : '0' });
+    assert.deepStrictEqual(apply({ reviews: [settle(1001, 'settle_out', '2026-08-04'), settle(1002, 'settle_out', '2026-08-04'),
+      settle(1003, 'settle_in', '2026-08-05')] }), { new: 0, adopted: 2, review: 1, deleted: 0 });
+    assert.strictEqual(sql(`select string_agg(splitwise_id || ':' || status || ':' || coalesce(linked_entry_reference, '-'), ',' order by splitwise_id)
+      from public.splitwise_review where splitwise_id in (1001, 1002, 1003)`), '1001:linked:p10-out,1002:pending:-,1003:linked:p10-in');
+    apply({ deleted: [1001] });
+    assert.strictEqual(tx('p10-out'), '-|-|-', 'deleted in Splitwise: no longer a transfer');
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

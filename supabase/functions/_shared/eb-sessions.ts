@@ -105,7 +105,7 @@ export async function closeReplaced(
     const replaced = candidates.filter((id) => !inUse.has(id));
     if (replaced.length === 0) return;
     if (await closeSessions(replaced, fetchFn, sign) === replaced.length) {
-      const { error } = await supabase.from("bank_sessions").delete().in("session_id", replaced);
+      const { error } = await supabase.from("bank_sessions").delete().eq("user_id", userId).in("session_id", replaced);
       if (error) throw error;
     }
   } catch (err) {

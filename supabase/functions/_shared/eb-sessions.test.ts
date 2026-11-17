@@ -86,6 +86,7 @@ Deno.test("relinkPatch: no session id from Enable Banking changes nothing", () =
 function fakeDb(accounts: Array<{ bank_session_id: string | null }>, failDelete = false) {
   const deleted: string[][] = [];
   const reads: string[][] = [];
+  const deleteFilters: string[][] = [];
   const db = {
     from: (table: string) => ({
       select: () => ({
@@ -96,15 +97,22 @@ function fakeDb(accounts: Array<{ bank_session_id: string | null }>, failDelete 
           },
         }),
       }),
-      delete: () => ({
-        in: (_col: string, ids: string[]) => {
-          if (table === "bank_sessions") deleted.push(ids);
-          return Promise.resolve({ error: failDelete ? { message: "x" } : null });
-        },
-      }),
+      delete: () => {
+        const q = {
+          eq: (col: string, value: string) => {
+            if (table === "bank_sessions") deleteFilters.push([col, value]);
+            return q;
+          },
+          in: (_col: string, ids: string[]) => {
+            if (table === "bank_sessions") deleted.push(ids);
+            return Promise.resolve({ error: failDelete ? { message: "x" } : null });
+          },
+        };
+        return q;
+      },
     }),
   };
-  return { db, deleted, reads };
+  return { db, deleted, reads, deleteFilters };
 }
 const okFetch = (calls: string[]) => ((url: string) => {
   calls.push(url);
@@ -141,4 +149,9 @@ Deno.test("closeReplaced: a failed close keeps the row so account deletion can r
 Deno.test("closeReplaced: a database error never fails the link", async () => {
   const { db } = fakeDb([], true);
   await quiet(() => closeReplaced(db, "u", [{ uid: "a", bank_session_id: "old" }], new Set(["a"]), "new", okFetch([]), sign));
+});
+Deno.test("closeReplaced: drops only this user's bank_sessions rows", async () => {
+  const { db, deleteFilters } = fakeDb([]);
+  await closeReplaced(db, "u", [{ uid: "a", bank_session_id: "old" }], new Set(["a"]), "new", okFetch([]), sign);
+  assertEquals(deleteFilters, [["user_id", "u"]]);
 });

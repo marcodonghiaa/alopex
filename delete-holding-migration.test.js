@@ -25,7 +25,8 @@ test('delete_holding refuses a caller who is not signed in', () => {
 });
 
 test('delete_holding also deletes the holding events', () => {
-  assert.match(code, /delete from investment_events where user_id = v_uid/);
+  assert.match(code, /delete from investment_events where user_id = v_uid and asset_kind = 'stock' and key = p_key/);
+  assert.match(code, /delete from investment_events where user_id = v_uid and asset_kind = 'crypto' and key = p_key/);
 });
 
 test('anon cannot call delete_holding', () => {

@@ -90,3 +90,16 @@ begin
   exception when invalid_parameter_value then null;
   end;
 end $$;
+
+-- a temp table can't stand in for a real one inside delete_holding (pg_temp is searched last)
+insert into public.holding_trades (user_id, kind, key, side, trade_date, shares, price_eur)
+  values ('00000000-0000-0000-0000-0000000000e1', 'stock', 'XX0000000002', 'buy', '2026-03-01', 1, 10);
+create temp table holding_trades (user_id uuid, kind text, key text);
+do $$
+begin
+  perform public.delete_holding('stock', 'XX0000000002');
+  if exists (select 1 from public.holding_trades where key = 'XX0000000002') then
+    raise exception 'delete_holding must delete from public.holding_trades, not a temp table';
+  end if;
+end $$;
+drop table pg_temp.holding_trades;

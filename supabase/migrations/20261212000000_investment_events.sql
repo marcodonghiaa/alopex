@@ -80,7 +80,7 @@ alter table public.holding_trades
 -- other source still holds the coin).
 create or replace function public.delete_holding(p_kind text, p_key text, p_source text default null)
 returns integer
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_uid uuid := auth.uid();
   v_count integer;

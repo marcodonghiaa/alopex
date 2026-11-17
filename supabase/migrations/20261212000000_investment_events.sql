@@ -22,7 +22,7 @@ create table public.investment_events (
   asset_kind text check (asset_kind in ('stock', 'crypto')),
   key text check (char_length(key) between 1 and 100),
   event_date date not null check (event_date between '1970-01-01' and '2100-12-31'),
-  occurred_at timestamptz,
+  occurred_at timestamptz check (occurred_at >= '1970-01-01T00:00:00Z' and occurred_at < '2101-01-01T00:00:00Z'),
   amount_eur numeric not null check (abs(amount_eur) < 1e12),
   tax_eur numeric not null default 0 check (tax_eur >= 0 and tax_eur < 1e12),
   fee_eur numeric not null default 0 check (fee_eur >= 0 and fee_eur < 1e12),
@@ -30,7 +30,7 @@ create table public.investment_events (
   -- A foreign dividend: what the broker received before converting, and the rate it used.
   orig_amount numeric check (abs(orig_amount) < 1e15),
   orig_currency text check (orig_currency ~ '^[A-Z]{3}$'),
-  fx_rate numeric check (fx_rate > 0),
+  fx_rate numeric check (fx_rate > 0 and fx_rate < 1e6),
   raw_type text not null check (char_length(raw_type) between 1 and 80),
   note text check (char_length(note) <= 200),
   source text check (char_length(source) between 1 and 40),
@@ -69,10 +69,10 @@ grant select, insert, update, delete on public.investment_events to service_role
 --   group_id: rows that are one operation (a coin swap, a convert) share it.
 alter table public.holding_trades
   add column tax_eur numeric not null default 0 check (tax_eur >= 0 and tax_eur < 1e12),
-  add column traded_at timestamptz,
+  add column traded_at timestamptz check (traded_at >= '1970-01-01T00:00:00Z' and traded_at < '2101-01-01T00:00:00Z'),
   add column note text check (char_length(note) <= 200),
   add column currency text check (currency ~ '^[A-Z]{3}$'),
-  add column price_native numeric check (price_native >= 0),
+  add column price_native numeric check (price_native >= 0 and price_native < 1e12),
   add column group_id text check (char_length(group_id) between 1 and 200),
   add constraint holding_trades_native_pair check ((currency is null) = (price_native is null));
 

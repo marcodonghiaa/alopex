@@ -103,3 +103,51 @@ begin
   end if;
 end $$;
 drop table pg_temp.holding_trades;
+
+-- out-of-range prices, rates and times are refused like the other amounts and dates
+do $$
+declare
+  u uuid := '00000000-0000-0000-0000-0000000000e1';
+begin
+  begin
+    insert into public.holding_trades (user_id, kind, key, side, trade_date, shares, price_eur, currency, price_native)
+      values (u, 'stock', 'K', 'buy', '2026-03-01', 1, 10, 'USD', 1e12);
+    raise exception 'a native price of 1e12 must be refused';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.holding_trades (user_id, kind, key, side, trade_date, shares, price_eur, traded_at)
+      values (u, 'stock', 'K', 'buy', '2026-03-01', 1, 10, '0001-01-01T00:00:00Z');
+    raise exception 'a trade time before 1970 must be refused';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.holding_trades (user_id, kind, key, side, trade_date, shares, price_eur, traded_at)
+      values (u, 'stock', 'K', 'buy', '2026-03-01', 1, 10, '2101-01-01T00:00:00Z');
+    raise exception 'a trade time after 2100 must be refused';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.investment_events (user_id, kind, event_date, amount_eur, raw_type, orig_amount, orig_currency, fx_rate)
+      values (u, 'dividend', '2026-03-01', 1, 'X', 1, 'USD', 1e6);
+    raise exception 'an fx rate of 1e6 must be refused';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.investment_events (user_id, kind, event_date, amount_eur, raw_type, occurred_at)
+      values (u, 'dividend', '2026-03-01', 1, 'X', '0001-01-01T00:00:00Z');
+    raise exception 'an event time before 1970 must be refused';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.investment_events (user_id, kind, event_date, amount_eur, raw_type, occurred_at)
+      values (u, 'dividend', '2026-03-01', 1, 'X', '2101-01-01T00:00:00Z');
+    raise exception 'an event time after 2100 must be refused';
+  exception when check_violation then null;
+  end;
+  -- the edges themselves are fine
+  insert into public.holding_trades (user_id, kind, key, side, trade_date, shares, price_eur, currency, price_native, traded_at)
+    values (u, 'stock', 'K', 'buy', '2026-03-01', 1, 10, 'USD', 999999999999, '2100-12-31T00:00:00Z');
+  insert into public.investment_events (user_id, kind, event_date, amount_eur, raw_type, orig_amount, orig_currency, fx_rate, occurred_at)
+    values (u, 'dividend', '2026-03-01', 1, 'X', 1, 'USD', 999999, '1970-01-01T00:00:00Z');
+end $$;

@@ -64,3 +64,6 @@ verify_jwt = false
 
 [functions.sync-splitwise]
 verify_jwt = false
+
+[functions.splitwise-connect]
+verify_jwt = true

@@ -40,6 +40,8 @@ const ERROR_TAG_ONLY_PATHS = [
   'supabase/functions/_shared/splitwise-sync.ts',
   'supabase/functions/_shared/splitwise-sync-job.ts',
   'supabase/functions/sync-splitwise/index.ts',
+  'supabase/functions/_shared/splitwise-connect.ts',
+  'supabase/functions/splitwise-connect/index.ts',
 ];
 
 function leakyLines(file) {

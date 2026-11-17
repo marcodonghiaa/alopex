@@ -205,7 +205,10 @@ begin
     update public.transactions
        set owed_settled = true, settled_at = now(),
            settled_by_account = p_account, settled_by_ref = p_ref
-     where account_uid = v_bill.account_uid and entry_reference = v_bill.entry_reference;
+     where account_uid = v_bill.account_uid and entry_reference = v_bill.entry_reference
+       and not owed_settled;
+    -- Another payment settled it after this list was read (two confirmed at once): skip it.
+    continue when not found;
     v_left := v_left - v_bill.owed_eur;
     v_settled_eur := v_settled_eur + v_bill.owed_eur;
     v_settled := v_settled || v_bill.entry_reference;

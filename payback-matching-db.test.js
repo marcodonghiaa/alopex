@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, execFile } = require('node:child_process');
 
 const MIGRATION = 'supabase/migrations/20261214000000_payback_matching.sql';
 const ROLLBACK = 'supabase/rollbacks/20261214000000_payback_matching.down.sql';
@@ -101,6 +101,30 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
       assert.strictEqual(as(A, "select count(*) from public.payback_candidates(60) where entry_reference = 'x-transfer'"), '1');
     } finally {
       admin("delete from public.transactions where entry_reference like 'x-%'");
+    }
+  });
+
+  // polish-1 #3: two payments from the same person confirmed at the same moment.
+  await t.test('two payments confirmed at once never settle the same bill twice', async () => {
+    admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, debtor_name, personal_amount, owed_by)
+      values ('r-bill', '${ACC_A}', '${A}', 100, 'EUR', 'DBIT', '${daysAgo(50)}', null, 50, 'Racer'),
+             ('r-pay1', '${ACC_A}', '${A}', 50, 'EUR', 'CRDT', '${today}', 'Racer One', null, null),
+             ('r-pay2', '${ACC_A}', '${A}', 50, 'EUR', 'CRDT', '${today}', 'Racer Two', null, null)`);
+    const run = (q) =>
+      new Promise((resolve) =>
+        execFile('psql', [dbUrl(), '-X', '-q', '-t', '-A', '-c', q], (err, out, errOut) => resolve(err ? `ERROR ${errOut}` : out.trim())),
+      );
+    const signedIn = `set local role authenticated; set local request.jwt.claims = '{"sub":"${A}","role":"authenticated"}';`;
+    try {
+      // The first holds its transaction open for a second after settling.
+      const first = run(`begin; ${signedIn} select public.record_payback('${ACC_A}', 'r-pay1', 'Racer', false); select pg_sleep(1); commit;`);
+      await new Promise((r) => setTimeout(r, 300));
+      const second = run(`begin; ${signedIn} select public.record_payback('${ACC_A}', 'r-pay2', 'Racer', false); commit;`);
+      const outs = await Promise.all([first, second]);
+      const settledBy = outs.filter((o) => /"settled": \["r-bill"\]/.test(o)).length;
+      assert.strictEqual(settledBy, 1, outs.join('\n'));
+    } finally {
+      admin("delete from public.transactions where entry_reference like 'r-%'");
     }
   });
 

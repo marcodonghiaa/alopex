@@ -86,6 +86,8 @@ export function splitwiseClient(
       await res.body?.cancel();
       throw new SplitwiseAuthError("Splitwise refused the API key", 401);
     }
+    // shortcut: no retry or backoff on 429 or 5xx. The user's sync stops (a 429 stops the whole cron
+    // run) and the next run, 6 hours later or on Sync now, starts again from the same cursor.
     if (res.status === 429) {
       await res.body?.cancel();
       throw new SplitwiseRateLimitError("Splitwise asked to slow down", 429);

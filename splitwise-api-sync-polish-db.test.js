@@ -94,4 +94,20 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(sql(`select string_agg(person || balance || currency, ',' order by person, currency)
       from public.splitwise_balances where group_name = 'Legacy'`), 'Ann20EUR,Ann-3USD,Bo-20EUR');
   });
+
+  await t.test('#20: an expense I paid all for others (my share 0) frees the bank payment when it goes', () => {
+    pay('p20-del', 40); pay('p20-dis', 40); pay('p20-chg', 40);
+    apply({ reviews: [review(2001, { cost: '40', my_share: '0', my_paid: '40' }), review(2002, { cost: '40', my_share: '0', my_paid: '40' }),
+      review(2003, { cost: '40', my_share: '0', my_paid: '40' })] });
+    link(2001, 'p20-del'); link(2002, 'p20-dis'); link(2003, 'p20-chg');
+    assert.strictEqual(tx('p20-del'), '0.00|-|-', 'linked: none of it is my spending');
+    apply({ deleted: [2001] });
+    assert.strictEqual(tx('p20-del'), '-|-|-', 'deleted in Splitwise: the payment counts again');
+    owner(`select public.dismiss_splitwise_review('${reviewId(2002)}')`);
+    assert.strictEqual(tx('p20-dis'), '-|-|-', 'dismissed: freed');
+    apply({ reviews: [review(2003, { cost: '40', my_share: '10', my_paid: '40' })] });
+    assert.strictEqual(tx('p20-chg'), '-|-|-', 'amounts changed: freed, and asked again');
+    link(2003, 'p20-chg');
+    assert.strictEqual(tx('p20-chg'), '10.00|-|-', 'and it can be linked again');
+  });
 });

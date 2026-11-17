@@ -259,12 +259,15 @@ begin
    where s.user_id = p_user and s.splitwise_id = any(p_ids) and s.linked_entry_reference is not null
      and t.user_id = p_user and t.account_uid = s.linked_account_uid
      and t.entry_reference = s.linked_entry_reference and t.import_batch_id is not null;
+  -- Through the review row too: a payment linked to an expense I paid all for others has no
+  -- share row (my share is 0), and a settle-up never has one.
   update public.transactions t
-     set flow_type = case when t.flow_type = 'transfer' then null else t.flow_type end,
-         flow_source = case when t.flow_type = 'transfer' then null else t.flow_source end,
+     set personal_amount = case when r.kind in ('paid_by_me', 'multi_payer') then null else t.personal_amount end,
+         flow_type = case when r.kind in ('settle_out', 'settle_in') and t.flow_type = 'transfer' then null else t.flow_type end,
+         flow_source = case when r.kind in ('settle_out', 'settle_in') and t.flow_type = 'transfer' then null else t.flow_source end,
          import_batch_id = null
     from public.splitwise_review r
-   where r.user_id = p_user and r.splitwise_id = any(p_ids) and r.kind in ('settle_out', 'settle_in')
+   where r.user_id = p_user and r.splitwise_id = any(p_ids)
      and r.status = 'linked' and r.linked_entry_reference is not null
      and t.user_id = p_user and t.account_uid = r.linked_account_uid
      and t.entry_reference = r.linked_entry_reference and t.import_batch_id is not null;

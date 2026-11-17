@@ -191,6 +191,12 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(tx('p10-out'), '-|-|-', 'deleted in Splitwise: no longer a transfer');
   });
 
+  await t.test('#11: a group renamed in Splitwise renames its synced shares', () => {
+    apply({ shares: [share(1101, { group_name: 'Old name' })] });
+    apply({ shares: [share(1101, { group_name: 'New name' })] });
+    assert.strictEqual(sql('select group_name from public.splitwise_expenses where splitwise_id = 1101'), 'New name');
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

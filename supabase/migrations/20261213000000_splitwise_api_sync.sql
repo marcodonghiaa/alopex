@@ -498,7 +498,11 @@ begin
         from jsonb_to_recordset(coalesce(p_shares, '[]')) as x(splitwise_id bigint, group_name text, booking_date date,
              description text, category text, amount numeric, currency text, splitwise_updated_at timestamptz)
     on conflict (user_id, splitwise_id) where splitwise_id is not null do update
-      set booking_date = excluded.booking_date,
+      -- A group renamed in Splitwise renames its synced shares. An adopted CSV row keeps the group
+      -- it was imported into (renaming it could collide with that file's other rows).
+      set group_name = case when splitwise_expenses.fingerprint like 'sw:%' then excluded.group_name
+                            else splitwise_expenses.group_name end,
+          booking_date = excluded.booking_date,
           category = coalesce(splitwise_expenses.category, excluded.category),
           amount = excluded.amount,
           currency = excluded.currency,

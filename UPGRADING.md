@@ -15,6 +15,7 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 - New table `investment_events`, owner-only: dividends, interest, rewards, fees, taxes, deposits, withdrawals, transfers in and out, and corporate actions, from any broker. A re-import skips what's saved (unique per user, source and the broker's id).
 - `holding_trades` gets optional columns: `tax_eur`, `traded_at`, `note`, `currency` + `price_native`, `group_id`. Existing rows are unchanged.
 - `delete_holding` also deletes the holding's events.
+- Trade Republic: trades imported before this release are skipped on re-import, so they stay without tax. To get the tax, delete the holding's Trade Republic trades and import the file again.
 - **Roll back:** revert the dashboard first, then run `supabase/rollbacks/20261212000000_investment_events.down.sql` and `supabase migration repair --status reverted 20261212000000 --linked`. Imported events are lost; importing the broker files again brings them back.
 
 ## v0.3.0 (14 Nov 2026)

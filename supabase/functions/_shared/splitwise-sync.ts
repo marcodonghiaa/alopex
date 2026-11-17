@@ -89,6 +89,9 @@ export function classify(e: SwExpense, me: number, labels: Map<number, string>):
     return { type: "skip", id: e.id };
   }
   const currency = e.currency_code ?? "";
+  // shortcut: the UTC calendar day of Splitwise's timestamp. Alopex stores no time zone per user,
+  // so an expense entered near midnight far from UTC can land a day (or a month) off. Adopting a
+  // CSV row allows ±1 day, so it is not doubled. Use the user's zone once Alopex has one.
   const date = (e.date ?? "").slice(0, 10);
   if (!CURRENCY.test(currency) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || paid < 0 || owed < 0) return { type: "skip", id: e.id };
 

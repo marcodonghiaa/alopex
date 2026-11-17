@@ -109,7 +109,7 @@ $$;
 -- Confirms that a payment is p_contact paying you back: the payment stops counting as income (a
 -- transfer), and that person's open split bills are settled oldest first while the payment covers
 -- them in full. A bill it can't cover stays open (bills are settled whole, never in part); what is
--- left over is returned. p_contact '' records "not a payback" and changes nothing else.
+-- left over is returned. p_contact '' records "not a payback" and unlinks that payer's name.
 -- p_remember links the payer's name to the contact for next time.
 create or replace function public.record_payback(
   p_account uuid,
@@ -147,6 +147,11 @@ begin
   if v_contact = '' then
     update public.transactions set payback_contact = ''
      where account_uid = p_account and entry_reference = p_ref;
+    -- A payer you linked sent money that is not a payback: the link was a guess too far, drop it
+    -- (their next payment is matched by name or amount again).
+    delete from public.payer_links
+     where user_id = uid
+       and payer_key = public.payer_key(public.payer_name_of(v_credit.debtor_name, v_credit.creditor_name));
     return jsonb_build_object('settled', '[]'::jsonb, 'settled_eur', 0, 'left_eur', null, 'linked', false);
   end if;
 

@@ -154,8 +154,11 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     assert.match(as(A, `select public.undo_payback('${ACC_A}', 'pay-2', false)`), /Payment not found/, 'nothing left to undo');
   });
 
-  await t.test('"not a payback" only hides the payment; undo brings it back', () => {
+  await t.test('"not a payback" hides the payment and unlinks its payer; undo brings it back', () => {
+    as(A, "insert into public.payer_links (user_id, payer_key, contact) values ('" + A + "', 'anna rossi', 'Anna'), ('" + A + "', 'someone else', 'Bea')");
     as(A, `select public.record_payback('${ACC_A}', 'pay-1', '', true)`);
+    assert.strictEqual(as(A, 'select string_agg(payer_key, \',\') from public.payer_links'), 'someone else', 'only this payer is unlinked');
+    as(A, 'delete from public.payer_links');
     assert.strictEqual(admin("select coalesce(flow_type, '∅') || '/' || payback_contact from public.transactions where entry_reference = 'pay-1'"), '∅/');
     assert.strictEqual(as(A, 'select count(*) from public.payer_links'), '0', 'no link for a dismissal');
     assert.strictEqual(as(A, "select count(*) from public.payback_candidates(60) where entry_reference = 'pay-1'"), '0');

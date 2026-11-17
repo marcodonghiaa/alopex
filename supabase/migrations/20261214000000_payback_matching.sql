@@ -145,6 +145,7 @@ declare
   v_linked boolean := false;
   v_settled text[] := '{}';
   v_bill record;
+  v_credits numeric := 0;
 begin
   if uid is null then raise exception 'Not signed in'; end if;
   if p_account is null or p_ref is null then raise exception 'Payment not found'; end if;
@@ -180,28 +181,32 @@ begin
       case when v_credit.currency = 'EUR' then 1::numeric end), 2)
     into v_left;
 
-  -- That person's own open bills (a bill shared with others has one settled flag for everyone, so
-  -- it is left to settle by hand), oldest first. Same rows as the Who owes you page.
+  -- That person's own open split rows (a bill shared with others has one settled flag for everyone,
+  -- so it is left to settle by hand). Same rows as the Who owes you page: bills they owe on, and
+  -- split refunds that count against them. The refunds add to the money; bills settle oldest first.
+  create temp table if not exists payback_rows (account_uid uuid, entry_reference text, booking_date date, owed_eur numeric) on commit drop;
+  truncate payback_rows;
+  insert into payback_rows
+  select t.account_uid, t.entry_reference, t.booking_date,
+         round(v.personal_signed_amount_eur - v.signed_amount_eur, 2)
+    from public.transactions t
+    join public.v_transactions_eur v
+      on v.account_uid = t.account_uid and v.entry_reference = t.entry_reference
+   where t.user_id = uid and t.deleted_at is null
+     and not t.owed_settled
+     and t.personal_amount is not null and t.personal_amount >= 0
+     and t.import_batch_id is null
+     and coalesce(t.flow_type, '') not in ('refunded', 'transfer')
+     and position(',' in coalesce(t.owed_by, '')) = 0
+     and lower(trim(t.owed_by)) = lower(v_contact)
+     and v.personal_signed_amount_eur - v.signed_amount_eur <> 0;
+  select coalesce(sum(owed_eur), 0) into v_credits from payback_rows where owed_eur < 0;
+  v_left := v_left - v_credits;
+
   for v_bill in
-    select b.account_uid, b.entry_reference, round(b.owed_eur, 2) as owed_eur
-      from (
-        select t.account_uid, t.entry_reference, t.booking_date,
-               v.personal_signed_amount_eur - v.signed_amount_eur as owed_eur
-          from public.transactions t
-          join public.v_transactions_eur v
-            on v.account_uid = t.account_uid and v.entry_reference = t.entry_reference
-         where t.user_id = uid and t.deleted_at is null
-           and t.credit_debit_indicator = 'DBIT'
-           and not t.owed_settled
-           and t.personal_amount is not null and t.personal_amount >= 0 and t.personal_amount < t.amount
-           and t.import_batch_id is null
-           and coalesce(t.flow_type, 'spend') not in ('refunded', 'transfer')
-           and position(',' in coalesce(t.owed_by, '')) = 0
-           and lower(trim(t.owed_by)) = lower(v_contact)
-      ) b
-     order by b.booking_date, b.entry_reference
+    select * from payback_rows where owed_eur > 0 order by booking_date, entry_reference
   loop
-    exit when v_left is null or v_bill.owed_eur is null or v_bill.owed_eur > v_left + 0.005;
+    exit when v_left is null or v_bill.owed_eur > v_left + 0.005;
     update public.transactions
        set owed_settled = true, settled_at = now(),
            settled_by_account = p_account, settled_by_ref = p_ref
@@ -213,6 +218,21 @@ begin
     v_settled_eur := v_settled_eur + v_bill.owed_eur;
     v_settled := v_settled || v_bill.entry_reference;
   end loop;
+
+  if v_credits < 0 then
+    if cardinality(v_settled) > 0 then
+      -- The refunds went into what was settled: close them with it (undo reopens them too).
+      update public.transactions t
+         set owed_settled = true, settled_at = now(),
+             settled_by_account = p_account, settled_by_ref = p_ref
+        from payback_rows r
+       where r.owed_eur < 0 and t.account_uid = r.account_uid
+         and t.entry_reference = r.entry_reference and not t.owed_settled;
+      v_settled_eur := v_settled_eur + v_credits;
+    else
+      v_left := v_left + v_credits;
+    end if;
+  end if;
 
   if coalesce(p_remember, true) then
     v_key := public.payer_key(public.payer_name_of(v_credit.debtor_name, v_credit.creditor_name));

@@ -210,6 +210,29 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     assert.strictEqual(as(A, "select count(*) from public.payback_candidates(60) where entry_reference = 'pay-1'"), '1');
   });
 
+  await t.test('a split refund counts against the bill, as on the page, and is settled with it', () => {
+    // Bea owes 60 on a bill and got 20 back from a split refund: the page says 40. She pays 40.
+    admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, creditor_name, debtor_name, personal_amount, owed_by)
+      values ('sr-bill', '${ACC_A}', '${A}', 100, 'EUR', 'DBIT', '${daysAgo(9)}', 'Shop', null, 40, 'Bea'),
+             ('sr-ref', '${ACC_A}', '${A}', 30, 'EUR', 'CRDT', '${daysAgo(8)}', null, 'Shop', 10, 'Bea'),
+             ('sr-pay', '${ACC_A}', '${A}', 40, 'EUR', 'CRDT', '${today}', null, 'Bea Verdi', null, null)`);
+    try {
+      const out = as(A, `select public.record_payback('${ACC_A}', 'sr-pay', 'Bea', false)`);
+      assert.match(out, /"settled": \["sr-bill"\]/);
+      assert.match(out, /"left_eur": 0/);
+      assert.strictEqual(admin("select string_agg(entry_reference || '=' || owed_settled, ',' order by entry_reference) from public.transactions where entry_reference in ('sr-bill', 'sr-ref')"), 'sr-bill=true,sr-ref=true');
+      assert.match(as(A, `select public.undo_payback('${ACC_A}', 'sr-pay', false)`), /"reopened": 2/);
+      assert.strictEqual(admin("select count(*) from public.transactions where entry_reference in ('sr-bill', 'sr-ref') and not owed_settled"), '2');
+      // A refund alone (no bill covered) stays open, and the money is not counted twice.
+      admin("update public.transactions set amount = 30 where entry_reference = 'sr-pay'");
+      const short = as(A, `select public.record_payback('${ACC_A}', 'sr-pay', 'Bea', false)`, { keep: false });
+      assert.match(short, /"settled": \[\]/);
+      assert.match(short, /"left_eur": 30/);
+    } finally {
+      admin("delete from public.transactions where entry_reference like 'sr-%'");
+    }
+  });
+
   await t.test('a payment in a currency without a rate settles nothing', () => {
     admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, debtor_name)
            values ('pay-xyz', '${ACC_A}', '${A}', 999, 'XYZ', 'CRDT', '${today}', 'Anna Rossi')`);

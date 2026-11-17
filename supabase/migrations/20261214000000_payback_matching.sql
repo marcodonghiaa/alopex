@@ -27,9 +27,10 @@ language sql
 immutable
 set search_path to ''
 as $$
+  -- Reads at most 1000 characters (a bank name is far shorter; a huge one costs nothing extra).
   -- Cut to the 200 letters payer_links keeps, here, so the saved key and the lookup key are the same.
   select nullif(trim(left(trim(regexp_replace(
-    replace(replace(replace(translate(lower(coalesce(p_name, '')),
+    replace(replace(replace(translate(lower(left(coalesce(p_name, ''), 1000)),
       'àáâãäåèéêëìíîïòóôõöùúûüýÿçñăāąćčĉċďđēėęěĕğģĝġħĥīįıĭĩĵķĺļľłńņňōőŏøŕřŗśšşșŝťţțũūůűųŭŵŷźžż',
       'aaaaaaeeeeiiiiooooouuuuyycnaaaccccddeeeeegggghhiiiiijkllllnnnoooorrrssssstttuuuuuuwyzzz'),
       'ß', 'ss'), 'æ', 'ae'), 'œ', 'oe'),
@@ -320,6 +321,13 @@ begin
 end;
 $$;
 
+-- The helpers too: nothing here is for callers who aren't signed in.
+revoke execute on function public.payer_key(text) from public, anon;
+revoke execute on function public.payer_name_of(text, text) from public, anon;
+revoke execute on function public.payback_eligible(public.transactions) from public, anon;
+grant execute on function public.payer_key(text) to authenticated, service_role;
+grant execute on function public.payer_name_of(text, text) to authenticated, service_role;
+grant execute on function public.payback_eligible(public.transactions) to authenticated, service_role;
 revoke execute on function public.payback_candidates(integer) from public, anon;
 revoke execute on function public.record_payback(uuid, text, text, boolean) from public, anon;
 revoke execute on function public.undo_payback(uuid, text, boolean) from public, anon;

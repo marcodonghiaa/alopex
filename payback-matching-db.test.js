@@ -214,6 +214,13 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
   await t.test('anon cannot call the functions', () => {
     assert.throws(() => psql(dbUrl(), ['-c', 'set role anon; select public.payback_candidates(60)']), /permission denied/);
     assert.throws(() => psql(dbUrl(), ['-c', `set role anon; select public.record_payback('${ACC_A}', 'pay-1', 'Anna', true)`]), /permission denied/);
+    // Helpers too: no work for strangers (a huge string to payer_key costs seconds of CPU).
+    for (const q of ["select public.payer_key('x')", "select public.payer_name_of('a', 'b')", 'select public.payback_eligible(t) from public.transactions t limit 1'])
+      assert.throws(() => psql(dbUrl(), ['-c', `set role anon; ${q}`]), /permission denied/, q);
+  });
+
+  await t.test('signed-in users can read and write their links, nothing more', () => {
+    assert.strictEqual(admin("select string_agg(privilege_type, ',' order by privilege_type) from information_schema.role_table_grants where table_name = 'payer_links' and grantee = 'authenticated'"), 'DELETE,INSERT,SELECT,UPDATE');
   });
 
   await t.test('undo reopens exactly the bills it settled and puts the payment back', () => {

@@ -83,7 +83,7 @@ Deno.test("relinkPatch: no session id from Enable Banking changes nothing", () =
 });
 
 // accounts: rows the re-read sees right before closing; deleted: bank_sessions ids removed.
-function fakeDb(accounts: Array<{ bank_session_id: string | null }>, failDelete = false) {
+function fakeDb(accounts: Array<{ bank_session_id: string | null }>, failDelete = false, failRead = false) {
   const deleted: string[][] = [];
   const reads: string[][] = [];
   const deleteFilters: string[][] = [];
@@ -93,6 +93,7 @@ function fakeDb(accounts: Array<{ bank_session_id: string | null }>, failDelete 
         eq: () => ({
           in: (_col: string, ids: string[]) => {
             reads.push(ids);
+            if (failRead) return Promise.resolve({ data: null, error: { message: "read failed" } });
             return Promise.resolve({ data: accounts.filter((a) => ids.includes(a.bank_session_id ?? "")), error: null });
           },
         }),
@@ -154,4 +155,13 @@ Deno.test("closeReplaced: drops only this user's bank_sessions rows", async () =
   const { db, deleteFilters } = fakeDb([]);
   await closeReplaced(db, "u", [{ uid: "a", bank_session_id: "old" }], new Set(["a"]), "new", okFetch([]), sign);
   assertEquals(deleteFilters, [["user_id", "u"]]);
+});
+// Polish 5 F2: without the re-read, a session a second renewal just took could be closed.
+Deno.test("closeReplaced: a failed re-read closes nothing and deletes nothing", async () => {
+  const { db, deleted, reads } = fakeDb([], false, true);
+  const calls: string[] = [];
+  await quiet(() => closeReplaced(db, "u", [{ uid: "a", bank_session_id: "old" }], new Set(["a"]), "new", okFetch(calls), sign));
+  assertEquals(reads, [["old"]]);
+  assertEquals(calls, []);
+  assertEquals(deleted, []);
 });

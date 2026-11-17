@@ -268,6 +268,22 @@ Deno.test("transactions: the first sync asks for the longest history the bank ke
   assertEquals(params.has("date_from"), false);
 });
 
+Deno.test("transactions: an empty longest page with a continuation_key keeps paging", async () => {
+  const urls: string[] = [];
+  const fetch = (async (url: string) => {
+    urls.push(url);
+    const body = urls.length === 1 ? { transactions: [], continuation_key: "k2" } : { transactions: [TX] };
+    return { ok: true, status: 200, json: async () => body };
+  }) as unknown as Deps["fetch"];
+  const { supabase } = fakeSupabase();
+
+  const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), null, TODAY);
+
+  assertEquals(urls.length, 2);
+  assertEquals(new URL(urls[1]).searchParams.get("continuation_key"), "k2");
+  assertEquals(result.upserted, 1);
+});
+
 Deno.test("transactions: later syncs keep the default strategy", async () => {
   const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [] } } });
   const { supabase } = fakeSupabase();

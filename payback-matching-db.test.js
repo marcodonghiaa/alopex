@@ -73,6 +73,8 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     assert.strictEqual(admin("select public.payer_key('Řehoř ŁUKASZ Øster Šťastný Dvořák Ćwik Węgrzyn Nagy Ödön Győző Žanić Ålund Ærø Straße')"), 'rehor lukasz oster stastny dvorak cwik wegrzyn nagy odon gyozo zanic alund aero strasse');
     // Cut inside the key, so the link saved for a very long name is found again by the same key.
     assert.strictEqual(admin("select char_length(public.payer_key(repeat('ab ', 150)))"), '200');
+    // Reads at most 1000 characters: anything after that is ignored (a huge string costs nothing).
+    assert.strictEqual(admin("select coalesce(public.payer_key(repeat('.', 1000) || 'Anna'), '∅')"), '∅');
     assert.strictEqual(admin("select coalesce(public.payer_key(' .- '), '∅') || coalesce(public.payer_key(null), '∅')"), '∅∅');
     assert.strictEqual(admin("select public.payer_name_of('  ', 'Anna Rossi') || '|' || public.payer_name_of('Debtor', 'Creditor')"), 'Anna Rossi|Debtor');
   });

@@ -204,8 +204,9 @@ begin
      and t.personal_amount is not null and t.personal_amount >= 0
      and t.import_batch_id is null
      and coalesce(t.flow_type, '') not in ('refunded', 'transfer')
-     and position(',' in coalesce(t.owed_by, '')) = 0
-     and lower(trim(t.owed_by)) = lower(v_contact)
+     -- Names as the page reads them: comma-separated, blanks dropped ("Carla," is Carla alone).
+     and array(select lower(trim(n)) from unnest(string_to_array(t.owed_by, ',')) n where trim(n) <> '')
+         = array[lower(v_contact)]
      and v.personal_signed_amount_eur - v.signed_amount_eur <> 0;
   select coalesce(sum(owed_eur), 0) into v_credits from payback_rows where owed_eur < 0;
   v_left := v_left - v_credits;

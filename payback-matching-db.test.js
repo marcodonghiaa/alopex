@@ -250,6 +250,21 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     }
   });
 
+  await t.test('a bill naming one person with stray commas is theirs alone, like on the page', () => {
+    admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, creditor_name, debtor_name, personal_amount, owed_by)
+      values ('cm-1', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(9)}', 'Bar', null, 10, 'Carla,'),
+             ('cm-2', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(8)}', 'Bar', null, 10, ' , carla'),
+             ('cm-3', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(7)}', 'Bar', null, 10, 'Carla, Dino'),
+             ('cm-pay', '${ACC_A}', '${A}', 30, 'EUR', 'CRDT', '${today}', null, 'Carla Blu', null, null)`);
+    try {
+      const out = as(A, `select public.record_payback('${ACC_A}', 'cm-pay', 'Carla', false)`, { keep: false });
+      assert.match(out, /"settled": \["cm-1", "cm-2"\]/);
+      assert.match(out, /"left_eur": 10/);
+    } finally {
+      admin("delete from public.transactions where entry_reference like 'cm-%'");
+    }
+  });
+
   await t.test('a payment in a currency without a rate settles nothing', () => {
     admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, debtor_name)
            values ('pay-xyz', '${ACC_A}', '${A}', 999, 'XYZ', 'CRDT', '${today}', 'Anna Rossi')`);

@@ -197,6 +197,20 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(sql('select group_name from public.splitwise_expenses where splitwise_id = 1101'), 'New name');
   });
 
+  await t.test('#12: while connected, a CSV import keeps the API balances of its group', () => {
+    apply({ balances: [{ group_name: 'Bal', person: 'Ann', balance: '7.00', currency: 'EUR', is_me: true },
+      { group_name: 'Bal', person: 'Bo', balance: '-7.00', currency: 'EUR', is_me: false }] });
+    const save = () => owner(`select public.save_splitwise_balances('Bal', ${lit([{ person: 'Ann', balance: 1, currency: 'EUR', is_me: true, basis: 'pairwise' }])})`);
+    const now = () => sql(`select string_agg(person || balance || basis, ',' order by person) from public.splitwise_balances where group_name = 'Bal'`);
+    assert.deepStrictEqual(JSON.parse(save()), { balances: 0 });
+    assert.strictEqual(now(), 'Ann7.00api,Bo-7.00api');
+    // Disconnected (data kept): the file is the only source again, so it replaces them.
+    run('service_role', null, `select public.splitwise_disconnect('${A}', false)`);
+    assert.deepStrictEqual(JSON.parse(save()), { balances: 1 });
+    assert.strictEqual(now(), 'Ann1pairwise');
+    sql(`select public.splitwise_save_connection('${A}', 'key-one', 111, 'Ann')`);
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take
@@ -206,8 +220,10 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     const def = (fn) => sql(`select pg_get_functiondef('public.${fn}'::regproc)`);
     assert.doesNotMatch(def('undo_splitwise_import'), /splitwise_id/, '20261116000000 version');
     assert.doesNotMatch(def('apply_splitwise_corrections'), /splitwise_id/, '20261109000000 version');
+    assert.doesNotMatch(def('save_splitwise_balances'), /get_splitwise_connection/, '20261123000000 version');
     applySql(UP);
     assert.match(def('undo_splitwise_import'), /splitwise_id is null/);
     assert.match(def('apply_splitwise_corrections'), /splitwise_id is null/);
+    assert.match(def('save_splitwise_balances'), /get_splitwise_connection/);
   });
 });

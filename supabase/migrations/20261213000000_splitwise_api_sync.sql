@@ -361,6 +361,39 @@ begin
 end;
 $function$;
 
+-- Same as 20261123000000, except that it leaves a group's API balances alone while connected.
+create or replace function public.save_splitwise_balances(p_group text, p_balances jsonb)
+returns jsonb
+language plpgsql
+set search_path = public
+as $function$
+declare
+  uid uuid := auth.uid();
+  n int;
+begin
+  if uid is null then raise exception 'Not signed in'; end if;
+  if jsonb_array_length(p_balances) > 200 then raise exception 'Too many rows'; end if;
+
+  -- While connected, the sync owns the group's balances: a file can't replace them (they would
+  -- flip back at the next sync).
+  if exists (select 1 from splitwise_balances where user_id = uid and group_name = p_group and basis = 'api')
+     and coalesce((select c.connected from get_splitwise_connection() c), false) then
+    return jsonb_build_object('balances', 0);
+  end if;
+
+  delete from splitwise_balances where user_id = uid and group_name = p_group;
+
+  insert into splitwise_balances (user_id, group_name, person, balance, currency, is_me, basis)
+    select uid, p_group, b.person, b.balance, b.currency, coalesce(b.is_me, false),
+           coalesce(b.basis, 'group')
+      from jsonb_to_recordset(p_balances)
+        as b(person text, balance numeric, currency text, is_me boolean, basis text);
+  get diagnostics n = row_count;
+
+  return jsonb_build_object('balances', n);
+end;
+$function$;
+
 -- ---- Shared steps ----
 
 -- Frees what Alopex did for these Splitwise expenses and removes their shares: a bank payment's

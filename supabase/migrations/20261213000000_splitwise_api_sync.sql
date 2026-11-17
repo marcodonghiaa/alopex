@@ -177,7 +177,8 @@ create unique index splitwise_balances_one_me_idx on public.splitwise_balances (
 -- ---- The CSV import leaves synced rows alone ----
 
 -- Same as 20261031000000, except the range clean-up skips rows that came from the API (or were
--- adopted by it): re-importing a group's file must not delete what the sync wrote.
+-- adopted by it): re-importing a group's file must not delete what the sync wrote. And a share
+-- the sync already has is not imported again (a file imported after connecting would double it).
 create or replace function public.import_splitwise(
   p_batch uuid, p_group text, p_from date, p_to date, p_shares jsonb, p_links jsonb
 ) returns jsonb
@@ -201,6 +202,13 @@ begin
       from jsonb_to_recordset(p_shares) as s(fingerprint text, booking_date date, description text,
            category text, amount numeric, currency text, linked_account_uid uuid,
            linked_entry_reference text)
+     -- A share the sync already has (the rule of splitwise_csv_match) would count twice.
+     where not exists (
+       select 1 from splitwise_expenses a
+        where a.user_id = uid and a.splitwise_id is not null
+          and a.booking_date between s.booking_date - 1 and s.booking_date + 1
+          and lower(btrim(a.description)) = lower(btrim(s.description))
+          and a.amount = s.amount and a.currency = s.currency)
     on conflict (user_id, group_name, fingerprint) do update
       set booking_date = excluded.booking_date,
           category = coalesce(splitwise_expenses.category, excluded.category),

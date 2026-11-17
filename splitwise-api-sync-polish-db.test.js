@@ -128,4 +128,20 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     link(102, 'p1-50');
     assert.strictEqual(counted(102, 'p1-50'), '50.00');
   });
+
+  await t.test('#2: a CSV import after connecting skips the shares the sync already has', () => {
+    apply({ shares: [share(201, { booking_date: '2026-11-10', description: 'Pizza', amount: '15.00' })] });
+    const csv = (fingerprint, date, description, amount = 15) =>
+      ({ fingerprint, booking_date: date, description, category: null, amount, currency: 'EUR', linked_account_uid: null, linked_entry_reference: null });
+    const out = owner(`select public.import_splitwise(gen_random_uuid(), 'Flat', '2026-11-09', '2026-11-13', ${lit([
+      csv('c2-a', '2026-11-11', ' PIZZA '), // the synced one, a day off: skipped
+      csv('c2-b', '2026-11-12', 'Pizza'), // two days off: another expense
+      csv('c2-c', '2026-11-10', 'Beer', 6), // not synced: imported
+    ])}, '[]')`);
+    assert.match(out, /"shares": 2/);
+    assert.strictEqual(sql(`select string_agg(coalesce(splitwise_id::text, fingerprint), ',' order by booking_date, fingerprint)
+      from public.splitwise_expenses where description ilike '%pizza%' or description = 'Beer'`), 'c2-c,201,c2-b');
+    apply({ shares: [share(201, { booking_date: '2026-11-10', description: 'Pizza', amount: '15.00' })] });
+    assert.strictEqual(sql(`select count(*) from public.splitwise_expenses where lower(btrim(description)) = 'pizza' and booking_date <= '2026-11-11'`), '1');
+  });
 });

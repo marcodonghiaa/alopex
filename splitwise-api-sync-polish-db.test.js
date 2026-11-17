@@ -220,6 +220,27 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(owner('select count(*) from public.splitwise_review where splitwise_id = 1401'), '1', 'reading stays allowed');
   });
 
+  await t.test('#22: the owner changes review rows only through the RPCs, which still work', () => {
+    pay('p22', 60);
+    apply({ reviews: [review(2201), review(2202)] });
+    assert.match(owner(`update public.splitwise_review set status = 'linked', my_share = 0 where splitwise_id = 2201`), /permission denied/);
+    assert.match(owner(`select public.splitwise_release('${A}', array[2201]::bigint[])`), /permission denied/);
+    // The owner's actions, now running as the function owner, still keep to the caller's rows.
+    link(2201, 'p22');
+    assert.strictEqual(tx('p22'), '20.00|-|-');
+    assert.strictEqual(JSON.parse(owner(`select public.reject_splitwise_match('${reviewId(2202)}', 'p22')`)).rejected, 1);
+    owner(`select public.count_splitwise_review('${reviewId(2202)}')`);
+    owner(`select public.dismiss_splitwise_review('${reviewId(2201)}')`);
+    assert.strictEqual(tx('p22'), '-|-|-');
+    assert.strictEqual(sql('select string_agg(status, \',\' order by splitwise_id) from public.splitwise_review where splitwise_id in (2201, 2202)'), 'dismissed,counted');
+    const other = 'cccccccc-0000-0000-0000-000000000003';
+    sql(`insert into auth.users (id) values ('${other}')`);
+    for (const call of [`link_splitwise_review('${reviewId(2202)}', '${ACC}', 'p22')`, `count_splitwise_review('${reviewId(2202)}')`,
+      `dismiss_splitwise_review('${reviewId(2202)}')`, `reject_splitwise_match('${reviewId(2202)}', 'x')`]) {
+      assert.match(run('authenticated', other, `select public.${call}`), /no longer on the list/, call);
+    }
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

@@ -152,12 +152,11 @@ create table public.splitwise_review (
 );
 alter table public.splitwise_review enable row level security;
 revoke all on table public.splitwise_review from anon, authenticated;
--- No delete: a linked row deleted directly would leave its bank payment changed. Dismiss instead.
-grant select, update on table public.splitwise_review to authenticated;
+-- Read only: a row changed or deleted directly (status, amounts, link) would leave its bank payment
+-- changed with nothing to free it. The owner's RPCs below make every change.
+grant select on table public.splitwise_review to authenticated;
 create policy "Users can view own splitwise review" on public.splitwise_review
   for select to authenticated using ((select auth.uid()) = user_id);
-create policy "Users can update own splitwise review" on public.splitwise_review
-  for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
 -- ---- Balances ----
 
@@ -399,7 +398,7 @@ $function$;
 -- personal amount set from a share goes back to null, a settle-up marked as transfer counts by
 -- its direction again (same as undo_splitwise_import), and review rows lose their link (their
 -- status is the caller's business). Only rows an import or link changed (import_batch_id set).
--- Runs as the caller: with a user's JWT, row level security keeps it to their own rows.
+-- Internal: only the security-definer functions below call it, always with their own user.
 create or replace function public.splitwise_release(p_user uuid, p_ids bigint[]) returns void
 language plpgsql
 set search_path = ''
@@ -706,7 +705,9 @@ begin
 end;
 $$;
 
--- ---- The owner's review actions (as the caller, so row level security applies) ----
+-- ---- The owner's review actions ----
+-- Security definer (signed-in users can't write splitwise_review directly), so each one keeps to
+-- the caller's rows itself: every statement is filtered on auth.uid().
 
 -- Links an expense to the bank payment it is: for one I paid, the payment counts only my share
 -- (personal amount = payment × my share / what I paid, like the CSV import's links); for a
@@ -714,7 +715,8 @@ $$;
 create or replace function public.link_splitwise_review(p_id uuid, p_account_uid uuid, p_entry_reference text)
 returns jsonb
 language plpgsql
-set search_path = public
+security definer
+set search_path = public, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
@@ -737,8 +739,10 @@ begin
        and t.credit_debit_indicator = 'DBIT' and t.personal_amount is null and t.deleted_at is null
        and t.flow_type is distinct from 'transfer' and t.flow_type is distinct from 'refunded';
   else
+    -- flow_source 'user' as the dashboard's own edits get it (trg_flow_source_user keys on the JWT's
+    -- role, which a security-definer call may not carry): post-sync never reclassifies it.
     update transactions t
-       set flow_type = 'transfer', import_batch_id = v_batch
+       set flow_type = 'transfer', flow_source = 'user', import_batch_id = v_batch
      where t.user_id = uid and t.account_uid = p_account_uid and t.entry_reference = p_entry_reference
        and t.credit_debit_indicator = case r.kind when 'settle_out' then 'DBIT' else 'CRDT' end
        and t.personal_amount is null and t.deleted_at is null
@@ -774,7 +778,8 @@ $$;
 -- An expense I paid outside the banks Alopex sees (cash, another card): my share counts as spending.
 create or replace function public.count_splitwise_review(p_id uuid) returns jsonb
 language plpgsql
-set search_path = public
+security definer
+set search_path = public, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
@@ -803,7 +808,8 @@ $$;
 -- Off the list. A linked or counted row is undone first (bank payment freed, share removed).
 create or replace function public.dismiss_splitwise_review(p_id uuid) returns jsonb
 language plpgsql
-set search_path = public
+security definer
+set search_path = public, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
@@ -824,7 +830,8 @@ $$;
 -- "Not this one": the bank transaction is never suggested for this expense again.
 create or replace function public.reject_splitwise_match(p_id uuid, p_entry_reference text) returns jsonb
 language plpgsql
-set search_path = public
+security definer
+set search_path = public, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
@@ -858,9 +865,7 @@ grant execute on function public.splitwise_sync_apply(uuid, jsonb, jsonb, bigint
 -- Internal steps: only the functions above (running as their owner) call them.
 revoke execute on function public.splitwise_sync_write(uuid, jsonb, jsonb, bigint[], jsonb, timestamptz, boolean) from public, anon, authenticated, service_role;
 revoke execute on function public.splitwise_csv_match(uuid, text, date, text, numeric, text) from public, anon, authenticated, service_role;
--- Runs as the caller (row level security): dismiss_splitwise_review needs it with the user's JWT.
-revoke execute on function public.splitwise_release(uuid, bigint[]) from public, anon;
-grant execute on function public.splitwise_release(uuid, bigint[]) to authenticated, service_role;
+revoke execute on function public.splitwise_release(uuid, bigint[]) from public, anon, authenticated, service_role;
 
 revoke execute on function public.get_splitwise_connection() from public, anon;
 revoke execute on function public.link_splitwise_review(uuid, uuid, text) from public, anon;

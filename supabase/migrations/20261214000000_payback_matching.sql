@@ -64,6 +64,8 @@ create policy "Users manage own payer links" on public.payer_links
 
 revoke all on public.payer_links from anon;
 grant select, insert, update, delete on public.payer_links to authenticated;
+-- Supabase's default grants also give truncate (which ignores RLS), references and trigger.
+revoke truncate, references, trigger on public.payer_links from authenticated;
 grant select, insert, update, delete on public.payer_links to service_role;
 
 -- Plain income only: money already counted another way is never a payback. Not a transfer (yours,

@@ -61,3 +61,6 @@ verify_jwt = false
 # notify checks the project secret key (apikey header) itself, like sync-bank.
 [functions.notify]
 verify_jwt = false
+
+[functions.sync-splitwise]
+verify_jwt = false

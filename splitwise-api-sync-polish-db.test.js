@@ -241,6 +241,21 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     }
   });
 
+  await t.test('#18: release and undo leave a freed settle-up payment the same way (flow and its source cleared)', () => {
+    pay('p18-sync', 25, '2026-07-02');
+    pay('p18-csv', 25, '2026-07-02');
+    apply({ reviews: [review(1801, { kind: 'settle_out', booking_date: '2026-07-01', cost: '25', my_share: '25', my_paid: '25' })] });
+    link(1801, 'p18-sync');
+    assert.strictEqual(tx('p18-sync'), '-|transfer|user');
+    apply({ deleted: [1801] });
+    const B18 = '18181818-0000-0000-0000-000000000018';
+    owner(`select public.import_splitwise('${B18}', 'Undo18', '2026-07-01', '2026-07-01', '[]',
+      ${lit([{ account_uid: ACC, entry_reference: 'p18-csv', action: 'mark_transfer', personal_amount: null }])})`);
+    assert.strictEqual(tx('p18-csv'), '-|transfer|user');
+    owner(`select public.undo_splitwise_import('${B18}')`);
+    assert.deepStrictEqual([tx('p18-sync'), tx('p18-csv')], ['-|-|-', '-|-|-']);
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

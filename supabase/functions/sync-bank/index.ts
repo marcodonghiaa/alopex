@@ -53,7 +53,8 @@ Deno.serve(async (req) => {
   const cursorRead = await supabase
     .from("sync_cursors").select("last_synced").eq("account_uid", account.uid).maybeSingle();
   if (cursorRead.error) {
-    // Without the cursor the sync would re-read 90 days: spend no bank call on a guess.
+    // Without the cursor the sync would treat this as a first sync and re-read the longest
+    // history the bank keeps: spend no bank call on a guess.
     console.error(`Failed to read sync cursor: ${errorTag(cursorRead.error)}`);
     return fail(500, "cursor lookup failed");
   }

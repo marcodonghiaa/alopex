@@ -149,6 +149,8 @@ declare
 begin
   if uid is null then raise exception 'Not signed in'; end if;
   if p_account is null or p_ref is null then raise exception 'Payment not found'; end if;
+  -- '' means "not a payback"; a missing name is a client bug, never a silent dismissal.
+  if p_contact is null then raise exception 'Contact required'; end if;
   if char_length(v_contact) > 100 then raise exception 'Contact name too long'; end if;
 
   select * into v_credit from public.transactions

@@ -180,6 +180,7 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
   await t.test('bad input is refused', () => {
     assert.match(as(A, `select public.record_payback('${ACC_A}', 'pay-1', repeat('x', 101), true)`), /too long/);
     assert.match(as(A, `select public.record_payback(null, 'pay-1', 'Anna', true)`), /Payment not found/);
+    assert.match(as(A, `select public.record_payback('${ACC_A}', 'pay-1', null, true)`, { keep: false }), /Contact required/, 'null is not "not a payback"');
     assert.match(as(A, `select public.record_payback('${ACC_A}', 'bill-3', 'Anna', true)`), /Payment not found/, 'a charge is not a payment');
   });
 

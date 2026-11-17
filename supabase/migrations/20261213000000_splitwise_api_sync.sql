@@ -558,7 +558,16 @@ begin
   end if;
   get diagnostics n = row_count;
   if n = 0 then raise exception 'This bank transaction can no longer be linked. Reload and try again.'; end if;
-  if r.kind in ('paid_by_me', 'multi_payer') and r.my_share > 0 then
+  -- My share above what I paid (several payers): the payment counts in full and the rest of my
+  -- share is a share of its own, not linked (the review row keeps the link, for release).
+  if r.kind in ('paid_by_me', 'multi_payer') and r.my_share > r.my_paid then
+    insert into splitwise_expenses (user_id, group_name, fingerprint, booking_date, description, amount, currency,
+        batch_id, splitwise_id, source, splitwise_updated_at)
+      values (uid, r.group_name, 'sw:' || r.splitwise_id, r.booking_date, r.description, r.my_share - r.my_paid, r.currency,
+              v_batch, r.splitwise_id, 'api', r.splitwise_updated_at)
+    on conflict (user_id, splitwise_id) where splitwise_id is not null do update
+      set amount = excluded.amount, batch_id = excluded.batch_id, linked_account_uid = null, linked_entry_reference = null;
+  elsif r.kind in ('paid_by_me', 'multi_payer') and r.my_share > 0 then
     insert into splitwise_expenses (user_id, group_name, fingerprint, booking_date, description, amount, currency,
         batch_id, splitwise_id, source, splitwise_updated_at, linked_account_uid, linked_entry_reference)
       values (uid, r.group_name, 'sw:' || r.splitwise_id, r.booking_date, r.description, r.my_share, r.currency,

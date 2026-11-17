@@ -68,8 +68,8 @@ const tx = (ref) => sql(`select coalesce(personal_amount::text, '-') || '|' || c
   from public.transactions where entry_reference = '${ref}'`);
 // What the spending views count for one Splitwise expense: the bank payment's personal amount
 // (or all of it), plus its shares not linked to a bank payment (v_splitwise_eur).
-const counted = (sid, ref) => sql(`select coalesce((select coalesce(personal_amount, amount) from public.transactions where entry_reference = '${ref}'), 0)
-  + coalesce((select sum(amount) from public.v_splitwise_eur e join public.splitwise_expenses s using (id) where s.splitwise_id = ${sid}), 0)`);
+const counted = (sid, ref) => sql(`select round(coalesce((select coalesce(personal_amount, amount) from public.transactions where entry_reference = '${ref}'), 0)
+  + coalesce((select sum(e.amount) from public.v_splitwise_eur e join public.splitwise_expenses s using (id) where s.splitwise_id = ${sid}), 0), 2)`);
 
 test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t) => {
   psql(url, ['-c', `create database ${db} encoding 'UTF8' template template0`]);
@@ -109,5 +109,23 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(tx('p20-chg'), '-|-|-', 'amounts changed: freed, and asked again');
     link(2003, 'p20-chg');
     assert.strictEqual(tx('p20-chg'), '10.00|-|-', 'and it can be linked again');
+  });
+
+  await t.test('#1: several payers, I paid less than my share: my whole share counts, and undoes cleanly', () => {
+    // Dinner 100, I paid 30 of it, my share is 50.
+    pay('p1-30', 30);
+    apply({ reviews: [review(101, { kind: 'multi_payer', cost: '100', my_share: '50', my_paid: '30' })] });
+    link(101, 'p1-30');
+    assert.strictEqual(counted(101, 'p1-30'), '50.00', 'the payment in full plus the 20 I still owe');
+    assert.strictEqual(tx('p1-30'), '30|-|-', 'the payment counts in full');
+    assert.match(link(101, 'p1-30'), /already settled/);
+    apply({ deleted: [101] });
+    assert.strictEqual(tx('p1-30'), '-|-|-', 'deleted in Splitwise: payment freed');
+    assert.strictEqual(sql('select count(*) from public.splitwise_expenses where splitwise_id = 101'), '0');
+    // Paid exactly my share: the payment is all mine, no extra share.
+    pay('p1-50', 50);
+    apply({ reviews: [review(102, { kind: 'multi_payer', cost: '100', my_share: '50', my_paid: '50' })] });
+    link(102, 'p1-50');
+    assert.strictEqual(counted(102, 'p1-50'), '50.00');
   });
 });

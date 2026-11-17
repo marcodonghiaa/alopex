@@ -3,6 +3,7 @@
 drop function if exists public.undo_payback(uuid, text, boolean);
 drop function if exists public.record_payback(uuid, text, text, boolean);
 drop function if exists public.payback_candidates(integer);
+drop function if exists public.payback_eligible(public.transactions);
 drop table if exists public.payer_links;
 drop function if exists public.payer_name_of(text, text);
 drop function if exists public.payer_key(text);

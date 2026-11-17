@@ -60,8 +60,26 @@ revoke all on public.payer_links from anon;
 grant select, insert, update, delete on public.payer_links to authenticated;
 grant select, insert, update, delete on public.payer_links to service_role;
 
--- Incoming payments from the last p_days not checked yet: not between your own accounts, not a
--- paired transfer, not a refund. amount_eur at the booking day's rate (null without a rate).
+-- Plain income only: money already counted another way is never a payback. Not a transfer (yours,
+-- a paired one, or one you marked), not a Splitwise settle-up the import linked, not a split refund
+-- (it already lowers what someone owes), not a refund, not money between your own accounts.
+create or replace function public.payback_eligible(t public.transactions)
+returns boolean
+language sql
+stable
+set search_path to ''
+as $$
+  select t.credit_debit_indicator = 'CRDT'
+     and t.deleted_at is null
+     and t.amount > 0
+     and coalesce(t.flow_type, 'income') = 'income'
+     and t.import_batch_id is null
+     and t.personal_amount is null
+     and t.refund_of is null
+     and not coalesce(t.own_counterparty, false)
+$$;
+
+-- Incoming payments from the last p_days not checked yet (see payback_eligible). amount_eur at the booking day's rate (null without a rate).
 create or replace function public.payback_candidates(p_days integer default 60)
 returns table (
   account_uid uuid,
@@ -94,13 +112,8 @@ as $$
       on l.user_id = t.user_id
      and l.payer_key = public.payer_key(public.payer_name_of(t.debtor_name, t.creditor_name))
    where t.user_id = (select auth.uid())
-     and t.credit_debit_indicator = 'CRDT'
-     and t.deleted_at is null
+     and public.payback_eligible(t)
      and t.payback_contact is null
-     and t.refund_of is null
-     and coalesce(t.own_counterparty, false) = false
-     and coalesce(t.flow_source, '') not in ('own_account', 'pair')
-     and t.amount > 0
      and t.booking_date >= current_date - least(greatest(coalesce(p_days, 60), 1), 366)
    order by t.booking_date desc, t.entry_reference
    limit 200
@@ -143,6 +156,7 @@ begin
    for update;
   if not found then raise exception 'Payment not found'; end if;
   if v_credit.payback_contact is not null then raise exception 'Payment already checked'; end if;
+  if not public.payback_eligible(v_credit) then raise exception 'Payment not found'; end if;
 
   if v_contact = '' then
     update public.transactions set payback_contact = ''

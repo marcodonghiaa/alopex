@@ -84,6 +84,26 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     assert.strictEqual(as(A, 'select count(*) from public.payback_candidates(100000)'), '2', 'capped at a year');
   });
 
+  // polish-1 #2: money already counted elsewhere is never offered or accepted as a payback.
+  await t.test('only plain income is a candidate: no transfers, Splitwise settle-ups, split refunds, refunds or own money', () => {
+    admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, debtor_name, flow_type, import_batch_id, personal_amount, owed_by, refund_of, own_counterparty)
+      values ('x-transfer', '${ACC_A}', '${A}', 60, 'EUR', 'CRDT', '${today}', 'Anna Rossi', 'transfer', null, null, null, null, null),
+             ('x-splitwise', '${ACC_A}', '${A}', 60, 'EUR', 'CRDT', '${today}', 'Anna Rossi', null, gen_random_uuid(), null, null, null, null),
+             ('x-splitrefund', '${ACC_A}', '${A}', 60, 'EUR', 'CRDT', '${today}', 'Anna Rossi', null, null, 30, 'Anna', null, null),
+             ('x-refund', '${ACC_A}', '${A}', 60, 'EUR', 'CRDT', '${today}', 'Anna Rossi', 'refunded', null, null, null, 'bill-1', null),
+             ('x-own', '${ACC_A}', '${A}', 60, 'EUR', 'CRDT', '${today}', 'Anna Rossi', null, null, null, null, null, true)`);
+    try {
+      assert.strictEqual(as(A, "select count(*) from public.payback_candidates(60) where entry_reference like 'x-%'"), '0');
+      for (const ref of ['x-transfer', 'x-splitwise', 'x-splitrefund', 'x-refund', 'x-own'])
+        assert.match(as(A, `select public.record_payback('${ACC_A}', '${ref}', 'Anna', false)`, { keep: false }), /Payment not found/, ref);
+      // A plain income credit the user marked as income by hand is still fine.
+      admin("update public.transactions set flow_type = 'income' where entry_reference = 'x-transfer'");
+      assert.strictEqual(as(A, "select count(*) from public.payback_candidates(60) where entry_reference = 'x-transfer'"), '1');
+    } finally {
+      admin("delete from public.transactions where entry_reference like 'x-%'");
+    }
+  });
+
   await t.test('a payment covering the oldest bill exactly settles it with nothing left', () => {
     const out = as(A, `select public.record_payback('${ACC_A}', 'pay-1', 'Anna', true)`, { keep: false });
     // bill-1: Anna owes 60 → covered exactly.

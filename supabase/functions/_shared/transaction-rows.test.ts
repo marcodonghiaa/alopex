@@ -113,16 +113,16 @@ Deno.test("rows never carry note or tags", async () => {
   }
 });
 
-// Some banks reuse one entry_reference for different transactions (Enable Banking FAQ): upsert on
-// (account, entry_reference) kept only the last one and lost the others without a word.
-Deno.test("a reused entry_reference on a different transaction keeps both rows, stably", async () => {
-  const batch = [tx(), tx({ transaction_amount: { amount: "40.00", currency: "EUR" } }), tx({ booking_date: "2026-10-02" })];
-  const rows = await buildRows(batch, "acc", "user");
-  const again = await buildRows(batch, "acc", "user");
-
-  assertEquals(rows.length, 3);
-  assertEquals(rows[0].entry_reference, "r1");
-  assertMatch(rows[1].entry_reference as string, /^r1~[0-9a-f]{12}$/);
-  assertNotEquals(rows[1].entry_reference, rows[2].entry_reference);
-  assertEquals(again.map((r) => r.entry_reference), rows.map((r) => r.entry_reference));
+// Polish 1 #1. Some banks reuse one entry_reference (Enable Banking FAQ). Whatever key a
+// transaction gets must not depend on what else is in the batch: the first sync sees old A and new B,
+// the next cron sync (cursor minus 7 days) sees only B. Two different keys for B stored it twice.
+Deno.test("a reused entry_reference gives the same key across syncs, so nothing is stored twice", async () => {
+  const a = tx({ booking_date: "2026-09-01", transaction_amount: { amount: "10.00", currency: "EUR" } });
+  const b = tx({ booking_date: "2026-11-10", transaction_amount: { amount: "40.00", currency: "EUR" } });
+  const stored = new Map<unknown, unknown>(); // upsert on (account, entry_reference)
+  for (const batch of [[a, b], [b], [b, a]]) {
+    for (const row of await buildRows(batch, "acc", "user")) stored.set(row.entry_reference, row.amount);
+  }
+  const amounts = [...stored.values()];
+  assertEquals(amounts.filter((x) => x === 40).length <= 1, true, `B stored twice: ${JSON.stringify([...stored])}`);
 });

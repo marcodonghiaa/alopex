@@ -17,12 +17,8 @@ async function sha1Hex(text: string): Promise<string> {
 // A null key, or the same key twice in one upsert, makes Postgres reject the whole
 // batch. Derive a stable id for null refs; identical same-day twins get an occurrence
 // suffix. ponytail: suffix depends on fetch order, fine while banks return a stable order.
-async function entryReferenceFor(
-  tx: EbTransaction,
-  seen: Map<string, number>,
-  refs: Map<string, string>,
-): Promise<string> {
-  if (tx.entry_reference) return await reusedReference(tx, refs);
+async function entryReferenceFor(tx: EbTransaction, seen: Map<string, number>): Promise<string> {
+  if (tx.entry_reference) return tx.entry_reference;
   const key = [
     tx.booking_date, tx.value_date, tx.transaction_amount?.amount, tx.transaction_amount?.currency,
     tx.credit_debit_indicator, tx.creditor?.name, tx.debtor?.name, (tx.remittance_information || []).join(" "),
@@ -30,25 +26,6 @@ async function entryReferenceFor(
   const n = seen.get(key) || 0;
   seen.set(key, n + 1);
   return `h:${(await sha1Hex(`${key}|${n}`)).slice(0, 24)}`;
-}
-
-// Some banks reuse one entry_reference for different transactions (Enable Banking FAQ). The first
-// transaction seen keeps it; one with another amount or date gets a suffix from its own content,
-// so it is stored next to it instead of overwriting it. The same transaction sent twice (same
-// amount and date) still collapses to one row.
-async function reusedReference(tx: EbTransaction, refs: Map<string, string>): Promise<string> {
-  const ref = tx.entry_reference as string;
-  const content = [
-    tx.booking_date, tx.transaction_amount?.amount, tx.transaction_amount?.currency, tx.credit_debit_indicator,
-  ].join("|");
-  const first = refs.get(ref);
-  if (first === undefined) {
-    refs.set(ref, content);
-    return ref;
-  }
-  if (first === content) return ref;
-  console.log("entry_reference reused by the bank for a different transaction");
-  return `${ref}~${(await sha1Hex(`${ref}|${content}`)).slice(0, 12)}`;
 }
 
 // The bank payload is kept for support and export, minus the counterparty's account number
@@ -101,12 +78,11 @@ export async function buildRows(
   ownIbans?: Set<string>,
 ): Promise<Json[]> {
   const seen = new Map<string, number>();
-  const refs = new Map<string, string>(); // entry_reference -> content of the first transaction using it
   const byRef = new Map<string, Json>(); // one row per key, last wins
   for (const tx of transactions) {
     // Pending rows wait until booked: their id changes when booked, so they would count twice.
     if (tx.status === "PDNG") continue;
-    const ref = await entryReferenceFor(tx, seen, refs);
+    const ref = await entryReferenceFor(tx, seen);
     byRef.set(ref, mapToRow(tx, accountUid, userId, ref, ownIbans));
   }
   return [...byRef.values()];

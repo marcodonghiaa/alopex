@@ -153,3 +153,15 @@ Deno.test("a network failure is passed on as it is", async () => {
   const f = fakeFetch([new TypeError("network down")]);
   await assertRejects(() => splitwiseClient("k", f.fn).groups(), TypeError);
 });
+
+// polish-1 #6: one hanging request must not hold the cron run until the platform kills it.
+Deno.test("a call Splitwise doesn't answer in time is an API error with a safe message", async () => {
+  let signal: AbortSignal | undefined;
+  const hang = ((_input: string | URL | Request, init?: RequestInit) => {
+    signal = init?.signal ?? undefined;
+    return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+  }) as typeof fetch;
+  const err = await assertRejects(() => splitwiseClient("k", hang, { timeoutMs: 20 }).expenses(), SplitwiseApiError);
+  assertEquals([err.message, err.status], ["Splitwise did not answer in time", null]);
+  assertEquals(signal?.aborted, true);
+});

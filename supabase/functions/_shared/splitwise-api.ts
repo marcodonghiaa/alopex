@@ -71,12 +71,19 @@ const UNREADABLE = "Splitwise sent an unreadable answer";
 export function splitwiseClient(
   apiKey: string,
   fetchFn: typeof fetch = fetch,
-  { pageSize = 200, maxPages = 500 }: { pageSize?: number; maxPages?: number } = {},
+  { pageSize = 200, maxPages = 500, timeoutMs = 20_000 }: { pageSize?: number; maxPages?: number; timeoutMs?: number } = {},
 ) {
   async function get(path: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
     const url = new URL(`${SPLITWISE_API}/${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-    const res = await fetchFn(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
+    // A hanging call would hold the whole cron run until the platform kills it.
+    const signal = AbortSignal.timeout(timeoutMs);
+    const timedOut = (err: unknown) => {
+      if (signal.aborted) throw new SplitwiseApiError("Splitwise did not answer in time");
+      throw err;
+    };
+    const res = await fetchFn(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" }, signal })
+      .catch(timedOut);
     if (res.status === 401) {
       await res.body?.cancel();
       throw new SplitwiseAuthError("Splitwise refused the API key", 401);
@@ -90,7 +97,7 @@ export function splitwiseClient(
       await res.body?.cancel();
       throw new SplitwiseApiError(`Splitwise answered HTTP ${res.status}`, res.status);
     }
-    const body = await res.json().catch(() => null);
+    const body = await res.json().catch((err) => (signal.aborted ? timedOut(err) : null));
     if (typeof body !== "object" || body === null || Array.isArray(body)) throw new SplitwiseApiError(UNREADABLE, res.status);
     const errors = (body as { errors?: unknown }).errors;
     const hasErrors = Array.isArray(errors) ? errors.length > 0 : typeof errors === "object" && errors !== null && Object.keys(errors).length > 0;

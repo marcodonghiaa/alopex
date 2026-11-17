@@ -214,3 +214,21 @@ Deno.test("Splitwise's category maps like the CSV import's; unknown, general or 
   assertEquals(cat("Taxes"), null, "a share is never a tax, income or transfer");
   assertEquals(cat(undefined), null);
 });
+
+// polish-1 #17: the cuts count characters, not UTF-16 units: an emoji (two units) on the boundary
+// stays whole, and the cut text is what the database's char_length check counts.
+Deno.test("description, group and person names are cut by characters, emoji on the boundary kept whole", () => {
+  const desc = classify(expense({ description: `${"a".repeat(299)}😀tail` }), ME, labels);
+  assertEquals(desc.type === "share" && desc.row.description, `${"a".repeat(299)}😀`);
+  const accented = classify(expense({ description: "é".repeat(301) }), ME, labels);
+  assertEquals(accented.type === "share" && accented.row.description, "é".repeat(300));
+  const group = groupLabels([{ id: 9, name: `${"g".repeat(99)}😀more` }]).get(9)!;
+  assertEquals([group, [...group].length], [`${"g".repeat(99)}😀`, 100]);
+  const rows = balancesFrom([{
+    id: 5,
+    name: "Flat",
+    members: [{ id: 1, first_name: "Ann", balance: [{ currency_code: "EUR", amount: "1.00" }] }, { id: 2, first_name: `${"p".repeat(99)}😀x` }],
+    original_debts: [{ from: 2, to: 1, amount: "1.00", currency_code: "EUR" }],
+  }], ME, labels);
+  assertEquals(rows.find((r) => !r.is_me)?.person, `${"p".repeat(99)}😀`);
+});

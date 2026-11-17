@@ -14,12 +14,9 @@ export class SplitwiseApiError extends Error {
 export class SplitwiseAuthError extends SplitwiseApiError {
   override name = "SplitwiseAuthError";
 }
-/** 429: slow down. Splitwise publishes no limits; Retry-After is used when it is sent. */
+/** 429: slow down. Splitwise publishes no limits; the run stops and the next one tries again. */
 export class SplitwiseRateLimitError extends SplitwiseApiError {
   override name = "SplitwiseRateLimitError";
-  constructor(message: string, status: number, readonly retryAfterSeconds: number | null) {
-    super(message, status);
-  }
 }
 
 const AMOUNT = /^(-)?(\d+)(?:\.(\d+))?$/;
@@ -64,7 +61,6 @@ export type SwGroup = {
   members?: Array<SwUser & { balance?: SwBalance[] }>;
   original_debts?: SwDebt[];
 };
-export type SwFriend = SwUser & { balance?: SwBalance[] };
 
 export type SplitwiseClient = ReturnType<typeof splitwiseClient>;
 
@@ -92,8 +88,7 @@ export function splitwiseClient(
     }
     if (res.status === 429) {
       await res.body?.cancel();
-      const after = Number(res.headers.get("Retry-After"));
-      throw new SplitwiseRateLimitError("Splitwise asked to slow down", 429, Number.isFinite(after) && after > 0 ? after : null);
+      throw new SplitwiseRateLimitError("Splitwise asked to slow down", 429);
     }
     if (!res.ok) {
       await res.body?.cancel();
@@ -136,9 +131,6 @@ export function splitwiseClient(
     },
     async groups(): Promise<SwGroup[]> {
       return list<SwGroup>(await get("get_groups"), "groups");
-    },
-    async friends(): Promise<SwFriend[]> {
-      return list<SwFriend>(await get("get_friends"), "friends");
     },
   };
 }

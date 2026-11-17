@@ -22,14 +22,13 @@ const CHUNK = 5000; // splitwise_sync_apply's limit per array
 const PAGE = 1000; // PostgREST caps a response at 1000 rows
 const SYNC_NOW_GAP_MS = 60_000;
 const MAX_SURE_GONE = 10; // a full check may always remove this many
-const CONNECTION_COLS = "user_id, splitwise_user_id, status, cursor_updated_at, last_full_check_at, last_synced_at";
+const CONNECTION_COLS = "user_id, splitwise_user_id, cursor_updated_at, last_full_check_at, last_synced_at";
 const RECONNECT = "Splitwise refused the API key. Connect again with a new key.";
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 export type Connection = {
   user_id: string;
   splitwise_user_id: number;
-  status: string;
   cursor_updated_at: string | null;
   last_full_check_at: string | null;
   last_synced_at: string | null;

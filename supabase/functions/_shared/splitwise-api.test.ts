@@ -106,12 +106,11 @@ Deno.test("expenses stops at the page cap instead of looping forever", async () 
   assertEquals(f.calls.length, 2);
 });
 
-Deno.test("groups and friends", async () => {
-  const f = fakeFetch([{ body: { groups: [{ id: 0, name: "Non-group expenses", members: [] }] } }, { body: { friends: [{ id: 9 }] } }]);
+Deno.test("groups", async () => {
+  const f = fakeFetch([{ body: { groups: [{ id: 0, name: "Non-group expenses", members: [] }] } }]);
   const api = splitwiseClient("k", f.fn);
   assertEquals((await api.groups())[0].id, 0);
-  assertEquals((await api.friends())[0].id, 9);
-  assertEquals(f.calls.map((c) => c.url.pathname), ["/api/v3.0/get_groups", "/api/v3.0/get_friends"]);
+  assertEquals(f.calls.map((c) => c.url.pathname), ["/api/v3.0/get_groups"]);
 });
 
 Deno.test("401 is an auth error, without the key in the message", async () => {
@@ -121,11 +120,10 @@ Deno.test("401 is an auth error, without the key in the message", async () => {
   assertEquals(err.status, 401);
 });
 
-Deno.test("429 is a rate-limit error, with Retry-After when sent", async () => {
-  const f = fakeFetch([{ status: 429, headers: { "Retry-After": "30" } }, { status: 429 }]);
+Deno.test("429 is a rate-limit error", async () => {
+  const f = fakeFetch([{ status: 429, headers: { "Retry-After": "30" } }]);
   const api = splitwiseClient("k", f.fn);
-  assertEquals((await assertRejects(() => api.groups(), SplitwiseRateLimitError)).retryAfterSeconds, 30);
-  assertEquals((await assertRejects(() => api.groups(), SplitwiseRateLimitError)).retryAfterSeconds, null);
+  assertEquals((await assertRejects(() => api.groups(), SplitwiseRateLimitError)).status, 429);
 });
 
 Deno.test("other HTTP errors, success:false, errors and junk bodies are API errors with a safe message", async () => {

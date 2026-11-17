@@ -77,7 +77,7 @@ Deno.test("connect: what Splitwise answers decides the reply; nothing is stored 
   const bad = setup({ me: new SplitwiseAuthError("x", 401) });
   assertEquals((await bad.call({ apiKey: KEY, consent: true })), { status: 400, body: { error: "Splitwise did not accept this API key." } });
   assertEquals(bad.calls, []);
-  assertEquals((await setup({ me: new SplitwiseRateLimitError("x", 429, null) }).call({ apiKey: KEY, consent: true })).status, 429);
+  assertEquals((await setup({ me: new SplitwiseRateLimitError("x", 429) }).call({ apiKey: KEY, consent: true })).status, 429);
   assertEquals((await setup({ me: new SplitwiseApiError("x", 500) }).call({ apiKey: KEY, consent: true })).status, 502);
   assertEquals((await setup({ me: new TypeError("net") }).call({ apiKey: KEY, consent: true })).status, 502);
 });

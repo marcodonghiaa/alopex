@@ -5,7 +5,9 @@ import { type Connection, type JobDeps, needsFullCheck, runAllUsers, syncNowHand
 
 const NOW = Date.parse("2026-11-17T12:00:00Z");
 const DAY = 86_400_000;
-const conn = (over: Partial<Connection> = {}): Connection => ({
+// A stored connection row: status is the table's (the cron filters on it), not read by the job.
+type Row = Connection & { status: string };
+const conn = (over: Partial<Row> = {}): Row => ({
   user_id: "u1",
   splitwise_user_id: 1,
   status: "ok",
@@ -168,7 +170,7 @@ Deno.test("cron: a refused key asks to reconnect; a rate limit stops the run and
 
   const r = setup({
     connections: [conn({ user_id: "u1" }), conn({ user_id: "u2" })],
-    expenses: new SplitwiseRateLimitError("slow", 429, null),
+    expenses: new SplitwiseRateLimitError("slow", 429),
   });
   const result = await runAllUsers(r.deps, () => true);
   assertEquals([result.rateLimited, result.skipped, result.failed], [true, 1, 0]);
@@ -253,7 +255,7 @@ Deno.test("handler: a refused key, a rate limit and other failures each say what
   const a = await call(handler(auth), user({}));
   assertEquals([a.status, a.body.code], [409, "needs_reconnect"]);
   assertEquals(auth.db.tables.splitwise_connections[0].status, "needs_reconnect");
-  const rate = setup({ connections: [conn({ last_synced_at: null })], expenses: new SplitwiseRateLimitError("x", 429, 5) });
+  const rate = setup({ connections: [conn({ last_synced_at: null })], expenses: new SplitwiseRateLimitError("x", 429) });
   assertEquals((await call(handler(rate), user({}))).status, 429);
   assertEquals(rate.db.tables.splitwise_connections[0].status, "ok");
   const other = setup({ connections: [conn({ last_synced_at: null })], expenses: new TypeError("network") });

@@ -247,7 +247,8 @@ end;
 $function$;
 
 -- Same as 20261116000000, except that Undo leaves what the sync adopted (splitwise_id set): those
--- rows are the sync's now, and an incremental sync would not bring them back. Their bank links stay.
+-- rows are the sync's now, and an incremental sync would not bring them back. Their bank links stay,
+-- and so does a payment a linked review row points at (a settle-up adopted as linked has no share).
 create or replace function public.undo_splitwise_import(p_batch uuid) returns jsonb
 language plpgsql
 set search_path = public
@@ -265,7 +266,10 @@ begin
    where t.user_id = uid and t.import_batch_id = p_batch
      and not exists (select 1 from splitwise_expenses s
                       where s.user_id = uid and s.splitwise_id is not null
-                        and s.linked_account_uid = t.account_uid and s.linked_entry_reference = t.entry_reference);
+                        and s.linked_account_uid = t.account_uid and s.linked_entry_reference = t.entry_reference)
+     and not exists (select 1 from splitwise_review r
+                      where r.user_id = uid and r.status = 'linked'
+                        and r.linked_account_uid = t.account_uid and r.linked_entry_reference = t.entry_reference);
   get diagnostics n_links = row_count;
   delete from splitwise_expenses where user_id = uid and batch_id = p_batch and splitwise_id is null;
   get diagnostics n_shares = row_count;

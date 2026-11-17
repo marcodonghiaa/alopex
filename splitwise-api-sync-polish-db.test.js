@@ -256,6 +256,20 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.deepStrictEqual([tx('p18-sync'), tx('p18-csv')], ['-|-|-', '-|-|-']);
   });
 
+  await t.test('round 2 N2: undoing a CSV import keeps a settle-up transfer the sync adopted', () => {
+    pay('pN2', 40, '2026-05-06');
+    const BN2 = '22222222-0000-0000-0000-0000000000a2';
+    owner(`select public.import_splitwise('${BN2}', 'N2', '2026-05-05', '2026-05-05', '[]',
+      ${lit([{ account_uid: ACC, entry_reference: 'pN2', action: 'mark_transfer', personal_amount: null }])})`);
+    assert.deepStrictEqual(apply({ reviews: [review(2901, { kind: 'settle_out', group_name: 'N2', booking_date: '2026-05-05', cost: '40', my_share: '40', my_paid: '40' })] }),
+      { new: 0, adopted: 1, review: 0, deleted: 0 });
+    owner(`select public.undo_splitwise_import('${BN2}')`);
+    assert.strictEqual(tx('pN2'), '-|transfer|user', 'still the settle-up the review row says');
+    assert.strictEqual(sql('select status || linked_entry_reference from public.splitwise_review where splitwise_id = 2901'), 'linkedpN2');
+    apply({ deleted: [2901] });
+    assert.strictEqual(tx('pN2'), '-|-|-', 'and release can still free it');
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

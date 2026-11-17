@@ -88,12 +88,13 @@ begin
   if v_uid is null then
     raise exception 'not signed in';
   end if;
-  -- Same limits as the key and source columns.
-  if coalesce(char_length(p_key), 0) not between 1 and 100 then
-    raise exception 'key must be 1 to 100 characters' using errcode = 'invalid_parameter_value';
+  -- Bounded, but looser than the trade and event columns: portfolio_holdings.isin and
+  -- crypto_holdings.asset_symbol/source have no length limit, so an older long key must still delete.
+  if coalesce(char_length(p_key), 0) not between 1 and 1000 then
+    raise exception 'key must be 1 to 1000 characters' using errcode = 'invalid_parameter_value';
   end if;
-  if char_length(p_source) > 40 then
-    raise exception 'source must be at most 40 characters' using errcode = 'invalid_parameter_value';
+  if char_length(p_source) > 1000 then
+    raise exception 'source must be at most 1000 characters' using errcode = 'invalid_parameter_value';
   end if;
 
   if p_kind = 'stock' then

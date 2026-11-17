@@ -71,12 +71,13 @@ begin
   end if;
 end $$;
 
--- delete_holding runs as security definer: it refuses a key or source longer than the columns allow
+-- delete_holding runs as security definer: it refuses an absurdly long key or source, but still deletes a
+-- 101-character key (holdings tables have no length limit, so such a key can exist)
 do $$
 begin
   begin
-    perform public.delete_holding('stock', repeat('x', 101));
-    raise exception 'a key over 100 characters must be refused';
+    perform public.delete_holding('stock', repeat('x', 1001));
+    raise exception 'a key over 1000 characters must be refused';
   exception when invalid_parameter_value then null;
   end;
   begin
@@ -85,10 +86,13 @@ begin
   exception when invalid_parameter_value then null;
   end;
   begin
-    perform public.delete_holding('crypto', 'BTC', repeat('s', 41));
-    raise exception 'a source over 40 characters must be refused';
+    perform public.delete_holding('crypto', 'BTC', repeat('s', 1001));
+    raise exception 'a source over 1000 characters must be refused';
   exception when invalid_parameter_value then null;
   end;
+  -- a long but real key is not refused (0 rows deleted is fine)
+  perform public.delete_holding('stock', repeat('x', 101));
+  perform public.delete_holding('crypto', 'BTC', repeat('s', 41));
 end $$;
 
 -- a temp table can't stand in for a real one inside delete_holding (pg_temp is searched last)

@@ -237,6 +237,31 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     }
   });
 
+  await t.test('refund credit is never half used: bills settle only when they use it all', () => {
+    // Fede: refund -50 (and an older one already settled), bills 10 then 100. The page says 60.
+    admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, creditor_name, debtor_name, personal_amount, owed_by, owed_settled)
+      values ('pr-old', '${ACC_A}', '${A}', 80, 'EUR', 'CRDT', '${daysAgo(12)}', null, 'Shop', 0, 'Fede', true),
+             ('pr-ref', '${ACC_A}', '${A}', 60, 'EUR', 'CRDT', '${daysAgo(11)}', null, 'Shop', 10, 'Fede', false),
+             ('pr-b1', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(10)}', 'Bar', null, 10, 'Fede', false),
+             ('pr-b2', '${ACC_A}', '${A}', 200, 'EUR', 'DBIT', '${daysAgo(9)}', 'Hotel', null, 100, 'Fede', false),
+             ('pr-pay', '${ACC_A}', '${A}', 5, 'EUR', 'CRDT', '${today}', null, 'Fede Rosa', null, null, false)`);
+    try {
+      // 5 + 50 would cover the 10 bill, but only by using 10 of the 50: nothing settles, 5 left.
+      const out = as(A, `select public.record_payback('${ACC_A}', 'pr-pay', 'Fede', false)`, { keep: false });
+      assert.match(out, /"settled": \[\]/);
+      assert.match(out, /"left_eur": 5/);
+      // 70 + 50 covers both bills (110) and uses the credit fully: 10 left, refund closed.
+      admin("update public.transactions set amount = 70 where entry_reference = 'pr-pay'");
+      const full = as(A, `select public.record_payback('${ACC_A}', 'pr-pay', 'Fede', false)`);
+      assert.match(full, /"settled": \["pr-b1", "pr-b2"\]/);
+      assert.match(full, /"settled_eur": 60/);
+      assert.match(full, /"left_eur": 10/);
+      assert.strictEqual(admin("select owed_settled from public.transactions where entry_reference = 'pr-ref'"), 't');
+    } finally {
+      admin("delete from public.transactions where entry_reference like 'pr-%'");
+    }
+  });
+
   await t.test('a bill with no euro rate is skipped, not a wall: later bills still settle', () => {
     admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, creditor_name, debtor_name, personal_amount, owed_by)
       values ('nr-xyz', '${ACC_A}', '${A}', 100, 'XYZ', 'DBIT', '${daysAgo(9)}', 'Abroad', null, 40, 'Ugo'),

@@ -151,13 +151,13 @@ declare
   v_settled text[] := '{}';
   v_bill record;
   v_credits numeric := 0;
+  v_rows jsonb;
 begin
   if uid is null then raise exception 'Not signed in'; end if;
   if p_account is null or p_ref is null then raise exception 'Payment not found'; end if;
   -- '' means "not a payback"; a missing name is a client bug, never a silent dismissal.
   if p_contact is null then raise exception 'Contact required'; end if;
   if char_length(v_contact) > 100 then raise exception 'Contact name too long'; end if;
-
   select * into v_credit from public.transactions
    where user_id = uid and account_uid = p_account and entry_reference = p_ref
      and credit_debit_indicator = 'CRDT' and deleted_at is null
@@ -190,29 +190,35 @@ begin
 
   -- That person's own open split rows (a bill shared with others has one settled flag for everyone,
   -- so it is left to settle by hand). Same rows as the Who owes you page: bills they owe on, and
-  -- split refunds that count against them. The refunds add to the money; bills settle oldest first.
-  create temp table if not exists payback_rows (account_uid uuid, entry_reference text, booking_date date, owed_eur numeric) on commit drop;
-  truncate payback_rows;
-  insert into payback_rows
-  select t.account_uid, t.entry_reference, t.booking_date,
-         round(v.personal_signed_amount_eur - v.signed_amount_eur, 2)
-    from public.transactions t
-    join public.v_transactions_eur v
-      on v.account_uid = t.account_uid and v.entry_reference = t.entry_reference
-   where t.user_id = uid and t.deleted_at is null
-     and not t.owed_settled
-     and t.personal_amount is not null and t.personal_amount >= 0
-     and t.import_batch_id is null
-     and coalesce(t.flow_type, '') not in ('refunded', 'transfer')
-     -- Names as the page reads them: comma-separated, blanks dropped ("Carla," is Carla alone).
-     and array(select lower(trim(n)) from unnest(string_to_array(t.owed_by, ',')) n where trim(n) <> '')
-         = array[lower(v_contact)]
-     and v.personal_signed_amount_eur - v.signed_amount_eur <> 0;
-  select coalesce(sum(owed_eur), 0) into v_credits from payback_rows where owed_eur < 0;
+  -- split refunds that count against them, oldest first.
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'account_uid', r.account_uid, 'entry_reference', r.entry_reference, 'owed_eur', r.owed_eur)
+           order by r.booking_date, r.entry_reference), '[]'::jsonb)
+    into v_rows
+    from (
+      select t.account_uid, t.entry_reference, t.booking_date,
+             round(v.personal_signed_amount_eur - v.signed_amount_eur, 2) as owed_eur
+        from public.transactions t
+        join public.v_transactions_eur v
+          on v.account_uid = t.account_uid and v.entry_reference = t.entry_reference
+       where t.user_id = uid and t.deleted_at is null
+         and not t.owed_settled
+         and t.personal_amount is not null and t.personal_amount >= 0
+         and t.import_batch_id is null
+         and coalesce(t.flow_type, '') not in ('refunded', 'transfer')
+         -- Names as the page reads them: comma-separated, blanks dropped ("Carla," is Carla alone).
+         and array(select lower(trim(n)) from unnest(string_to_array(t.owed_by, ',')) n where trim(n) <> '')
+             = array[lower(v_contact)]
+         and v.personal_signed_amount_eur - v.signed_amount_eur <> 0
+    ) r;
+  -- Refunds owed to them add to the money; bills settle oldest first, whole.
+  select coalesce(sum(x.owed_eur), 0) into v_credits
+    from jsonb_to_recordset(v_rows) as x(owed_eur numeric) where x.owed_eur < 0;
   v_left := v_left - v_credits;
 
   for v_bill in
-    select * from payback_rows where owed_eur > 0 order by booking_date, entry_reference
+    select * from jsonb_to_recordset(v_rows) as x(account_uid uuid, entry_reference text, owed_eur numeric)
+     where x.owed_eur > 0
   loop
     exit when v_left is null or v_bill.owed_eur > v_left + 0.005;
     update public.transactions
@@ -228,17 +234,23 @@ begin
   end loop;
 
   if v_credits < 0 then
-    if cardinality(v_settled) > 0 then
-      -- The refunds went into what was settled: close them with it (undo reopens them too).
+    if v_settled_eur + v_credits >= -0.005 then
+      -- The settled bills use the refunds in full: close them too (undo reopens them with the bills).
       update public.transactions t
          set owed_settled = true, settled_at = now(),
              settled_by_account = p_account, settled_by_ref = p_ref
-        from payback_rows r
-       where r.owed_eur < 0 and t.account_uid = r.account_uid
-         and t.entry_reference = r.entry_reference and not t.owed_settled;
+        from jsonb_to_recordset(v_rows) as x(account_uid uuid, entry_reference text, owed_eur numeric)
+       where x.owed_eur < 0 and t.account_uid = x.account_uid
+         and t.entry_reference = x.entry_reference and not t.owed_settled;
       v_settled_eur := v_settled_eur + v_credits;
     else
-      v_left := v_left + v_credits;
+      -- They would use only part of a refund, which can't be settled in part: settle nothing.
+      update public.transactions
+         set owed_settled = false, settled_at = null, settled_by_account = null, settled_by_ref = null
+       where user_id = uid and settled_by_account = p_account and settled_by_ref = p_ref;
+      v_left := v_left + v_credits + v_settled_eur;
+      v_settled_eur := 0;
+      v_settled := '{}';
     end if;
   end if;
 

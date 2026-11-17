@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { bankLogo, consentValidUntil } from "./bank-info.ts";
+import { bankLogo, consentValidUntil, fetchAspsps } from "./bank-info.ts";
 
 const aspsps = [
   { name: "Fineco", logo: "https://enablebanking.com/brands/IT/Fineco/" },
@@ -37,4 +37,23 @@ Deno.test("consentValidUntil: a nonsense maximum falls back to 180 days", () => 
   for (const max of [0, -5, "90", 30]) {
     assertEquals(consentValidUntil([{ name: "B", maximum_consent_validity: max }], "B", NOW), new Date(NOW + 180 * DAY).toISOString());
   }
+});
+
+const respond = (status: number, body: unknown, seen: Array<[string, RequestInit | undefined]> = []) =>
+  ((url: string, init?: RequestInit) => {
+    seen.push([url, init]);
+    return Promise.resolve(new Response(JSON.stringify(body), { status }));
+  }) as unknown as typeof fetch;
+
+Deno.test("fetchAspsps lists a country's banks with the app token", async () => {
+  const seen: Array<[string, RequestInit | undefined]> = [];
+  assertEquals(await fetchAspsps("tok", "IT", respond(200, { aspsps }, seen)), aspsps);
+  assertEquals(seen[0][0], "https://api.enablebanking.com/aspsps?country=IT");
+  assertEquals((seen[0][1]?.headers as Record<string, string>).Authorization, "Bearer tok");
+});
+Deno.test("fetchAspsps gives null on a refused call, a bad body or a network error", async () => {
+  assertEquals(await fetchAspsps("tok", "IT", respond(500, {})), null);
+  assertEquals(await fetchAspsps("tok", "IT", respond(200, {})), null);
+  const down = (() => Promise.reject(new TypeError("down"))) as unknown as typeof fetch;
+  assertEquals(await fetchAspsps("tok", "IT", down), null);
 });

@@ -5,7 +5,7 @@
 import { EB_NO_ACCOUNTS, signEnableBankingJwt } from "./enable-banking.ts";
 import { errorTag } from "./log-safe.ts";
 import { accountType, matchAccount, matchPatch, type StoredAccount } from "./account-match.ts";
-import { bankLogo, type BankInfo } from "./bank-info.ts";
+import { bankLogo, type BankInfo, fetchAspsps } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
 import { closeReplaced, relinkPatch } from "./eb-sessions.ts";
@@ -54,15 +54,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     const bankCountry = aspsp?.country ?? null;
     let logo: string | null = null;
     if (bankName && bankCountry) {
-      try {
-        const aspspRes = await fetch(
-          `https://api.enablebanking.com/aspsps?country=${encodeURIComponent(bankCountry)}`,
-          { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) },
-        );
-        if (aspspRes.ok) logo = bankLogo((await aspspRes.json()).aspsps ?? null, bankName);
-      } catch {
-        // best-effort, logo stays null
-      }
+      logo = bankLogo(await fetchAspsps(token, bankCountry), bankName);
     }
     const bank: BankInfo = { bank_name: bankName, bank_country: bankCountry, bank_logo: logo };
 

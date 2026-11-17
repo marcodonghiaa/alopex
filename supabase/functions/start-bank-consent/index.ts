@@ -16,7 +16,7 @@ import { serveWithCors } from "../_shared/origins.ts";
 import { isBankName, isCountryCode, MAX_OPEN_CONSENTS } from "../_shared/validate.ts";
 import { CONSENT_WINDOW_MS } from "../_shared/consent-claim.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
-import { consentValidUntil } from "../_shared/bank-info.ts";
+import { consentValidUntil, fetchAspsps } from "../_shared/bank-info.ts";
 
 Deno.serve(serveWithCors(async (req, json, origin) => {
   if (req.method !== "POST") {
@@ -81,16 +81,7 @@ Deno.serve(serveWithCors(async (req, json, origin) => {
 
   // Banks cap the consent (maximum_consent_validity); asking past it can fail the link.
   // Best effort: a failed lookup asks for the usual 180 days.
-  let aspsps = null;
-  try {
-    const aspspRes = await fetch(
-      `https://api.enablebanking.com/aspsps?country=${encodeURIComponent(body.country)}`,
-      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) },
-    );
-    if (aspspRes.ok) aspsps = (await aspspRes.json()).aspsps ?? null;
-  } catch {
-    // keeps 180 days
-  }
+  const aspsps = await fetchAspsps(token, body.country);
 
   try {
     const res = await fetch("https://api.enablebanking.com/auth", {

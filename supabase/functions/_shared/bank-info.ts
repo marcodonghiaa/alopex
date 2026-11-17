@@ -19,3 +19,21 @@ export function consentValidUntil(aspsps: Array<{ name: string; maximum_consent_
   if (typeof max !== "number" || !Number.isFinite(max) || max < 3600) return new Date(fallback).toISOString();
   return new Date(Math.min(fallback, now + max * 1000 - 60_000)).toISOString();
 }
+
+export type Aspsp = { name: string; logo?: string | null; maximum_consent_validity?: unknown };
+
+// Enable Banking's bank list for one country (logo, maximum consent length). Best effort with a
+// short timeout: null when the call fails, so callers fall back to defaults.
+export async function fetchAspsps(token: string, country: string, fetchFn: typeof fetch = fetch): Promise<Aspsp[] | null> {
+  try {
+    const res = await fetchFn(`https://api.enablebanking.com/aspsps?country=${encodeURIComponent(country)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const list = (await res.json()).aspsps;
+    return Array.isArray(list) ? list : null;
+  } catch {
+    return null;
+  }
+}

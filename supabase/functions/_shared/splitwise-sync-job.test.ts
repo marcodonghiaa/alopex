@@ -111,18 +111,29 @@ Deno.test("a full check reads everything and removes what Splitwise no longer ha
 });
 
 // polish-1 #5: a full read that comes back far shorter than what is stored removes nothing.
-Deno.test("a full check that would remove most of what is stored writes nothing and says so", async () => {
+// Round 2 (N1): it must not stop the sync either: the rest is written, the full check counts as
+// done, and the connection says why nothing was removed.
+Deno.test("a full check that would remove most of what is stored holds the removals, syncs the rest, and says so", async () => {
   const stored = Array.from({ length: 30 }, (_, i) => ({ user_id: "u1", splitwise_id: i + 1 }));
-  const s = setup({ expenses: [expense(1), expense(2)], tables: { splitwise_expenses: stored, splitwise_review: [] } });
-  let err: unknown = null;
-  await syncUser(s.deps, conn({ last_full_check_at: null }), { preview: false }).catch((e) => (err = e));
-  assertEquals(err instanceof SplitwiseApiError, true);
-  assertEquals((err as Error).message, "Splitwise sent far fewer expenses than Alopex has, so nothing was removed");
-  assertEquals(s.applies(), []);
+  const s = setup({
+    connections: [conn({ last_full_check_at: null })],
+    expenses: [expense(1), expense(2), expense(40, { deleted_at: "2026-11-16T00:00:00Z" })],
+    tables: { splitwise_expenses: stored, splitwise_review: [] },
+  });
+  const counts = await syncUser(s.deps, conn({ last_full_check_at: null }), { preview: false });
+  const [args] = s.applies();
+  assertEquals([(args.p_shares as unknown[]).length, args.p_deleted, args.p_full], [2, [40], true]);
+  assertEquals(counts.held, 28);
+  const row = s.db.tables.splitwise_connections[0];
+  assertEquals([row.status, row.last_error], ["error", "Splitwise sent far fewer expenses than Alopex has, so 28 were not removed"]);
+  // A dry run says the same in its counts and writes nothing.
+  const p = setup({ tables: { splitwise_expenses: stored, splitwise_review: [] }, expenses: [expense(1)] });
+  assertEquals((await syncUser(p.deps, conn({ last_full_check_at: null }), { preview: true })).held, 29);
+  assertEquals(p.db.tables.splitwise_connections[0].status, "ok");
   // Up to 10, or up to half, still go.
   const few = setup({ expenses: Array.from({ length: 15 }, (_, i) => expense(i + 1)), tables: { splitwise_expenses: stored, splitwise_review: [] } });
-  const [args] = await syncUser(few.deps, conn({ last_full_check_at: null }), { preview: false }).then(() => few.applies());
-  assertEquals((args.p_deleted as number[]).length, 15);
+  const [fewArgs] = await syncUser(few.deps, conn({ last_full_check_at: null }), { preview: false }).then(() => few.applies());
+  assertEquals((fewArgs.p_deleted as number[]).length, 15);
 });
 
 Deno.test("big runs are written in chunks; balances, cursor and full only with the last", async () => {

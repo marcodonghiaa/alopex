@@ -73,6 +73,7 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
   const me = Number(c.splitwise_user_id);
   const plan = planSync(expenses, me, labels);
   const deleted = [...plan.gone];
+  let held = 0;
   if (full) {
     const seen = new Set(plan.seen);
     const local = [
@@ -81,11 +82,11 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
     ];
     const missing = [...new Set(local)].filter((id) => !seen.has(id));
     // A read cut short must not wipe what is stored: removing more than half (and more than 10)
-    // waits for a read that looks whole.
-    if (missing.length > Math.max(MAX_SURE_GONE, new Set(local).size / 2)) {
-      throw new SplitwiseApiError("Splitwise sent far fewer expenses than Alopex has, so nothing was removed");
-    }
-    deleted.push(...missing);
+    // is held back, and the connection says so. The rest of the sync goes on, and the full check
+    // counts as done, so a real mass removal never blocks the sync (the next full check, a week
+    // later, holds them again).
+    if (missing.length > Math.max(MAX_SURE_GONE, new Set(local).size / 2)) held = missing.length;
+    else deleted.push(...missing);
   }
   const balances = balancesFrom(groups, me, labels);
   const calls = Math.max(1, ...[plan.shares, plan.review, deleted].map((a) => Math.ceil(a.length / CHUNK)));
@@ -106,7 +107,16 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
     if (error) throw error;
     for (const k of Object.keys(counts) as Array<keyof Counts>) counts[k] += Number((data as Counts)?.[k] ?? 0);
   }
-  return { ...counts, skipped: plan.skipped.length, full };
+  if (held > 0) {
+    console.error(`sync-splitwise: ${held} removals held back`);
+    if (!preview) {
+      const { error } = await deps.db.from("splitwise_connections")
+        .update({ status: "error", last_error: `Splitwise sent far fewer expenses than Alopex has, so ${held} were not removed` })
+        .eq("user_id", c.user_id);
+      if (error) console.error(`sync-splitwise: status not saved: ${errorTag(error)}`);
+    }
+  }
+  return { ...counts, skipped: plan.skipped.length, full, ...(held > 0 ? { held } : {}) };
 }
 
 type Outcome = "needs_reconnect" | "error" | "rate_limited";

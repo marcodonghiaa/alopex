@@ -7,6 +7,9 @@
 //     dry run that writes nothing and returns the counts.
 // Reads changes since the newest updated_at seen, minus a day of overlap; once a week (and the
 // first time) everything, so expenses gone from Splitwise without a trace are removed too.
+// shortcut: a deletion is seen early only if Splitwise bumps updated_at (unverified); otherwise
+// the share goes at the weekly full check. Splitwise's notifications (type 2, expense deleted)
+// could catch it sooner; not read yet.
 // A refused key marks the connection needs_reconnect (the cron skips it until the user connects
 // again); a rate limit stops the run and keeps the status. Logs counts and error tags only.
 import type { Db } from "./batch-update.ts";

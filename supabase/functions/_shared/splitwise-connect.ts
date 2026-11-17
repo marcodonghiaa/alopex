@@ -46,7 +46,7 @@ export const connectHandler = (deps: ConnectDeps) => async (req: Request, json: 
     const { data, error } = await deps.rpc("splitwise_disconnect", { p_user: userId, p_delete_data: body.deleteData === true });
     if (error) {
       console.error(`splitwise-connect: disconnect failed: ${errorTag(error)}`);
-      return json({ error: "Couldn't disconnect Splitwise, please try again" }, 500);
+      return json({ error: "Couldn't disconnect Splitwise. Try again later." }, 500);
     }
     return json({ disconnected: true, deleted: (data as { deleted?: number } | null)?.deleted ?? 0 });
   }
@@ -81,7 +81,7 @@ export const connectHandler = (deps: ConnectDeps) => async (req: Request, json: 
   });
   if (error) {
     console.error(`splitwise-connect: save failed: ${errorTag(error)}`);
-    return json({ error: "Couldn't save the connection, please try again" }, 500);
+    return json({ error: "Couldn't save the connection. Try again later." }, 500);
   }
   return json({ displayName });
 };

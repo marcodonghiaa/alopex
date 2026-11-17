@@ -127,3 +127,11 @@ Deno.test("connect: 5 key checks per 10 minutes per user, counted before Splitwi
   assertEquals((await down.call({ apiKey: KEY, consent: true })).status, 503);
   assertEquals(down.keys, []);
 });
+
+// polish-3 #10: the dashboard shows these as they are, in its own "Couldn't …. Try again later." style.
+Deno.test("database failures say what failed in the dashboard's copy style", async () => {
+  const save = await setup({ rpcError: { code: "XX000" } }).call({ apiKey: KEY, consent: true });
+  assertEquals(save.body, { error: "Couldn't save the connection. Try again later." });
+  const off = await setup({ rpcError: { code: "XX000" } }).call({ disconnect: true });
+  assertEquals(off.body, { error: "Couldn't disconnect Splitwise. Try again later." });
+});

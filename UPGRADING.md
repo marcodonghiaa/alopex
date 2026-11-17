@@ -11,12 +11,12 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 ## Unreleased
 
 ### Investment events, and more detail on trades (Trade Republic complete)
-- **Migration:** `20261212000000_investment_events`. Apply it with `supabase db push --linked` BEFORE redeploying the dashboard: the new dashboard reads and writes `investment_events` and the new `holding_trades` columns, and an older database answers with an error. No Edge Function changes.
+- **Migration:** `20261215000000_investment_events`. Apply it with `supabase db push --linked` BEFORE redeploying the dashboard: the new dashboard reads and writes `investment_events` and the new `holding_trades` columns, and an older database answers with an error. No Edge Function changes.
 - New table `investment_events`, owner-only: dividends, interest, rewards, fees, taxes, deposits, withdrawals, transfers in and out, and corporate actions, from any broker. A re-import skips what's saved (unique per user, source and the broker's id).
 - `holding_trades` gets optional columns: `tax_eur`, `traded_at`, `note`, `currency` + `price_native`, `group_id`. Existing rows are unchanged.
 - `delete_holding` also deletes the holding's events.
 - Trade Republic: trades imported before this release are skipped on re-import, so they stay without tax. To get the tax, delete the holding's Trade Republic trades and import the file again.
-- **Roll back:** revert the dashboard first, then run `supabase/rollbacks/20261212000000_investment_events.down.sql` and `supabase migration repair --status reverted 20261212000000 --linked`. Imported events are lost; importing the broker files again brings them back.
+- **Roll back:** revert the dashboard first, then run `supabase/rollbacks/20261215000000_investment_events.down.sql` and `supabase migration repair --status reverted 20261215000000 --linked`. Imported events are lost; importing the broker files again brings them back.
 
 ## v0.3.0 (14 Nov 2026)
 

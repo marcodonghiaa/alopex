@@ -1,7 +1,7 @@
--- Asserts for 20261212000000 (local only). Runs in one rolled-back transaction, from the repo root:
---   T=supabase/migrations/20261212000000_investment_events.sql
+-- Asserts for 20261215000000 (local only). Runs in one rolled-back transaction, from the repo root:
+--   T=supabase/migrations/20261215000000_investment_events.sql
 --   ( echo 'begin;'; cat $T supabase/rehearsals/investment_events.assert.sql \
---       supabase/rollbacks/20261212000000_investment_events.down.sql; cat $T; echo 'rollback;' ) \
+--       supabase/rollbacks/20261215000000_investment_events.down.sql; cat $T; echo 'rollback;' ) \
 --     | docker exec -i supabase_db_finance_app psql -U postgres -v ON_ERROR_STOP=1
 -- Success prints no error. The rollback must work, and the migration must apply again on top.
 insert into auth.users (id, email) values

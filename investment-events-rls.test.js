@@ -31,7 +31,7 @@ test('investment_events RLS with two users', { skip }, async (t) => {
   psql(url, ['-c', `create database ${db}`]);
   t.after(() => psql(url, ['-c', `drop database if exists ${db} with (force)`]));
   psql(dbUrl(), ['-f', 'supabase/tests/supabase-shim.sql']);
-  for (const m of ['20261108000000_holding_trades', '20261201000000_holding_trades_external_id', '20261212000000_investment_events'])
+  for (const m of ['20261108000000_holding_trades', '20261201000000_holding_trades_external_id', '20261215000000_investment_events'])
     psql(dbUrl(), ['-f', `supabase/migrations/${m}.sql`]);
   psql(dbUrl(), [
     '-c',

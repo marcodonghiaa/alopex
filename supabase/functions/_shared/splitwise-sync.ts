@@ -62,7 +62,9 @@ export function categoryFrom(name: string | null | undefined): string | null {
   return found && !NOT_A_SHARE.has(found) ? found : null;
 }
 
-const cut = (s: string, n: number) => [...s].slice(0, n).join("");
+// Postgres jsonb takes neither a NUL nor half a surrogate pair: dropped, so one odd text cannot fail every sync.
+const UNSTORABLE = /\u0000|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+const cut = (s: string, n: number) => [...s.replace(UNSTORABLE, "")].slice(0, n).join("");
 const fullName = (u: SwUser | undefined, id: number) =>
   cut([u?.first_name, u?.last_name].filter((p) => p && p.trim()).map((p) => p!.trim()).join(" ") || `Splitwise user ${id}`, MAX_GROUP);
 

@@ -100,6 +100,22 @@ Deno.test("long or missing descriptions fit the table; spaces trimmed", () => {
   assertEquals(none.type === "share" && none.row.description, "");
 });
 
+// polish-2 #3: Postgres jsonb takes neither a NUL nor half a surrogate pair; one such text would fail
+// that user's every sync. Whole emoji stay. (polish-2-fixes/item03-pg-*.log casts this to jsonb.)
+Deno.test("texts lose NUL characters and lone surrogates, keep whole emoji", () => {
+  const dirty = "Pi\u0000zza\ud800 \udc00night \u{1F355}";
+  const c = classify(expense({ description: dirty }), ME, labels);
+  assertEquals(c.type === "share" && c.row.description, "Pizza night \u{1F355}");
+  const g = groupLabels([{ id: 9, name: `Flat${"\u0000"}\udfff`, members: [] }]);
+  assertEquals(g.get(9), "Flat");
+  const b = balancesFrom([{
+    id: 5, name: "Flat",
+    members: [{ id: ME, first_name: "Me", balance: [{ currency_code: "EUR", amount: "5.00" }] }, { id: 2, first_name: "B\u0000o\ud83c" }],
+    original_debts: [{ from: 2, to: ME, amount: "5.00", currency_code: "EUR" }],
+  }], ME, labels);
+  assertEquals(b.map((r) => r.person).filter((p) => p !== "Me"), ["Bo"]);
+});
+
 Deno.test("unreadable expenses are skipped, not guessed", () => {
   for (const bad of [{ cost: "abc" }, { currency_code: "EURO" }, { date: "yesterday" }, { users: [share(ME, "0", "x")] }]) {
     assertEquals(classify(expense(bad as Partial<SwExpense>), ME, labels), { type: "skip", id: 100 });

@@ -271,4 +271,32 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.match(def('apply_splitwise_corrections'), /splitwise_id is null/);
     assert.match(def('save_splitwise_balances'), /get_splitwise_connection/);
   });
+  await t.test('#21: after a rollback and re-apply, a share edited since is adopted by its sw: id, not failed', () => {
+    sql(`select public.splitwise_save_connection('${A}', 'key-one', 111, 'Ann')`);
+    pay('p21', 60, '2026-06-03');
+    apply({ shares: [share(2101, { booking_date: '2026-06-02', description: 'Before' })], reviews: [review(2102, { booking_date: '2026-06-03' })] });
+    link(2102, 'p21');
+    sql(`delete from public.splitwise_balances where currency = 'USD'`); // see the rollback test above
+    applySql(DOWN);
+    applySql(UP);
+    sql(`select public.splitwise_save_connection('${A}', 'key-one', 111, 'Ann')`);
+    // Edited in Splitwise meanwhile: date, description and amounts no longer match the leftovers.
+    const out = apply({ shares: [share(2101, { booking_date: '2026-06-20', description: 'After', amount: '50.00' })],
+      reviews: [review(2102, { booking_date: '2026-06-03', my_share: '25.00' })] });
+    assert.deepStrictEqual(out, { new: 0, adopted: 1, review: 1, deleted: 0 });
+    assert.strictEqual(sql(`select string_agg(splitwise_id || ':' || fingerprint || ':' || amount || ':' || description, ',')
+      from public.splitwise_expenses where fingerprint in ('sw:2101', 'sw:2102')`), '2101:sw:2101:50.00:Before', 'one row, your description kept');
+    // My share of the linked one changed meanwhile: its payment is freed and it is asked again.
+    assert.strictEqual(tx('p21'), '-|-|-');
+    assert.strictEqual(sql('select status from public.splitwise_review where splitwise_id = 2102'), 'pending');
+    // Unchanged since: adopted as linked, nothing to ask.
+    link(2102, 'p21');
+    applySql(DOWN);
+    applySql(UP);
+    sql(`select public.splitwise_save_connection('${A}', 'key-one', 111, 'Ann')`);
+    assert.deepStrictEqual(apply({ reviews: [review(2102, { booking_date: '2026-06-04', description: 'Renamed', my_share: '25.00' })] }),
+      { new: 0, adopted: 1, review: 0, deleted: 0 });
+    assert.strictEqual(sql('select status || linked_entry_reference from public.splitwise_review where splitwise_id = 2102'), 'linkedp21');
+    assert.strictEqual(tx('p21'), '25.00|-|-');
+  });
 });

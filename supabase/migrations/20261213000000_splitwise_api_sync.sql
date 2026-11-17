@@ -507,12 +507,16 @@ begin
   perform public.splitwise_release(p_user, v_ids);
 
   -- First time this expense is seen: adopt the same share from a CSV import instead of doubling it.
+  -- A row this sync wrote before a rollback (fingerprint 'sw:<id>', its id dropped) is adopted by
+  -- that fingerprint first, even if edited since: inserting it again would hit the unique key.
   for r in
     select distinct on (x.splitwise_id) x.* from jsonb_to_recordset(coalesce(p_shares, '[]'))
       as x(splitwise_id bigint, group_name text, booking_date date, description text, amount numeric, currency text)
      where not exists (select 1 from public.splitwise_expenses e where e.user_id = p_user and e.splitwise_id = x.splitwise_id)
   loop
-    v_match := public.splitwise_csv_match(p_user, r.group_name, r.booking_date, r.description, r.amount, r.currency);
+    select e.id into v_match from public.splitwise_expenses e
+     where e.user_id = p_user and e.splitwise_id is null and e.fingerprint = 'sw:' || r.splitwise_id limit 1;
+    v_match := coalesce(v_match, public.splitwise_csv_match(p_user, r.group_name, r.booking_date, r.description, r.amount, r.currency));
     if v_match is not null then
       update public.splitwise_expenses set splitwise_id = r.splitwise_id, source = 'api' where id = v_match;
       n_adopted := n_adopted + 1;
@@ -552,7 +556,17 @@ begin
        and not exists (select 1 from public.splitwise_review rv where rv.user_id = p_user and rv.splitwise_id = x.splitwise_id)
        and not exists (select 1 from public.splitwise_expenses e where e.user_id = p_user and e.splitwise_id = x.splitwise_id)
   loop
-    v_match := public.splitwise_csv_match(p_user, r.group_name, r.booking_date, r.description, r.my_share, r.currency);
+    -- A row left from before a rollback (see the shares above): adopted, unless my share changed
+    -- since, in which case it is freed and the expense waits on the list again.
+    select e.id into v_match from public.splitwise_expenses e
+     where e.user_id = p_user and e.splitwise_id is null and e.fingerprint = 'sw:' || r.splitwise_id limit 1;
+    if v_match is not null
+       and (select e.amount from public.splitwise_expenses e where e.id = v_match) is distinct from r.my_share then
+      update public.splitwise_expenses set splitwise_id = r.splitwise_id, source = 'api' where id = v_match;
+      perform public.splitwise_release(p_user, array[r.splitwise_id]);
+      continue;
+    end if;
+    v_match := coalesce(v_match, public.splitwise_csv_match(p_user, r.group_name, r.booking_date, r.description, r.my_share, r.currency));
     if v_match is not null then
       update public.splitwise_expenses set splitwise_id = r.splitwise_id, source = 'api' where id = v_match
         returning linked_account_uid, linked_entry_reference into v_acc, v_ref;

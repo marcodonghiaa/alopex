@@ -304,6 +304,15 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.match(owner('select * from public.splitwise_attempts'), /permission denied/);
   });
 
+  await t.test('phase 2 #2: connect tries, 5 per 10 minutes per user, even in parallel', async () => {
+    const answers = await attemptsAtOnce(8, 'connect', 5, '10 minutes');
+    assert.strictEqual(answers.filter((a) => a === 't').length, 5, answers.join(','));
+    sql(`update public.splitwise_attempts set at = at - interval '9 minutes' where user_id = '${A}' and kind = 'connect'`);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'connect', 5, '10 minutes'), ['f']);
+    sql(`update public.splitwise_attempts set at = at - interval '2 minutes' where user_id = '${A}' and kind = 'connect'`);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'connect', 5, '10 minutes'), ['t']);
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

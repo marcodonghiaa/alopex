@@ -1,6 +1,7 @@
 // The splitwise-connect Edge Function's handler, apart from Deno.serve so it can be tested.
 // POST { apiKey, consent: true }: asks Splitwise who the key belongs to, then stores the key in
-// Vault and the connection (with the consent time) through splitwise_save_connection.
+// Vault and the connection (with the consent time) through splitwise_save_connection. 5 tries
+// per 10 minutes per user.
 // POST { disconnect: true, deleteData }: deletes the key and the connection; with deleteData,
 // also what the sync brought in (splitwise_disconnect). The key never appears in a reply or log.
 import { errorTag } from "./log-safe.ts";
@@ -53,6 +54,13 @@ export const connectHandler = (deps: ConnectDeps) => async (req: Request, json: 
   if (body.consent !== true) return json({ error: "Agree to let Alopex read your Splitwise expenses first" }, 400);
   const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
   if (!KEY_SHAPE.test(apiKey)) return json({ error: "That doesn't look like a Splitwise API key" }, 400);
+  // 5 key checks per 10 minutes per user, counted before Splitwise is asked (splitwise_attempt).
+  const attempt = await deps.rpc("splitwise_attempt", { p_user: userId, p_kind: "connect", p_max: 5, p_window: "10 minutes" });
+  if (attempt.error) {
+    console.error(`splitwise-connect: attempt check failed: ${errorTag(attempt.error)}`);
+    return json({ error: "Couldn't check the key right now. Try again later." }, 503);
+  }
+  if (attempt.data !== true) return json({ error: "Too many tries. Wait 10 minutes and try again." }, 429);
 
   let me;
   try {

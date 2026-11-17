@@ -84,7 +84,8 @@ and commit the updated lock.
   6 hours (job `detect-recurring`). Same auth as `sync-bank`.
 - **splitwise-connect** — the dashboard's Splitwise connection. `{ "apiKey", "consent": true }`
   checks the user's personal Splitwise API key (`get_current_user`) and stores it in Supabase
-  Vault (`splitwise_save_connection`; never a table column), returning `{ displayName }`.
+  Vault (`splitwise_save_connection`; never a table column), returning `{ displayName }`; 5 tries
+  per 10 minutes per user (`splitwise_attempts`).
   `{ "disconnect": true, "deleteData": true|false }` deletes the key and the connection, and with
   `deleteData` the shares, review list and balances the sync brought in (bank payments it changed
   are freed). `verify_jwt: true`.

@@ -4,13 +4,19 @@ import { connectHandler, type ConnectDeps } from "./splitwise-connect.ts";
 
 const KEY = "AbCdEf0123456789xyz";
 type RpcCall = { fn: string; args: Record<string, unknown> };
-function setup(over: Partial<ConnectDeps> & { me?: SwUser | Error; rpcError?: unknown } = {}) {
+function setup(over: Partial<ConnectDeps> & { me?: SwUser | Error; rpcError?: unknown; attemptError?: unknown } = {}) {
   const calls: RpcCall[] = [];
   const keys: string[] = [];
+  const attempts: Record<string, unknown>[] = []; // splitwise_attempt calls, kept apart from calls
   const deps: ConnectDeps = {
     userIdFor: (a) => Promise.resolve(a === "Bearer good" ? "u1" : null),
     mfaRefusal: () => Promise.resolve(null),
     rpc: (fn, args) => {
+      if (fn === "splitwise_attempt") { // as the SQL: at most p_max per user and kind (here, ever)
+        attempts.push(args);
+        if (over.attemptError) return Promise.resolve({ data: null, error: over.attemptError });
+        return Promise.resolve({ data: attempts.filter((a) => a.p_user === args.p_user && a.p_kind === args.p_kind).length <= (args.p_max as number), error: null });
+      }
       calls.push({ fn, args });
       if (over.rpcError) return Promise.resolve({ data: null, error: over.rpcError });
       return Promise.resolve({ data: fn === "splitwise_disconnect" ? { deleted: 3 } : null, error: null });
@@ -37,7 +43,7 @@ function setup(over: Partial<ConnectDeps> & { me?: SwUser | Error; rpcError?: un
     );
     return { status: res.status, body: await res.json() };
   };
-  return { call, calls, keys };
+  return { call, calls, keys, attempts };
 }
 
 Deno.test("only POST, signed in, past two-step sign-in", async () => {
@@ -99,4 +105,25 @@ Deno.test("disconnect: removes the key; deleteData only when exactly true", asyn
   ]);
   assertEquals(s.keys, []);
   assertEquals((await setup({ rpcError: { code: "XX000" } }).call({ disconnect: true })).status, 500);
+});
+
+// polish-2 #2: a signed-in user cannot test keys against Splitwise through us without limit.
+Deno.test("connect: 5 key checks per 10 minutes per user, counted before Splitwise is asked", async () => {
+  const s = setup();
+  for (let i = 0; i < 5; i++) assertEquals((await s.call({ apiKey: KEY, consent: true })).status, 200);
+  assertEquals(await s.call({ apiKey: KEY, consent: true }), {
+    status: 429,
+    body: { error: "Too many tries. Wait 10 minutes and try again." },
+  });
+  assertEquals(s.keys.length, 5);
+  assertEquals(s.attempts.length, 6);
+  assertEquals(s.attempts[0], { p_user: "u1", p_kind: "connect", p_max: 5, p_window: "10 minutes" });
+  // A key that cannot be one never reaches the check; disconnect is not limited.
+  assertEquals((await s.call({ apiKey: "short", consent: true })).status, 400);
+  assertEquals((await s.call({ disconnect: true })).status, 200);
+  assertEquals(s.attempts.length, 6);
+  // The check failing stops the connect too.
+  const down = setup({ attemptError: { code: "57014" } });
+  assertEquals((await down.call({ apiKey: KEY, consent: true })).status, 503);
+  assertEquals(down.keys, []);
 });

@@ -162,6 +162,22 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(sql('select status || linked_entry_reference from public.splitwise_review where splitwise_id = 302'), 'linkedp3-paid');
   });
 
+  await t.test('#4: CSV corrections never remove or rewrite a synced share, nor add it again', () => {
+    apply({ shares: [share(401, { group_name: 'Corr', booking_date: '2026-09-10', description: 'Lunch', amount: '9.00' })] });
+    sql(`insert into public.splitwise_expenses (user_id, group_name, fingerprint, booking_date, description, amount, currency, batch_id)
+      values ('${A}', 'Corr', 'c4-old', '2026-09-11', 'Old', 4, 'EUR', gen_random_uuid())`);
+    const synced = sql(`select jsonb_build_object('id', id, 'old_fingerprint', fingerprint) from public.splitwise_expenses where splitwise_id = 401`);
+    const corr = (add, edit, remove) => owner(`select public.apply_splitwise_corrections(gen_random_uuid(), 'Corr', ${lit(add)}, ${lit(edit)}, ${lit(remove)})`);
+    assert.match(corr([], [], [JSON.parse(synced)]), /changed since the review/);
+    assert.match(corr([], [{ ...JSON.parse(synced), fingerprint: 'x', booking_date: '2026-09-10', description: 'Lunch', amount: 1, currency: 'EUR', cost: 2 }], []),
+      /changed since the review/);
+    assert.strictEqual(sql('select amount from public.splitwise_expenses where splitwise_id = 401'), '9.00', 'untouched');
+    const add = (fingerprint, description) => ({ fingerprint, booking_date: '2026-09-10', description, category: null, amount: 9, currency: 'EUR' });
+    const old = sql(`select jsonb_build_object('id', id, 'old_fingerprint', fingerprint) from public.splitwise_expenses where fingerprint = 'c4-old'`);
+    assert.deepStrictEqual(JSON.parse(corr([add('c4-dup', 'lunch '), add('c4-new', 'Snack')], [], [JSON.parse(old)])), { added: 1, edited: 0, removed: 1 });
+    assert.strictEqual(sql(`select string_agg(coalesce(splitwise_id::text, fingerprint), ',' order by fingerprint) from public.splitwise_expenses where group_name = 'Corr'`), 'c4-new,401');
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take
@@ -170,7 +186,9 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     applySql(DOWN);
     const def = (fn) => sql(`select pg_get_functiondef('public.${fn}'::regproc)`);
     assert.doesNotMatch(def('undo_splitwise_import'), /splitwise_id/, '20261116000000 version');
+    assert.doesNotMatch(def('apply_splitwise_corrections'), /splitwise_id/, '20261109000000 version');
     applySql(UP);
     assert.match(def('undo_splitwise_import'), /splitwise_id is null/);
+    assert.match(def('apply_splitwise_corrections'), /splitwise_id is null/);
   });
 });

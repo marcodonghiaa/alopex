@@ -275,6 +275,92 @@ begin
 end;
 $function$;
 
+-- Same as 20261109000000, except that it leaves what the sync owns: a synced share is never in the
+-- file, so the corrections screen would offer to remove it. Removing or editing one fails like any
+-- row that changed since the review; an added row the sync already has is skipped (as in import).
+create or replace function public.apply_splitwise_corrections(
+  p_batch uuid, p_group text, p_add jsonb, p_edit jsonb, p_remove jsonb
+) returns jsonb
+language plpgsql
+set search_path = public
+as $function$
+declare
+  uid uuid := auth.uid();
+  n_added int;
+  n_edited int;
+  n_removed int;
+begin
+  if uid is null then raise exception 'Not signed in'; end if;
+  if jsonb_array_length(p_add) > 5000 or jsonb_array_length(p_edit) > 5000
+     or jsonb_array_length(p_remove) > 5000 then
+    raise exception 'Too many rows';
+  end if;
+
+  -- A missing cost would null the personal amount and count the bank transaction in full.
+  if exists (select 1 from jsonb_to_recordset(p_edit) as e(cost numeric, amount numeric)
+              where e.cost is null or e.cost <= 0 or e.amount is null or e.amount > e.cost) then
+    raise exception 'An edit has no valid cost.';
+  end if;
+
+  -- The bank goes first: it reads the links as they were reviewed.
+  update transactions t
+     set personal_amount = null, import_batch_id = null
+    from jsonb_to_recordset(p_remove) as r(id uuid, old_fingerprint text)
+    join splitwise_expenses s on s.id = r.id and s.fingerprint = r.old_fingerprint
+   where s.user_id = uid and s.group_name = p_group and s.splitwise_id is null
+     and t.user_id = uid and t.account_uid = s.linked_account_uid
+     and t.entry_reference = s.linked_entry_reference;
+
+  delete from splitwise_expenses s
+   using jsonb_to_recordset(p_remove) as r(id uuid, old_fingerprint text)
+   where s.id = r.id and s.fingerprint = r.old_fingerprint
+     and s.user_id = uid and s.group_name = p_group and s.splitwise_id is null;
+  get diagnostics n_removed = row_count;
+  if n_removed <> jsonb_array_length(p_remove) then
+    raise exception 'A stored expense changed since the review. Reload and try again.';
+  end if;
+
+  update transactions t
+     set personal_amount = round(t.amount * e.amount / e.cost, 2)
+    from jsonb_to_recordset(p_edit) as e(id uuid, old_fingerprint text, amount numeric, cost numeric)
+    join splitwise_expenses s on s.id = e.id and s.fingerprint = e.old_fingerprint
+   where s.user_id = uid and s.group_name = p_group and s.splitwise_id is null
+     and t.user_id = uid and t.account_uid = s.linked_account_uid
+     and t.entry_reference = s.linked_entry_reference;
+
+  update splitwise_expenses s
+     set fingerprint = e.fingerprint,
+         booking_date = e.booking_date,
+         description = e.description,
+         amount = e.amount,
+         currency = e.currency
+    from jsonb_to_recordset(p_edit) as e(id uuid, old_fingerprint text, fingerprint text,
+         booking_date date, description text, amount numeric, currency text)
+   where s.id = e.id and s.fingerprint = e.old_fingerprint
+     and s.user_id = uid and s.group_name = p_group and s.splitwise_id is null;
+  get diagnostics n_edited = row_count;
+  if n_edited <> jsonb_array_length(p_edit) then
+    raise exception 'A stored expense changed since the review. Reload and try again.';
+  end if;
+
+  insert into splitwise_expenses (user_id, group_name, fingerprint, booking_date, description,
+      category, amount, currency, batch_id)
+    select uid, p_group, a.fingerprint, a.booking_date, a.description, a.category, a.amount,
+           a.currency, p_batch
+      from jsonb_to_recordset(p_add) as a(fingerprint text, booking_date date, description text,
+           category text, amount numeric, currency text)
+     where not exists (
+       select 1 from splitwise_expenses x
+        where x.user_id = uid and x.splitwise_id is not null
+          and x.booking_date between a.booking_date - 1 and a.booking_date + 1
+          and lower(btrim(x.description)) = lower(btrim(a.description))
+          and x.amount = a.amount and x.currency = a.currency);
+  get diagnostics n_added = row_count;
+
+  return jsonb_build_object('added', n_added, 'edited', n_edited, 'removed', n_removed);
+end;
+$function$;
+
 -- ---- Shared steps ----
 
 -- Frees what Alopex did for these Splitwise expenses and removes their shares: a bank payment's

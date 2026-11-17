@@ -103,19 +103,6 @@ as $$
    where c.user_id = p_user;
 $$;
 
--- What the dashboard may know about its own connection: never the key.
-create or replace function public.get_splitwise_connection()
-returns table (connected boolean, status text, display_name text, last_synced_at timestamptz, last_error text)
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select c.user_id is not null, c.status, c.display_name, c.last_synced_at, c.last_error
-    from (select auth.uid() as uid) me
-    left join public.splitwise_connections c on c.user_id = me.uid;
-$$;
-
 -- ---- Shares from the API ----
 
 alter table public.splitwise_expenses
@@ -189,6 +176,24 @@ revoke all on table public.splitwise_review from anon, authenticated;
 grant select on table public.splitwise_review to authenticated;
 create policy "Users can view own splitwise review" on public.splitwise_review
   for select to authenticated using ((select auth.uid()) = user_id);
+
+-- What the dashboard may know about its own connection: never the key. synced_data: something
+-- the sync brought in is still here (what splitwise_disconnect deletes with p_delete_data), so it
+-- can be deleted after a disconnect that kept it.
+create or replace function public.get_splitwise_connection()
+returns table (connected boolean, status text, display_name text, last_synced_at timestamptz, last_error text, synced_data boolean)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select c.user_id is not null, c.status, c.display_name, c.last_synced_at, c.last_error,
+         exists (select 1 from public.splitwise_expenses e where e.user_id = me.uid and e.splitwise_id is not null)
+           or exists (select 1 from public.splitwise_review r where r.user_id = me.uid)
+           or exists (select 1 from public.splitwise_balances b where b.user_id = me.uid and b.basis = 'api')
+    from (select auth.uid() as uid) me
+    left join public.splitwise_connections c on c.user_id = me.uid;
+$$;
 
 -- ---- Balances ----
 

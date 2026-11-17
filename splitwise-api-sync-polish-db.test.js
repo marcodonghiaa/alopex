@@ -313,6 +313,24 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.deepStrictEqual(await attemptsAtOnce(1, 'connect', 5, '10 minutes'), ['t']);
   });
 
+  await t.test('phase 2 #6: after "disconnect, keep data" the synced data can still be found and deleted', () => {
+    const D = 'dddddddd-0000-0000-0000-000000000006';
+    const asD = (q) => run('authenticated', D, q);
+    const state = () => asD("select connected || ',' || synced_data from public.get_splitwise_connection()");
+    sql(`insert into auth.users (id) values ('${D}'); select public.splitwise_save_connection('${D}', 'key-six', 666, 'Dee')`);
+    assert.strictEqual(state(), 'true,false');
+    run('service_role', null, `select public.splitwise_sync_apply('${D}', ${lit([share(6001)])}, ${lit([review(6002)])},
+      array[]::bigint[], ${lit([{ group_name: 'Flat', person: 'Dee', balance: '3.00', currency: 'EUR', is_me: true }])}, null, false, false)`);
+    run('service_role', null, `select public.splitwise_disconnect('${D}', false)`);
+    assert.strictEqual(state(), 'false,true');
+    // What the dashboard's "Delete synced Splitwise data" sends, through splitwise-connect.
+    assert.deepStrictEqual(JSON.parse(run('service_role', null, `select public.splitwise_disconnect('${D}', true)`)), { deleted: 2 });
+    assert.strictEqual(state(), 'false,false');
+    assert.strictEqual(sql(`select (select count(*) from public.splitwise_expenses where user_id = '${D}' and splitwise_id is not null)
+      + (select count(*) from public.splitwise_review where user_id = '${D}') + (select count(*) from public.splitwise_balances where user_id = '${D}')`), '0');
+    assert.strictEqual(owner("select synced_data::text from public.get_splitwise_connection()"), 'true'); // A's own, not D's
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

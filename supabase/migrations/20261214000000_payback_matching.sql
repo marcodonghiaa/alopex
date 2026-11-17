@@ -27,8 +27,13 @@ language sql
 immutable
 set search_path to ''
 as $$
-  select nullif(trim(regexp_replace(translate(lower(coalesce(p_name, '')),
-    'àáâãäåèéêëìíîïòóôõöùúûüýÿçñ', 'aaaaaaeeeeiiiiooooouuuuyycn'), '[^[:alnum:]]+', ' ', 'g')), '')
+  -- Cut to the 200 letters payer_links keeps, here, so the saved key and the lookup key are the same.
+  select nullif(trim(left(trim(regexp_replace(
+    replace(replace(replace(translate(lower(coalesce(p_name, '')),
+      'àáâãäåèéêëìíîïòóôõöùúûüýÿçñăāąćčĉċďđēėęěĕğģĝġħĥīįıĭĩĵķĺļľłńņňōőŏøŕřŗśšşșŝťţțũūůűųŭŵŷźžż',
+      'aaaaaaeeeeiiiiooooouuuuyycnaaaccccddeeeeegggghhiiiiijkllllnnnoooorrrssssstttuuuuuuwyzzz'),
+      'ß', 'ss'), 'æ', 'ae'), 'œ', 'oe'),
+    '[^[:alnum:]]+', ' ', 'g')), 200)), '')
 $$;
 
 -- On an incoming payment the payer is the debtor; some banks leave it empty and put the payer in
@@ -239,7 +244,7 @@ begin
   if coalesce(p_remember, true) then
     v_key := public.payer_key(public.payer_name_of(v_credit.debtor_name, v_credit.creditor_name));
     if v_key is not null then
-      insert into public.payer_links (user_id, payer_key, contact) values (uid, left(v_key, 200), v_contact)
+      insert into public.payer_links (user_id, payer_key, contact) values (uid, v_key, v_contact)
       on conflict (user_id, payer_key) do update set contact = excluded.contact
       where payer_links.contact is distinct from excluded.contact;
       v_linked := found;

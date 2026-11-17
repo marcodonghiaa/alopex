@@ -177,7 +177,7 @@ test('Splitwise API sync on a real Postgres', { skip }, async (t) => {
     assert.strictEqual(as('authenticated', A, `select count(*) from public.splitwise_review where status = 'pending'`), '4');
     assert.strictEqual(as('authenticated', B, 'select count(*) from public.splitwise_review'), '0');
     assert.strictEqual(as('authenticated', B, `update public.splitwise_review set status = 'dismissed' returning 1`), '');
-    assert.strictEqual(as('authenticated', B, 'delete from public.splitwise_review returning 1'), '');
+    assert.match(as('authenticated', B, 'delete from public.splitwise_review returning 1'), /permission denied/);
     assert.match(as('authenticated', B, `select public.link_splitwise_review('${reviewId(10)}', '${ACC}', 'pay-60')`), /no longer on the list/);
     assert.match(as('authenticated', B, `select public.dismiss_splitwise_review('${reviewId(10)}')`), /no longer on the list/);
   });

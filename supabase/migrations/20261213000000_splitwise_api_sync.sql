@@ -152,13 +152,12 @@ create table public.splitwise_review (
 );
 alter table public.splitwise_review enable row level security;
 revoke all on table public.splitwise_review from anon, authenticated;
-grant select, update, delete on table public.splitwise_review to authenticated;
+-- No delete: a linked row deleted directly would leave its bank payment changed. Dismiss instead.
+grant select, update on table public.splitwise_review to authenticated;
 create policy "Users can view own splitwise review" on public.splitwise_review
   for select to authenticated using ((select auth.uid()) = user_id);
 create policy "Users can update own splitwise review" on public.splitwise_review
   for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
-create policy "Users can delete own splitwise review" on public.splitwise_review
-  for delete to authenticated using ((select auth.uid()) = user_id);
 
 -- ---- Balances ----
 

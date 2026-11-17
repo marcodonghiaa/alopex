@@ -211,6 +211,15 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     sql(`select public.splitwise_save_connection('${A}', 'key-one', 111, 'Ann')`);
   });
 
+  await t.test('#14: the owner cannot delete a review row directly (a linked one would orphan its bank link)', () => {
+    pay('p14', 60);
+    apply({ reviews: [review(1401)] });
+    link(1401, 'p14');
+    assert.match(owner('delete from public.splitwise_review where splitwise_id = 1401'), /permission denied/);
+    assert.strictEqual(sql('select status from public.splitwise_review where splitwise_id = 1401'), 'linked');
+    assert.strictEqual(owner('select count(*) from public.splitwise_review where splitwise_id = 1401'), '1', 'reading stays allowed');
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

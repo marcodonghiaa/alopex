@@ -70,3 +70,23 @@ begin
     raise exception 'other holdings'' events must stay';
   end if;
 end $$;
+
+-- delete_holding runs as security definer: it refuses a key or source longer than the columns allow
+do $$
+begin
+  begin
+    perform public.delete_holding('stock', repeat('x', 101));
+    raise exception 'a key over 100 characters must be refused';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.delete_holding('stock', '');
+    raise exception 'an empty key must be refused';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.delete_holding('crypto', 'BTC', repeat('s', 41));
+    raise exception 'a source over 40 characters must be refused';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;

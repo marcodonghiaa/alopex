@@ -88,6 +88,13 @@ begin
   if v_uid is null then
     raise exception 'not signed in';
   end if;
+  -- Same limits as the key and source columns.
+  if coalesce(char_length(p_key), 0) not between 1 and 100 then
+    raise exception 'key must be 1 to 100 characters' using errcode = 'invalid_parameter_value';
+  end if;
+  if char_length(p_source) > 40 then
+    raise exception 'source must be at most 40 characters' using errcode = 'invalid_parameter_value';
+  end if;
 
   if p_kind = 'stock' then
     delete from portfolio_snapshots where user_id = v_uid and isin = p_key;

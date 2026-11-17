@@ -263,3 +263,18 @@ Deno.test("handler: a refused key, a rate limit and other failures each say what
   assertEquals([o.status, o.body.error], [502, "Couldn't sync with Splitwise. Try again later."]);
   assertEquals(other.db.tables.splitwise_connections[0].last_error, "Sync failed (TypeError)");
 });
+
+// polish-1 #16: a dry run that fails changes nothing, the connection's status included; a refused
+// key still asks to reconnect (it would fail the real sync too).
+Deno.test("handler: a failed preview keeps the status, except a refused key", async () => {
+  const s = setup({ connections: [conn()], expenses: new SplitwiseApiError("Splitwise answered HTTP 500", 500) });
+  const res = await call(handler(s), user({ preview: true }));
+  assertEquals(res.status, 502);
+  assertEquals([s.db.tables.splitwise_connections[0].status, s.db.tables.splitwise_connections[0].last_error ?? null], ["ok", null]);
+  const auth = setup({ connections: [conn()], expenses: new SplitwiseAuthError("x", 401) });
+  assertEquals((await call(handler(auth), user({ preview: true }))).body.code, "needs_reconnect");
+  assertEquals(auth.db.tables.splitwise_connections[0].status, "needs_reconnect");
+  const real = setup({ connections: [conn({ last_synced_at: null })], expenses: new SplitwiseApiError("Splitwise answered HTTP 500", 500) });
+  await call(handler(real), user({}));
+  assertEquals(real.db.tables.splitwise_connections[0].status, "error", "a real sync still records it");
+});

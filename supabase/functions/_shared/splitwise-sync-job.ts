@@ -199,7 +199,10 @@ export const syncNowHandler = (deps: HandlerDeps) => async (req: Request, json: 
     return json(await syncUser(deps, c, { preview }));
   } catch (err) {
     console.error(`sync-splitwise: sync now failed: ${errorTag(err)}`);
-    const outcome = await markFailure(deps.db, userId, err);
+    // A dry run changes nothing, its failure included; a refused key fails the real sync too.
+    const outcome = preview && !(err instanceof SplitwiseAuthError)
+      ? (err instanceof SplitwiseRateLimitError ? "rate_limited" : "error")
+      : await markFailure(deps.db, userId, err);
     if (outcome === "needs_reconnect") return json({ error: RECONNECT, code: "needs_reconnect" }, 409);
     if (outcome === "rate_limited") return json({ error: "Splitwise asked to slow down. Try again later." }, 429);
     return json({ error: "Couldn't sync with Splitwise. Try again later." }, 502);

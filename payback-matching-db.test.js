@@ -265,6 +265,27 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     }
   });
 
+  await t.test('only that person\'s own open bills settle: not Splitwise, refunded, transfer, deleted, settled or someone else\'s', () => {
+    // Each row is older than the one good bill and alone would be covered by the payment.
+    admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, creditor_name, debtor_name, personal_amount, owed_by, import_batch_id, flow_type, deleted_at, owed_settled)
+      values ('fl-sw', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(20)}', 'Bar', null, 10, 'Eva', gen_random_uuid(), null, null, false),
+             ('fl-refunded', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(19)}', 'Bar', null, 10, 'Eva', null, 'refunded', null, false),
+             ('fl-transfer', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(18)}', 'Bar', null, 10, 'Eva', null, 'transfer', null, false),
+             ('fl-deleted', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(17)}', 'Bar', null, 10, 'Eva', null, null, now(), false),
+             ('fl-settled', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(16)}', 'Bar', null, 10, 'Eva', null, null, null, true),
+             ('fl-other', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(15)}', 'Bar', null, 10, 'Evan', null, null, null, false),
+             ('fl-shared', '${ACC_A}', '${A}', 30, 'EUR', 'DBIT', '${daysAgo(14)}', 'Bar', null, 10, 'Eva, Evan', null, null, null, false),
+             ('fl-good', '${ACC_A}', '${A}', 20, 'EUR', 'DBIT', '${daysAgo(13)}', 'Bar', null, 10, 'Eva', null, null, null, false),
+             ('fl-pay', '${ACC_A}', '${A}', 10, 'EUR', 'CRDT', '${today}', null, 'Eva Gialli', null, null, null, null, null, false)`);
+    try {
+      const out = as(A, `select public.record_payback('${ACC_A}', 'fl-pay', 'Eva', false)`, { keep: false });
+      assert.match(out, /"settled": \["fl-good"\]/);
+      assert.match(out, /"left_eur": 0/);
+    } finally {
+      admin("delete from public.transactions where entry_reference like 'fl-%'");
+    }
+  });
+
   await t.test('a payment in a currency without a rate settles nothing', () => {
     admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, debtor_name)
            values ('pay-xyz', '${ACC_A}', '${A}', 999, 'XYZ', 'CRDT', '${today}', 'Anna Rossi')`);

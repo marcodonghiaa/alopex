@@ -158,6 +158,10 @@ begin
   -- '' means "not a payback"; a missing name is a client bug, never a silent dismissal.
   if p_contact is null then raise exception 'Contact required'; end if;
   if char_length(v_contact) > 100 then raise exception 'Contact name too long'; end if;
+  -- One payback at a time per user: two confirmed at once would each count the same open bills and
+  -- refunds. The second waits, then reads what the first wrote.
+  perform pg_advisory_xact_lock(hashtextextended('record_payback:' || uid::text, 0));
+
   select * into v_credit from public.transactions
    where user_id = uid and account_uid = p_account and entry_reference = p_ref
      and credit_debit_indicator = 'CRDT' and deleted_at is null

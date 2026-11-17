@@ -131,6 +131,30 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     }
   });
 
+  await t.test('two payments confirmed at once never both count the same refund', async () => {
+    // Gio: refund -30, bills 30 and 30. Two 1-euro payments: only one may use the refund.
+    admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, creditor_name, debtor_name, personal_amount, owed_by)
+      values ('rf-ref', '${ACC_A}', '${A}', 40, 'EUR', 'CRDT', '${daysAgo(52)}', null, 'Shop', 10, 'Gio'),
+             ('rf-b1', '${ACC_A}', '${A}', 60, 'EUR', 'DBIT', '${daysAgo(51)}', 'Bar', null, 30, 'Gio'),
+             ('rf-b2', '${ACC_A}', '${A}', 60, 'EUR', 'DBIT', '${daysAgo(50)}', 'Bar', null, 30, 'Gio'),
+             ('rf-pay1', '${ACC_A}', '${A}', 1, 'EUR', 'CRDT', '${today}', null, 'Gio One', null, null),
+             ('rf-pay2', '${ACC_A}', '${A}', 1, 'EUR', 'CRDT', '${today}', null, 'Gio Two', null, null)`);
+    const run = (q) =>
+      new Promise((resolve) =>
+        execFile('psql', [dbUrl(), '-X', '-q', '-t', '-A', '-c', q], (err, out, errOut) => resolve(err ? `ERROR ${errOut}` : out.trim())),
+      );
+    const signedIn = `set local role authenticated; set local request.jwt.claims = '{"sub":"${A}","role":"authenticated"}';`;
+    try {
+      const first = run(`begin; ${signedIn} select public.record_payback('${ACC_A}', 'rf-pay1', 'Gio', false); select pg_sleep(1); commit;`);
+      await new Promise((r) => setTimeout(r, 300));
+      const second = run(`begin; ${signedIn} select public.record_payback('${ACC_A}', 'rf-pay2', 'Gio', false); commit;`);
+      const outs = await Promise.all([first, second]);
+      assert.strictEqual(admin("select count(*) from public.transactions where entry_reference = 'rf-b2' and owed_settled"), '0', outs.join('\n'));
+    } finally {
+      admin("delete from public.transactions where entry_reference like 'rf-%'");
+    }
+  });
+
   await t.test('a payment covering the oldest bill exactly settles it with nothing left', () => {
     const out = as(A, `select public.record_payback('${ACC_A}', 'pay-1', 'Anna', true)`, { keep: false });
     // bill-1: Anna owes 60 → covered exactly.

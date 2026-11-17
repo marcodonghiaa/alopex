@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { type Deps, syncAccountBalance, syncAccountTransactions, syncErrorPatch, syncStatus } from "./bank-sync.ts";
+import { type Deps, recordSyncError, syncAccountBalance, syncAccountTransactions, syncErrorPatch, syncStatus } from "./bank-sync.ts";
+import { memoryDb } from "./memory-db.test-helper.ts";
 
 const EB = "https://api.enablebanking.com/accounts";
 const TODAY = "2026-10-27";
@@ -406,3 +407,34 @@ Deno.test("balance: an error name over 64 letters is not stored, the HTTP status
     assertEquals(result.error, expected);
   }
 });
+
+// Polish 5 F1: sync-bank's last step, run on the account row itself.
+Deno.test("recordSyncError: the balance error wins, is saved on the account and returned", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null, sync_error_at: null }] });
+  const at = "2026-11-17T06:17:00.000Z";
+  assertEquals(await recordSyncError(db, account({ sync_error: null }), "HTTP_401", "ASPSP_TIMEOUT", at), "HTTP_401");
+  assertEquals(db.tables.accounts[0], { uid: "pk", sync_error: "HTTP_401", sync_error_at: at });
+});
+Deno.test("recordSyncError: a transactions error is saved when the balance went through", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null, sync_error_at: null }] });
+  assertEquals(await recordSyncError(db, account({ sync_error: null }), null, "SAVE_FAILED", "t"), "SAVE_FAILED");
+  assertEquals(db.tables.accounts[0].sync_error, "SAVE_FAILED");
+});
+Deno.test("recordSyncError: a good run clears the stored error", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: "HTTP_500", sync_error_at: "t0" }] });
+  assertEquals(await recordSyncError(db, account({ sync_error: "HTTP_500" }), null, null, "t"), null);
+  assertEquals(db.tables.accounts[0], { uid: "pk", sync_error: null, sync_error_at: null });
+});
+Deno.test("recordSyncError: a failed write never fails the sync", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null }] }, "update");
+  assertEquals(await quietly(() => recordSyncError(db, account({ sync_error: null }), "HTTP_401", null, "t")), "HTTP_401");
+});
+async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    return await fn();
+  } finally {
+    console.error = original;
+  }
+}

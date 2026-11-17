@@ -28,6 +28,25 @@ export function syncErrorPatch(account: SyncAccount, error: string | null, nowIs
   return { sync_error: error, sync_error_at: error ? nowIso : null };
 }
 
+// sync-bank's last step: the first failure of this run (balance before transactions) goes on the
+// account until a run succeeds. A failed write is only logged: the sync itself went through.
+// deno-lint-ignore no-explicit-any
+export async function recordSyncError(
+  supabase: { from(table: string): any },
+  account: SyncAccount,
+  balanceError: string | null,
+  txError: string | null,
+  nowIso: string,
+): Promise<string | null> {
+  const syncError = balanceError ?? txError;
+  const patch = syncErrorPatch(account, syncError, nowIso);
+  if (patch) {
+    const { error } = await supabase.from("accounts").update(patch).eq("uid", account.uid);
+    if (error) console.error(`Sync error not saved: ${errorTag(error)}`);
+  }
+  return syncError;
+}
+
 // sync-bank's reply status, which pg_net keeps in net._http_response: 429 when the bank's daily
 // limit for unattended fetches (often 4) is reached, which the next run retries, 502 otherwise.
 export function syncStatus(cursor: string | null, error: string | null): number {

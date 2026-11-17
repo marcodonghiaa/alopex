@@ -14,10 +14,10 @@ import { retryRejectedToken } from "../_shared/postgrest-retry.ts";
 import {
   ACCOUNT_COLUMNS,
   errorTag,
+  recordSyncError,
   type SyncAccount,
   syncAccountBalance,
   syncAccountTransactions,
-  syncErrorPatch,
   syncStatus,
 } from "../_shared/bank-sync.ts";
 
@@ -89,12 +89,7 @@ Deno.serve(async (req) => {
   }
 
   // The first failure of this run, shown on the account until a run succeeds.
-  const syncError = balance.error ?? tx.error;
-  const patch = syncErrorPatch(account, syncError, new Date().toISOString());
-  if (patch) {
-    const { error } = await supabase.from("accounts").update(patch).eq("uid", account.uid);
-    if (error) console.error(`Sync error not saved: ${errorTag(error)}`);
-  }
+  const syncError = await recordSyncError(supabase, account, balance.error, tx.error, new Date().toISOString());
 
   const result = {
     upserted: tx.upserted,

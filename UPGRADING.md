@@ -8,6 +8,14 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Release notes, newest first
 
+## Unreleased
+
+### Who owes you: "Is this Anna?" on incoming payments
+- **Migration:** `20261212000000_payback_matching`. Apply it with `supabase db push --linked` BEFORE redeploying the dashboard: the new Who owes you page calls `payback_candidates`, and on an older database that call fails (the rest of the page still loads, only the suggestions are missing).
+- New on `transactions`: `payback_contact` (on an incoming payment, who paid you back; empty = "not a payback"), `settled_by_account` / `settled_by_ref` (on a split bill, the payment that settled it). New table `payer_links` (a payer name, as the bank writes it, linked to a contact; names only, never IBANs) with row level security. New functions `payback_candidates`, `record_payback`, `undo_payback`, `payer_key`, `payer_name_of`. Existing rows are not changed.
+- Confirming a payment turns it into a transfer (so it stops counting as income) and settles that person's own open split bills, oldest first, while the payment covers them whole. Splitwise balances are not touched: record the payment in Splitwise too.
+- **Roll back:** redeploy the previous dashboard, run `supabase/rollbacks/20261212000000_payback_matching.down.sql`, then `supabase migration repair --status reverted 20261212000000 --linked`. Bills already settled stay settled and confirmed payments stay transfers.
+
 ## v0.3.0 (14 Nov 2026)
 
 Notes and tags, a Cash flow page, a recurring calendar with regular income, who paid you on income, and a round of fixes (dark-mode toasts, Back closes dialogs, a safer installer).

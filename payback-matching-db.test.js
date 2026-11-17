@@ -1,4 +1,4 @@
-// Payback matching (20261212000000_payback_matching) on a real Postgres with every migration before
+// Payback matching (20261214000000_payback_matching) on a real Postgres with every migration before
 // it: payer keys, the candidates list, record_payback settling bills oldest first, undo, links,
 // and two users kept apart. Needs psql and RLS_TEST_DATABASE_URL (a superuser URL to a throwaway
 // server); skipped without it. A fresh database is created and dropped for each run.
@@ -7,8 +7,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 
-const MIGRATION = 'supabase/migrations/20261212000000_payback_matching.sql';
-const ROLLBACK = 'supabase/rollbacks/20261212000000_payback_matching.down.sql';
+const MIGRATION = 'supabase/migrations/20261214000000_payback_matching.sql';
+const ROLLBACK = 'supabase/rollbacks/20261214000000_payback_matching.down.sql';
 const url = process.env.RLS_TEST_DATABASE_URL;
 const skip = url ? false : 'set RLS_TEST_DATABASE_URL to run';
 const A = 'aaaaaaaa-0000-0000-0000-000000000001';

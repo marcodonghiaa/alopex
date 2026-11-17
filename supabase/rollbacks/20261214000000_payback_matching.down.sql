@@ -1,4 +1,4 @@
--- Rolls back 20261212000000_payback_matching. Bills settled by a payback stay settled, and payments
+-- Rolls back 20261214000000_payback_matching. Bills settled by a payback stay settled, and payments
 -- recorded as paybacks stay transfers; only the links and the columns that remember them go.
 drop function if exists public.undo_payback(uuid, text, boolean);
 drop function if exists public.record_payback(uuid, text, text, boolean);

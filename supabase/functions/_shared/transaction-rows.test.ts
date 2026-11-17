@@ -112,3 +112,17 @@ Deno.test("rows never carry note or tags", async () => {
     assertEquals("tags" in row, false);
   }
 });
+
+// Some banks reuse one entry_reference for different transactions (Enable Banking FAQ): upsert on
+// (account, entry_reference) kept only the last one and lost the others without a word.
+Deno.test("a reused entry_reference on a different transaction keeps both rows, stably", async () => {
+  const batch = [tx(), tx({ transaction_amount: { amount: "40.00", currency: "EUR" } }), tx({ booking_date: "2026-10-02" })];
+  const rows = await buildRows(batch, "acc", "user");
+  const again = await buildRows(batch, "acc", "user");
+
+  assertEquals(rows.length, 3);
+  assertEquals(rows[0].entry_reference, "r1");
+  assertMatch(rows[1].entry_reference as string, /^r1~[0-9a-f]{12}$/);
+  assertNotEquals(rows[1].entry_reference, rows[2].entry_reference);
+  assertEquals(again.map((r) => r.entry_reference), rows.map((r) => r.entry_reference));
+});

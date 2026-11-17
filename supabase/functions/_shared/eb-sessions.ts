@@ -56,3 +56,17 @@ export async function closeSessions(
   }
   return closed;
 }
+
+// Sessions a renewal replaced: the old session of each relinked account, when no account of the
+// user still reads from it. Closing them leaves one live consent per bank instead of two until
+// the old one expires. Accounts linked before bank_session_id existed (null) are never closed.
+export function replacedSessions(
+  before: Array<{ uid: string; bank_session_id?: string | null }>,
+  relinked: Set<string>,
+  newSession: string,
+): string[] {
+  const stillUsed = new Set(before.filter((a) => !relinked.has(a.uid)).map((a) => a.bank_session_id));
+  stillUsed.add(newSession);
+  const old = before.filter((a) => relinked.has(a.uid)).map((a) => a.bank_session_id);
+  return [...new Set(old)].filter((id): id is string => !!id && !stillUsed.has(id));
+}

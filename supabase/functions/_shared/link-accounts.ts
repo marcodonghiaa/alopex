@@ -8,6 +8,7 @@ import { accountType, matchAccount, matchPatch, type StoredAccount } from "./acc
 import { bankLogo, type BankInfo } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
+import { closeSessions, replacedSessions } from "./eb-sessions.ts";
 
 export const LINK_FAILED = "Couldn't link the bank, please try again";
 
@@ -67,10 +68,11 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
 
     // Kept so the session can be closed at Enable Banking when the user deletes their account.
     // Best effort: a failed write only means that session is left to expire on its own.
-    if (typeof data.session_id === "string") {
+    const sessionId: string | null = typeof data.session_id === "string" ? data.session_id : null;
+    if (sessionId) {
       const { error: sessionError } = await supabase
         .from("bank_sessions")
-        .upsert({ session_id: data.session_id, user_id: userId, bank_name: bankName }, { onConflict: "session_id" });
+        .upsert({ session_id: sessionId, user_id: userId, bank_name: bankName }, { onConflict: "session_id" });
       if (sessionError) console.error(`bank session not stored: ${errorTag(sessionError)}`);
     }
     const savedRows: Array<{ uid: string; ebUid: string; label: string | null; currency: string }> = [];
@@ -81,9 +83,13 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     // Match on identification_hash (IBAN + currency, unique per Revolut pocket), then IBAN + currency.
     const { data: storedRows, error: storedError } = await supabase
       .from("accounts")
-      .select("uid, iban, currency, identification_hash, account_type")
+      .select("uid, iban, currency, identification_hash, account_type, bank_session_id")
       .eq("user_id", userId);
     if (storedError) return fail(storedError);
+    const sessionsBefore: Array<{ uid: string; bank_session_id?: string | null }> = storedRows ?? [];
+    const relinked = new Set<string>(); // existing accounts this consent renewed
+    // Which session each account reads from, so a renewal can close the one it replaced.
+    const sessionPatch = sessionId ? { bank_session_id: sessionId } : {};
     let stored: StoredAccount[] = storedRows ?? [];
 
     const newUids: string[] = []; // first-synced right away; relinked ones wait for the cron
@@ -107,6 +113,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
           user_id: userId,
           consent_valid_until: consentValidUntil,
           ...bank,
+          ...sessionPatch,
         });
         if (!error) {
           stored = [...stored, { uid: a.uid, iban, currency: a.currency, identification_hash: identificationHash, account_type: type }];
@@ -133,6 +140,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
       const patch = {
         ...matchPatch({ iban, currency: a.currency, identification_hash: identificationHash, label }, a.uid, consentValidUntil, bank),
         ...(storedType === null && type !== null && { account_type: type }),
+        ...sessionPatch,
       };
       const { error } = await supabase
         .from("accounts")
@@ -147,6 +155,24 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
           : s
       );
       savedRows.push({ uid, ebUid: a.uid, label, currency: a.currency });
+      relinked.add(uid);
+    }
+
+    // A renewal leaves the old session open at Enable Banking until it expires: close it once
+    // no account reads from it. Best effort: a failure only leaves it to expire on its own.
+    if (sessionId) {
+      const replaced = replacedSessions(sessionsBefore, relinked, sessionId);
+      if (replaced.length > 0) {
+        try {
+          // Rows stay when a close failed, so deleting the user account can still close them.
+          if (await closeSessions(replaced) === replaced.length) {
+            const { error } = await supabase.from("bank_sessions").delete().in("session_id", replaced);
+            if (error) throw error;
+          }
+        } catch (err) {
+          console.error(`replaced bank session not closed: ${errorTag(err)}`);
+        }
+      }
     }
 
     // Fetch an immediate balance for each linked account instead of leaving

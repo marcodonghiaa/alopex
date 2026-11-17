@@ -8,6 +8,17 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Release notes, newest first
 
+## Unreleased
+
+### Enable Banking: longer history, ended consents, clearer sync errors
+- **Migration:** `20261212000000_bank_sync_health`. Apply it with `supabase db push --linked`, THEN redeploy the Edge Functions (`supabase functions deploy`): the new `sync-bank`, `complete-bank-consent` and `start-bank-consent` read the new columns. Then redeploy the dashboard.
+- A newly linked bank's first sync asks Enable Banking for the longest history the bank keeps (`strategy=longest`), often a year or more, instead of 90 days. A sync whose cursor is older than what the bank keeps no longer fails forever (`WRONG_TRANSACTIONS_PERIOD`): it reads from as far back as it can. Pages read before a failure are saved.
+- A consent the user revoked or the bank closed (`REVOKED_SESSION`, `CLOSED_SESSION`) shows the Renew banner and push, like an expired one. The cron no longer calls accounts whose consent has ended.
+- New links ask for the bank's own maximum consent length when it is under 180 days. Renewing a bank closes the old Enable Banking session.
+- Banks that reuse one transaction reference for different transactions keep every transaction instead of only the last.
+- Each account remembers why its last sync failed (`accounts.sync_error`, cleared by the next good run); the dashboard says it in plain words. `sync-bank` answers 429 when the bank's daily limit for automatic updates is reached.
+- **Roll back:** revert the dashboard and the Edge Functions first, then run `supabase/rollbacks/20261212000000_bank_sync_health.down.sql` and `supabase migration repair --status reverted 20261212000000 --linked`.
+
 ## v0.3.0 (14 Nov 2026)
 
 Notes and tags, a Cash flow page, a recurring calendar with regular income, who paid you on income, and a round of fixes (dark-mode toasts, Back closes dialogs, a safer installer).

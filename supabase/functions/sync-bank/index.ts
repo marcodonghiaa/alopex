@@ -17,6 +17,8 @@ import {
   type SyncAccount,
   syncAccountBalance,
   syncAccountTransactions,
+  syncErrorPatch,
+  syncStatus,
 } from "../_shared/bank-sync.ts";
 
 // A project without secret keys (Settings -> API Keys) gets 401 on every call: create them first.
@@ -77,7 +79,7 @@ Deno.serve(async (req) => {
 
   // The bank just refused or failed this account: don't spend more of its daily calls on it.
   const tx = balance.ebFailed
-    ? { upserted: 0, rejected: null, cursor: null }
+    ? { upserted: 0, rejected: null, cursor: null, error: null }
     : await syncAccountTransactions(deps, token, account, cursorRead.data?.last_synced ?? null, today);
   if (tx.cursor) {
     const { error } = await supabase
@@ -85,14 +87,23 @@ Deno.serve(async (req) => {
     if (error) console.error(`Sync cursor not saved: ${errorTag(error)}`);
   }
 
+  // The first failure of this run, shown on the account until a run succeeds.
+  const syncError = balance.error ?? tx.error;
+  const patch = syncErrorPatch(account, syncError, new Date().toISOString());
+  if (patch) {
+    const { error } = await supabase.from("accounts").update(patch).eq("uid", account.uid);
+    if (error) console.error(`Sync error not saved: ${errorTag(error)}`);
+  }
+
   const result = {
     upserted: tx.upserted,
     balance_saved: balanceSaved,
     rejected: balance.rejected ?? tx.rejected,
     renewed: balance.renewed,
+    error: syncError,
     ms: Date.now() - started,
   };
   console.log(`sync-bank: ${JSON.stringify(result)}`);
-  // 502 when the transactions did not sync, so pg_net's net._http_response shows the failure.
-  return Response.json(result, { status: tx.cursor ? 200 : 502 });
+  // Not 200 when the transactions did not sync, so pg_net's net._http_response shows the failure.
+  return Response.json(result, { status: syncStatus(tx.cursor, syncError) });
 });

@@ -1,4 +1,4 @@
-// Splitwise API sync (20261212000000_splitwise_api_sync), run for real against Postgres on the
+// Splitwise API sync (20261213000000_splitwise_api_sync), run for real against Postgres on the
 // full schema: who can reach the connection and its key, what one sync run writes (shares,
 // adopted CSV rows, the review list, balances), the owner's review actions and their undo, the
 // disconnect, and the rollback. Needs psql and RLS_TEST_DATABASE_URL (a superuser URL to a
@@ -15,7 +15,7 @@ const B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const ACC = 'aaaaaaaa-1111-0000-0000-000000000001';
 const db = `splitwise_sync_${process.pid}`;
 const dbUrl = () => url.replace(/^(postgres(?:ql)?:\/\/[^/]*\/)[^?]*/, `$1${db}`);
-const NAME = '20261212000000_splitwise_api_sync';
+const NAME = '20261213000000_splitwise_api_sync';
 const UP = `supabase/migrations/${NAME}.sql`;
 const DOWN = `supabase/rollbacks/${NAME}.down.sql`;
 const MIGRATIONS = fs.readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql')).sort();

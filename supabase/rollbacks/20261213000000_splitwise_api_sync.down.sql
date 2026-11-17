@@ -1,4 +1,4 @@
--- Rollback of 20261212000000_splitwise_api_sync. Stops the sync and removes the connections
+-- Rollback of 20261213000000_splitwise_api_sync. Stops the sync and removes the connections
 -- (their API keys are deleted from Vault first) and the review list. Shares the sync already
 -- wrote stay as ordinary Splitwise shares (they keep counting), without their Splitwise ids.
 -- Balances from the API are deleted: import the group's file again to see them.

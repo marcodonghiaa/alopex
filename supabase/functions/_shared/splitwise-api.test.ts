@@ -70,16 +70,26 @@ Deno.test("currentUser sends the key as a Bearer token and returns the user", as
   assertEquals(f.calls[0].auth, "Bearer k3y");
 });
 
-Deno.test("expenses pages with limit and offset until a short page, with updated_after", async () => {
+Deno.test("expenses pages with limit and offset until an empty page, with updated_after", async () => {
   const page = (from: number, n: number) => ({ body: { expenses: Array.from({ length: n }, (_, i) => ({ id: from + i })) } });
-  const f = fakeFetch([page(0, 3), page(3, 3), page(6, 1)]);
+  const f = fakeFetch([page(0, 3), page(3, 3), page(6, 1), page(7, 0)]);
   const rows = await splitwiseClient("k", f.fn, { pageSize: 3 }).expenses({ updatedAfter: "2026-11-01T00:00:00.000Z" });
   assertEquals(rows.map((r) => r.id), [0, 1, 2, 3, 4, 5, 6]);
-  assertEquals(f.calls.map((c) => c.url.searchParams.get("offset")), ["0", "3", "6"]);
-  assertEquals(f.calls.map((c) => c.url.searchParams.get("limit")), ["3", "3", "3"]);
+  assertEquals(f.calls.map((c) => c.url.searchParams.get("offset")), ["0", "3", "6", "7"]);
+  assertEquals(f.calls.map((c) => c.url.searchParams.get("limit")), ["3", "3", "3", "3"]);
   assertEquals(f.calls[0].url.searchParams.get("updated_after"), "2026-11-01T00:00:00.000Z");
   // Deleted expenses must come back (they carry deleted_at): never filter them out.
   assertEquals(f.calls[0].url.searchParams.has("visible"), false);
+});
+
+// polish-1 #5: Splitwise documents no maximum limit; a server that caps pages below ours must not
+// end the read early (the weekly full check would then delete every expense after page 1).
+Deno.test("expenses keeps reading after a page shorter than asked, from where it left off", async () => {
+  const page = (from: number, n: number) => ({ body: { expenses: Array.from({ length: n }, (_, i) => ({ id: from + i })) } });
+  const f = fakeFetch([page(0, 2), page(2, 2), page(4, 1), page(5, 0)]);
+  const rows = await splitwiseClient("k", f.fn, { pageSize: 3 }).expenses();
+  assertEquals(rows.map((r) => r.id), [0, 1, 2, 3, 4]);
+  assertEquals(f.calls.map((c) => c.url.searchParams.get("offset")), ["0", "2", "4", "5"]);
 });
 
 Deno.test("expenses without updated_after reads everything; an empty first page ends it", async () => {

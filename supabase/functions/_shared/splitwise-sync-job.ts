@@ -21,6 +21,7 @@ const FULL_EVERY_MS = 7 * DAY;
 const CHUNK = 5000; // splitwise_sync_apply's limit per array
 const PAGE = 1000; // PostgREST caps a response at 1000 rows
 const SYNC_NOW_GAP_MS = 60_000;
+const MAX_SURE_GONE = 10; // a full check may always remove this many
 const CONNECTION_COLS = "user_id, splitwise_user_id, status, cursor_updated_at, last_full_check_at, last_synced_at";
 const RECONNECT = "Splitwise refused the API key. Connect again with a new key.";
 
@@ -76,7 +77,13 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
       ...await allIds(() => deps.db.from("splitwise_expenses").select("splitwise_id").eq("user_id", c.user_id).not("splitwise_id", "is", null)),
       ...await allIds(() => deps.db.from("splitwise_review").select("splitwise_id").eq("user_id", c.user_id)),
     ];
-    for (const id of new Set(local)) if (!seen.has(id)) deleted.push(id);
+    const missing = [...new Set(local)].filter((id) => !seen.has(id));
+    // A read cut short must not wipe what is stored: removing more than half (and more than 10)
+    // waits for a read that looks whole.
+    if (missing.length > Math.max(MAX_SURE_GONE, new Set(local).size / 2)) {
+      throw new SplitwiseApiError("Splitwise sent far fewer expenses than Alopex has, so nothing was removed");
+    }
+    deleted.push(...missing);
   }
   const balances = balancesFrom(groups, me, labels);
   const calls = Math.max(1, ...[plan.shares, plan.review, deleted].map((a) => Math.ceil(a.length / CHUNK)));

@@ -115,12 +115,13 @@ export function splitwiseClient(
     /** Every expense of mine (all groups and friends), deleted ones included; changed since updatedAfter when given. */
     async expenses({ updatedAfter }: { updatedAfter?: string } = {}): Promise<SwExpense[]> {
       const out: SwExpense[] = [];
+      // Only an empty page ends it: Splitwise documents no maximum limit, and may send fewer.
       for (let page = 0; page < maxPages; page++) {
-        const params: Record<string, string> = { limit: String(pageSize), offset: String(page * pageSize) };
+        const params: Record<string, string> = { limit: String(pageSize), offset: String(out.length) };
         if (updatedAfter) params.updated_after = updatedAfter;
         const rows = list<SwExpense>(await get("get_expenses", params), "expenses");
+        if (rows.length === 0) return out;
         out.push(...rows);
-        if (rows.length < pageSize) return out;
       }
       throw new SplitwiseApiError("Splitwise has too many expenses to read in one run");
     },

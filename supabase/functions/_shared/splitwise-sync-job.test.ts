@@ -108,6 +108,21 @@ Deno.test("a full check reads everything and removes what Splitwise no longer ha
   assertEquals([args.p_full, args.p_preview], [true, true]);
 });
 
+// polish-1 #5: a full read that comes back far shorter than what is stored removes nothing.
+Deno.test("a full check that would remove most of what is stored writes nothing and says so", async () => {
+  const stored = Array.from({ length: 30 }, (_, i) => ({ user_id: "u1", splitwise_id: i + 1 }));
+  const s = setup({ expenses: [expense(1), expense(2)], tables: { splitwise_expenses: stored, splitwise_review: [] } });
+  let err: unknown = null;
+  await syncUser(s.deps, conn({ last_full_check_at: null }), { preview: false }).catch((e) => (err = e));
+  assertEquals(err instanceof SplitwiseApiError, true);
+  assertEquals((err as Error).message, "Splitwise sent far fewer expenses than Alopex has, so nothing was removed");
+  assertEquals(s.applies(), []);
+  // Up to 10, or up to half, still go.
+  const few = setup({ expenses: Array.from({ length: 15 }, (_, i) => expense(i + 1)), tables: { splitwise_expenses: stored, splitwise_review: [] } });
+  const [args] = await syncUser(few.deps, conn({ last_full_check_at: null }), { preview: false }).then(() => few.applies());
+  assertEquals((args.p_deleted as number[]).length, 15);
+});
+
 Deno.test("big runs are written in chunks; balances, cursor and full only with the last", async () => {
   const many = Array.from({ length: 5001 }, (_, i) => expense(i + 1));
   const s = setup({ expenses: many });

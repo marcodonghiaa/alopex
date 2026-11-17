@@ -11,7 +11,9 @@
 //   deleted_at set                             | gone
 //
 // Expenses outside any group (with friends) all go under Splitwise's own label for them.
-// Categories are left empty: post-sync fills them (_shared/splitwise.ts).
+// A share's category comes from Splitwise's own, mapped as the CSV import maps it; when that
+// says nothing, it is left empty and post-sync fills it (_shared/splitwise.ts).
+import { CATEGORIES } from "./categories.ts";
 import { centsToDecimal, type SwExpense, type SwGroup, type SwUser, toCents } from "./splitwise-api.ts";
 
 export const NON_GROUP = "Non-group expenses";
@@ -24,7 +26,7 @@ export type ShareRow = {
   group_name: string;
   booking_date: string;
   description: string;
-  category: null;
+  category: string | null;
   amount: string;
   currency: string;
   splitwise_updated_at: string | null;
@@ -37,6 +39,28 @@ export type Classified =
   | { type: "review"; row: ReviewRow }
   | { type: "gone"; id: number }
   | { type: "skip"; id: number };
+
+// Same as the dashboard's suggestCategory (src/lib/import/suggest-category.ts), which maps the
+// category column of a Splitwise file: an app category by name, else the first keyword group.
+const KEYWORDS: Array<[string, RegExp]> = [
+  ["Groceries", /\b(grocer|supermerc|spesa|market)/],
+  ["Dine Out", /\b(restaurant|ristorant|dining|bar\b|cafe|caffe|pizz|takeaway)/],
+  ["Housing", /\b(rent|affitto|mutuo|mortgage|condomin)/],
+  ["Transports", /\b(uber|taxi|train|treno|bus\b|fuel|benzina|transport|parking|parcheggio|metro)/],
+  ["Health", /\b(pharmac|farmac|doctor|medic|dentist|salute|health|gym|palestra)/],
+  ["Entertainment", /\b(netflix|spotify|cinema|movie|entertain|svago|game|subscri)/],
+  ["Experiences", /\b(travel|viagg|hotel|holiday|vacanz|concert|event)/],
+  ["Shopping", /\b(shop|cloth|abbigliament|amazon)/],
+  ["Services", /\b(bill|bolletta|utilit|insurance|assicur|internet|phone|telefon)/],
+];
+// A share is everyday spending: never income, a transfer or a tax; "Others" says nothing.
+const NOT_A_SHARE = new Set(["Income", "Transfer", "Taxes", "Others"]);
+export function categoryFrom(name: string | null | undefined): string | null {
+  const s = (name ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (!s) return null;
+  const found = CATEGORIES.find((c) => c.toLowerCase() === s) ?? KEYWORDS.find(([, re]) => re.test(s))?.[0] ?? null;
+  return found && !NOT_A_SHARE.has(found) ? found : null;
+}
 
 const cut = (s: string, n: number) => [...s].slice(0, n).join("");
 const fullName = (u: SwUser | undefined, id: number) =>
@@ -113,7 +137,7 @@ export function classify(e: SwExpense, me: number, labels: Map<number, string>):
     return { type: "gone", id: e.id };
   }
   if (paid > 0) return review(otherPayers > 0 ? "multi_payer" : "paid_by_me", owed);
-  if (owed > 0) return { type: "share", row: { ...base, category: null, amount: centsToDecimal(owed) } };
+  if (owed > 0) return { type: "share", row: { ...base, category: categoryFrom(e.category?.name), amount: centsToDecimal(owed) } };
   return { type: "gone", id: e.id };
 }
 

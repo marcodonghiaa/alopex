@@ -53,6 +53,8 @@ export type SwExpense = {
   updated_at?: string;
   deleted_at?: string | null;
   payment?: boolean;
+  /** Splitwise's own category (its name in the user's language). */
+  category?: { id?: number; name?: string | null } | null;
   users?: SwShare[];
 };
 export type SwDebt = { from: number; to: number; amount: string; currency_code: string };

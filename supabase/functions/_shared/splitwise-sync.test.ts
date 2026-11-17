@@ -197,3 +197,20 @@ Deno.test("balancesFrom leaves out unreadable amounts and currencies", () => {
   }];
   assertEquals(balancesFrom(groups, ME, groupLabels(groups)), []);
 });
+
+// polish-1 #9: the CSV import maps Splitwise's category (dashboard suggest-category.ts); the sync
+// did not, so synced shares stayed uncategorized without an AI key.
+Deno.test("Splitwise's category maps like the CSV import's; unknown, general or not spending stays empty", () => {
+  const cat = (name: string | undefined) => {
+    const c = classify(expense({ category: name === undefined ? undefined : { id: 1, name } }), ME, labels);
+    return c.type === "share" ? c.row.category : "not a share";
+  };
+  assertEquals(cat("Dining out"), "Dine Out");
+  assertEquals(cat("groceries"), "Groceries");
+  assertEquals(cat("Taxi"), "Transports");
+  assertEquals(cat("Rent"), "Housing");
+  assertEquals(cat("Pharmacy"), "Health");
+  assertEquals(cat("General"), null);
+  assertEquals(cat("Taxes"), null, "a share is never a tax, income or transfer");
+  assertEquals(cat(undefined), null);
+});

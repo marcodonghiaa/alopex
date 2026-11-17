@@ -140,6 +140,19 @@ test('EXPIRED_SESSION on balances marks the consent as ending today', async () =
   assert.deepStrictEqual(result, { row: null, rejected: 401, renewed: true });
 });
 
+for (const error of ['REVOKED_SESSION', 'CLOSED_SESSION']) {
+  test(`${error} on balances marks the consent as ending today, like an expired one`, async () => {
+    const { fetch } = fakeFetch({ '/balances': { ok: false, status: 401, body: { ...EXPIRED, error } } });
+    const { supabase, updates } = fakeSupabase();
+    const account = { uid: 'pk', eb_account_uid: 'eb', identification_hash: 'h', consent_valid_until: null };
+
+    const result = await syncAccountBalance({ fetch, supabase }, 't', account, 'user', '2026-10-27');
+
+    assert.deepStrictEqual(updates.map((u) => u.patch), [{ consent_valid_until: '2026-10-27' }]);
+    assert.strictEqual(result.renewed, true);
+  });
+}
+
 test('a 401 with another error leaves the consent date alone', async () => {
   const { fetch } = fakeFetch({ '/balances': { ok: false, status: 401, body: { ...EXPIRED, error: 'UNAUTHORIZED' } } });
   const { supabase, updates } = fakeSupabase();

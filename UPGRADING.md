@@ -16,7 +16,7 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 - `holding_trades` gets optional columns: `tax_eur`, `traded_at`, `note`, `currency` + `price_native`, `group_id`. Existing rows are unchanged.
 - `delete_holding` also deletes the holding's events.
 - Trade Republic: trades imported before this release are skipped on re-import, so they stay without tax. To get the tax, delete the holding's Trade Republic trades and import the file again.
-- **Roll back:** revert the dashboard first, then run `supabase/rollbacks/20261215000000_investment_events.down.sql` and `supabase migration repair --status reverted 20261215000000 --linked`. Imported events are lost; importing the broker files again brings them back.
+- **Roll back:** revert the dashboard first, then run `supabase/rollbacks/20261215000000_investment_events.down.sql` and `supabase migration repair --status reverted 20261215000000 --linked`. Imported events are lost, and so are the trades' tax, time, note, native price and group (tax becomes 0). Importing the broker files again brings the events back, but not the trade detail: already-saved trades are skipped. To get it back, delete those trades and import again.
 
 ## v0.3.0 (14 Nov 2026)
 

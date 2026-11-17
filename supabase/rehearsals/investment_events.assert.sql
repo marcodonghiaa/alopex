@@ -1,4 +1,5 @@
--- Asserts for 20261215000000 (local only). Runs in one rolled-back transaction, from the repo root:
+-- Asserts for 20261215000000 (local only). Runs in one rolled-back transaction, from the repo root, on a database
+-- still at the previous migration (run the .down.sql first if 20261215000000 is applied):
 --   T=supabase/migrations/20261215000000_investment_events.sql
 --   ( echo 'begin;'; cat $T supabase/rehearsals/investment_events.assert.sql \
 --       supabase/rollbacks/20261215000000_investment_events.down.sql; cat $T; echo 'rollback;' ) \

@@ -1,6 +1,7 @@
 -- Rollback of 20261215000000_investment_events. Imported dividends, interest, fees, taxes and
 -- transfers are lost (importing the broker files again brings them back); trades stay, without
--- their tax, time, note and native price.
+-- their tax, time, note, native price and group (a re-import skips them,
+-- so that detail stays lost).
 set local lock_timeout = '5s';
 
 drop table if exists public.investment_events;

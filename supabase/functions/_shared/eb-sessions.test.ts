@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { burnCode, closeSessions, relinkPatch, replacedSessions } from "./eb-sessions.ts";
+import { burnCode, closeReplaced, closeSessions, relinkPatch, replacedSessions } from "./eb-sessions.ts";
 
 const sign = () => Promise.resolve("jwt");
 const quiet = async (fn: () => Promise<void>) => {
@@ -80,4 +80,65 @@ Deno.test("relinkPatch: a renewal records its session and clears the last sync e
 
 Deno.test("relinkPatch: no session id from Enable Banking changes nothing", () => {
   assertEquals(relinkPatch(null), {});
+});
+
+// accounts: rows the re-read sees right before closing; deleted: bank_sessions ids removed.
+function fakeDb(accounts: Array<{ bank_session_id: string | null }>, failDelete = false) {
+  const deleted: string[][] = [];
+  const reads: string[][] = [];
+  const db = {
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => ({
+          in: (_col: string, ids: string[]) => {
+            reads.push(ids);
+            return Promise.resolve({ data: accounts.filter((a) => ids.includes(a.bank_session_id ?? "")), error: null });
+          },
+        }),
+      }),
+      delete: () => ({
+        in: (_col: string, ids: string[]) => {
+          if (table === "bank_sessions") deleted.push(ids);
+          return Promise.resolve({ error: failDelete ? { message: "x" } : null });
+        },
+      }),
+    }),
+  };
+  return { db, deleted, reads };
+}
+const okFetch = (calls: string[]) => ((url: string) => {
+  calls.push(url);
+  return Promise.resolve(new Response(null, { status: 204 }));
+}) as unknown as typeof fetch;
+
+Deno.test("closeReplaced: closes the replaced session and drops its row", async () => {
+  const { db, deleted } = fakeDb([]);
+  const calls: string[] = [];
+  await closeReplaced(db, "u", [{ uid: "a", bank_session_id: "old" }], new Set(["a"]), "new", okFetch(calls), sign);
+  assertEquals(calls, ["https://api.enablebanking.com/sessions/old"]);
+  assertEquals(deleted, [["old"]]);
+});
+Deno.test("closeReplaced: a session another renewal started using meanwhile stays open", async () => {
+  const { db, deleted, reads } = fakeDb([{ bank_session_id: "old" }]);
+  const calls: string[] = [];
+  await closeReplaced(db, "u", [{ uid: "a", bank_session_id: "old" }], new Set(["a"]), "new", okFetch(calls), sign);
+  assertEquals(reads, [["old"]]);
+  assertEquals(calls, []);
+  assertEquals(deleted, []);
+});
+Deno.test("closeReplaced: nothing replaced, no read and no bank call", async () => {
+  const { db, reads } = fakeDb([]);
+  const calls: string[] = [];
+  await closeReplaced(db, "u", [{ uid: "a", bank_session_id: "new" }], new Set(["a"]), "new", okFetch(calls), sign);
+  assertEquals([reads, calls], [[], []]);
+});
+Deno.test("closeReplaced: a failed close keeps the row so account deletion can retry", async () => {
+  const { db, deleted } = fakeDb([]);
+  const fail = (() => Promise.resolve(new Response(null, { status: 500 }))) as unknown as typeof fetch;
+  await quiet(() => closeReplaced(db, "u", [{ uid: "a", bank_session_id: "old" }], new Set(["a"]), "new", fail, sign));
+  assertEquals(deleted, []);
+});
+Deno.test("closeReplaced: a database error never fails the link", async () => {
+  const { db } = fakeDb([], true);
+  await quiet(() => closeReplaced(db, "u", [{ uid: "a", bank_session_id: "old" }], new Set(["a"]), "new", okFetch([]), sign));
 });

@@ -8,7 +8,7 @@ import { accountType, matchAccount, matchPatch, type StoredAccount } from "./acc
 import { bankLogo, type BankInfo } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
-import { closeSessions, relinkPatch, replacedSessions } from "./eb-sessions.ts";
+import { closeReplaced, relinkPatch } from "./eb-sessions.ts";
 
 export const LINK_FAILED = "Couldn't link the bank, please try again";
 
@@ -159,21 +159,8 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     }
 
     // A renewal leaves the old session open at Enable Banking until it expires: close it once
-    // no account reads from it. Best effort: a failure only leaves it to expire on its own.
-    if (sessionId) {
-      const replaced = replacedSessions(sessionsBefore, relinked, sessionId);
-      if (replaced.length > 0) {
-        try {
-          // Rows stay when a close failed, so deleting the user account can still close them.
-          if (await closeSessions(replaced) === replaced.length) {
-            const { error } = await supabase.from("bank_sessions").delete().in("session_id", replaced);
-            if (error) throw error;
-          }
-        } catch (err) {
-          console.error(`replaced bank session not closed: ${errorTag(err)}`);
-        }
-      }
-    }
+    // no account reads from it.
+    if (sessionId) await closeReplaced(supabase, userId, sessionsBefore, relinked, sessionId);
 
     // Fetch an immediate balance for each linked account instead of leaving
     // it invisible until the next scheduled sync (up to 6 hours away) --

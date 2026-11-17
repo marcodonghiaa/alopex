@@ -37,6 +37,7 @@ export function syncStatus(cursor: string | null, error: string | null): number 
 
 const EB = "https://api.enablebanking.com/accounts";
 const OVERLAP_DAYS = 7;
+const FALLBACK_FIRST_SYNC_DAYS = 90;
 const DAY_MS = 24 * 3600 * 1000;
 
 // Statuses with which EB refuses an account id (dead or expired consent).
@@ -121,8 +122,12 @@ export async function syncAccountTransactions(
   // first hour after the consent, which is when complete-bank-consent starts this sync.
   // Later syncs re-fetch an overlap before the cursor: banks post transactions days after their
   // booking_date, so a cursor of "today" would skip them forever. Upsert dedupes.
+  // A first sync that ran out of time last run would restart longest from page 1 every run (the
+  // continuation key dies with the run): fall back to the last 90 days instead.
   const dateFrom = lastSynced
     ? new Date(Date.parse(lastSynced) - OVERLAP_DAYS * DAY_MS).toISOString().slice(0, 10)
+    : account.sync_error === "TIMEOUT"
+    ? new Date(Date.parse(today) - FALLBACK_FIRST_SYNC_DAYS * DAY_MS).toISOString().slice(0, 10)
     : null;
   const transactions: EbTransaction[] = [];
   let failure: unknown = null;

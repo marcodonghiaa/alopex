@@ -359,3 +359,25 @@ Deno.test("syncStatus: 200 synced, 429 for the bank's daily limit, 502 for other
   assertEquals(syncStatus(null, "ASPSP_RATE_LIMIT_EXCEEDED"), 429);
   assertEquals(syncStatus(null, "ASPSP_ERROR"), 502);
 });
+
+// Polish 1 #2: a first sync that ran out of time restarts longest from page 1 every run (the
+// continuation key dies with the run), spending the bank's daily calls forever on a long history.
+Deno.test("transactions: a first sync that timed out falls back to the last 90 days", async () => {
+  const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [TX] } } });
+  const { supabase } = fakeSupabase();
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account({ sync_error: "TIMEOUT" }), null, TODAY);
+
+  const params = new URL(urls[0]).searchParams;
+  assertEquals(params.has("strategy"), false);
+  assertEquals(params.get("date_from"), "2026-07-29"); // TODAY 2026-10-27 minus 90 days
+});
+
+Deno.test("transactions: a first sync after another error still asks for the longest history", async () => {
+  const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [] } } });
+  const { supabase } = fakeSupabase();
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account({ sync_error: "ASPSP_ERROR" }), null, TODAY);
+
+  assertEquals(new URL(urls[0]).searchParams.get("strategy"), "longest");
+});

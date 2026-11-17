@@ -397,3 +397,12 @@ Deno.test("transactions: a first sync after another error still asks for the lon
 
   assertEquals(new URL(urls[0]).searchParams.get("strategy"), "longest");
 });
+
+Deno.test("balance: an error name over 64 letters is not stored, the HTTP status is", async () => {
+  for (const [name, expected] of [["A".repeat(64), "A".repeat(64)], ["A".repeat(65), "HTTP_502"]]) {
+    const { fetch } = fakeFetch({ "/balances": { ok: false, status: 502, body: { error: name } } });
+    const { supabase } = fakeSupabase();
+    const result = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
+    assertEquals(result.error, expected);
+  }
+});

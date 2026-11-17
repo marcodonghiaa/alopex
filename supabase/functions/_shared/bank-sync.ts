@@ -73,7 +73,7 @@ async function getEb(fetch: Deps["fetch"], token: string, path: string) {
   if (!res.ok) {
     // code = EB's error name (e.g. EXPIRED_SESSION) when the body is JSON; the body itself is never kept.
     const body = await res.json().catch(() => null);
-    const code = /^[A-Z_]+$/.test(body?.error) ? body.error : undefined;
+    const code = /^[A-Z_]{1,64}$/.test(body?.error) ? body.error : undefined;
     throw Object.assign(new Error(`API error ${res.status}`), { status: res.status, ...(code && { code }) });
   }
   return res.json();

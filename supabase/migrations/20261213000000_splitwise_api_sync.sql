@@ -743,6 +743,7 @@ declare
   n int;
 begin
   if uid is null then raise exception 'Not signed in'; end if;
+  if p_entry_reference is null or char_length(p_entry_reference) not between 1 and 500 then raise exception 'Missing bank transaction'; end if;
   select * into r from splitwise_review where id = p_id and user_id = uid for update;
   if not found then raise exception 'This Splitwise expense is no longer on the list.'; end if;
   if r.status not in ('pending', 'dismissed') then raise exception 'This Splitwise expense is already settled.'; end if;

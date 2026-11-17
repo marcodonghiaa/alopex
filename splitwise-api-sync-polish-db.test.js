@@ -270,6 +270,15 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(tx('pN2'), '-|-|-', 'and release can still free it');
   });
 
+  await t.test('phase 2 #7: linking checks the bank reference is 1 to 500 characters, as reject does', () => {
+    apply({ reviews: [review(7001)] });
+    const id = reviewId(7001);
+    for (const ref of [`'${'x'.repeat(501)}'`, "''", 'null']) {
+      assert.match(owner(`select public.link_splitwise_review('${id}', '${ACC}', ${ref})`), /Missing bank transaction/, ref.slice(0, 12));
+    }
+    assert.strictEqual(sql('select status from public.splitwise_review where splitwise_id = 7001'), 'pending');
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

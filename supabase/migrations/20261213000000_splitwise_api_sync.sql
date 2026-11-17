@@ -788,7 +788,7 @@ begin
   end if;
   update splitwise_review
      set status = 'linked', linked_account_uid = p_account_uid, linked_entry_reference = p_entry_reference
-   where id = p_id;
+   where id = p_id and user_id = uid;
   return jsonb_build_object('status', 'linked');
 end;
 $$;
@@ -818,7 +818,7 @@ begin
     on conflict (user_id, splitwise_id) where splitwise_id is not null do update
       set amount = excluded.amount, linked_account_uid = null, linked_entry_reference = null;
   end if;
-  update splitwise_review set status = 'counted' where id = p_id;
+  update splitwise_review set status = 'counted' where id = p_id and user_id = uid;
   return jsonb_build_object('status', 'counted');
 end;
 $$;
@@ -840,7 +840,7 @@ begin
     perform splitwise_release(uid, array[r.splitwise_id]);
   end if;
   update splitwise_review set status = 'dismissed', linked_account_uid = null, linked_entry_reference = null
-   where id = p_id;
+   where id = p_id and user_id = uid;
   return jsonb_build_object('status', 'dismissed');
 end;
 $$;

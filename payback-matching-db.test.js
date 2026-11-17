@@ -233,6 +233,19 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
     }
   });
 
+  await t.test('a bill with no euro rate is skipped, not a wall: later bills still settle', () => {
+    admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, creditor_name, debtor_name, personal_amount, owed_by)
+      values ('nr-xyz', '${ACC_A}', '${A}', 100, 'XYZ', 'DBIT', '${daysAgo(9)}', 'Abroad', null, 40, 'Ugo'),
+             ('nr-eur', '${ACC_A}', '${A}', 50, 'EUR', 'DBIT', '${daysAgo(8)}', 'Bar', null, 25, 'Ugo'),
+             ('nr-pay', '${ACC_A}', '${A}', 25, 'EUR', 'CRDT', '${today}', null, 'Ugo Neri', null, null)`);
+    try {
+      const out = as(A, `select public.record_payback('${ACC_A}', 'nr-pay', 'Ugo', false)`, { keep: false });
+      assert.match(out, /"settled": \["nr-eur"\]/);
+    } finally {
+      admin("delete from public.transactions where entry_reference like 'nr-%'");
+    }
+  });
+
   await t.test('a payment in a currency without a rate settles nothing', () => {
     admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, debtor_name)
            values ('pay-xyz', '${ACC_A}', '${A}', 999, 'XYZ', 'CRDT', '${today}', 'Anna Rossi')`);

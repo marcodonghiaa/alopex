@@ -52,7 +52,8 @@ test('bank-sync-health migration and rollback on a real database', { skip }, asy
     insert into auth.users (id) values ('${U}');
     insert into public.accounts (uid, user_id, currency, label, manual, consent_valid_until) values
       (gen_random_uuid(), '${U}', 'EUR', 'future', false, now() + interval '30 days'),
-      (gen_random_uuid(), '${U}', 'EUR', 'today', false, date_trunc('day', now())),
+      (gen_random_uuid(), '${U}', 'EUR', 'today', false, now() + interval '1 hour'),
+      (gen_random_uuid(), '${U}', 'EUR', 'midnight', false, date_trunc('day', now())),
       (gen_random_uuid(), '${U}', 'EUR', 'unknown', false, null),
       (gen_random_uuid(), '${U}', 'EUR', 'ended', false, now() - interval '2 days'),
       (gen_random_uuid(), '${U}', 'EUR', 'manual', true, null);`);
@@ -63,7 +64,7 @@ test('bank-sync-health migration and rollback on a real database', { skip }, asy
     assert.strictEqual(sql("select string_agg(column_name, ',' order by column_name) from information_schema.columns where table_name = 'accounts' and column_name in ('sync_error', 'sync_error_at', 'bank_session_id')"), 'bank_session_id,sync_error,sync_error_at');
   });
 
-  await t.test('the cron skips ended consents and manual accounts, keeps today and unknown', () => {
+  await t.test('the cron skips ended consents (even earlier today) and manual accounts, keeps later today and unknown', () => {
     assert.strictEqual(synced(), 'future,today,unknown');
   });
 
@@ -85,8 +86,8 @@ test('bank-sync-health migration and rollback on a real database', { skip }, asy
     sql("update public.accounts set consent_valid_until = now() - interval '2 days' where label = 'ended'");
     applySql(DOWN);
     assert.strictEqual(sql("select count(*) from information_schema.columns where table_name = 'accounts' and column_name in ('sync_error', 'sync_error_at', 'bank_session_id')"), '0');
-    assert.strictEqual(asOwner('select count(*) from public.v_bank_accounts_latest'), '4');
-    assert.strictEqual(synced(), 'ended,future,today,unknown');
+    assert.strictEqual(asOwner('select count(*) from public.v_bank_accounts_latest'), '5');
+    assert.strictEqual(synced(), 'ended,future,midnight,today,unknown');
   });
 
   await t.test('re-applies after a rollback', () => {

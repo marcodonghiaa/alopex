@@ -33,7 +33,7 @@ begin
     from public.accounts a
     where not a.manual
       -- Ended today still syncs: sync-bank marks an early end as today, the day it saw it.
-      and (a.consent_valid_until is null or a.consent_valid_until >= date_trunc('day', now()));
+      and (a.consent_valid_until is null or a.consent_valid_until > now());
 end;
 $function$;
 

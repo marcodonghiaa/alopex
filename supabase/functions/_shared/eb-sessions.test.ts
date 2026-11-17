@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { burnCode, closeSessions, replacedSessions } from "./eb-sessions.ts";
+import { burnCode, closeSessions, relinkPatch, replacedSessions } from "./eb-sessions.ts";
 
 const sign = () => Promise.resolve("jwt");
 const quiet = async (fn: () => Promise<void>) => {
@@ -70,4 +70,14 @@ Deno.test("replacedSessions: a renewal frees the old session only when no accoun
 Deno.test("replacedSessions: unknown or unchanged sessions are never closed", () => {
   const before = [{ uid: "a", bank_session_id: null }, { uid: "b", bank_session_id: "same" }];
   assertEquals(replacedSessions(before, new Set(["a", "b"]), "same"), []);
+});
+
+// Polish 1 #3: a renewal must clear the last sync error, or "Connect again" stays on the Accounts
+// page for up to 6 hours after the user just did it.
+Deno.test("relinkPatch: a renewal records its session and clears the last sync error", () => {
+  assertEquals(relinkPatch("new"), { bank_session_id: "new", sync_error: null, sync_error_at: null });
+});
+
+Deno.test("relinkPatch: no session id from Enable Banking changes nothing", () => {
+  assertEquals(relinkPatch(null), {});
 });

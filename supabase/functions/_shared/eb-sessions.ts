@@ -70,3 +70,8 @@ export function replacedSessions(
   const old = before.filter((a) => relinked.has(a.uid)).map((a) => a.bank_session_id);
   return [...new Set(old)].filter((id): id is string => !!id && !stillUsed.has(id));
 }
+
+/** Account patch for a renewed consent: records the new session and clears the last sync error. */
+export function relinkPatch(sessionId: string | null) {
+  return sessionId ? { bank_session_id: sessionId, sync_error: null, sync_error_at: null } : {};
+}

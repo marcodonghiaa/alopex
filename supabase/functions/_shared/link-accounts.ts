@@ -8,7 +8,7 @@ import { accountType, matchAccount, matchPatch, type StoredAccount } from "./acc
 import { bankLogo, type BankInfo } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
-import { closeSessions, replacedSessions } from "./eb-sessions.ts";
+import { closeSessions, relinkPatch, replacedSessions } from "./eb-sessions.ts";
 
 export const LINK_FAILED = "Couldn't link the bank, please try again";
 
@@ -89,7 +89,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     const sessionsBefore: Array<{ uid: string; bank_session_id?: string | null }> = storedRows ?? [];
     const relinked = new Set<string>(); // existing accounts this consent renewed
     // Which session each account reads from, so a renewal can close the one it replaced.
-    const sessionPatch = sessionId ? { bank_session_id: sessionId } : {};
+    const sessionPatch = relinkPatch(sessionId);
     let stored: StoredAccount[] = storedRows ?? [];
 
     const newUids: string[] = []; // first-synced right away; relinked ones wait for the cron

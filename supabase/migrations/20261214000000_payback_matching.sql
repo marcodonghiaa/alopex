@@ -20,7 +20,7 @@ create index if not exists transactions_settled_by_idx
   where settled_by_ref is not null;
 
 -- How a payer's name is compared: case, accents, spacing and punctuation don't matter
--- ("Cristian  FIORE." = "cristian fiore"). Null when nothing is left.
+-- ("Mario  VERDI." = "mario verdi"). Null when nothing is left.
 create or replace function public.payer_key(p_name text)
 returns text
 language sql

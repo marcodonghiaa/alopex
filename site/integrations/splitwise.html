@@ -29,7 +29,7 @@
    "@type": "TechArticle",
    "headline": "Import Splitwise shared expenses into Alopex",
    "description": "Alopex imports the spreadsheet you export from a Splitwise group, so your spending shows only your share of shared costs. It also shows who owes you and how much, and can link each Splitwise expense to the bank payment it came from, so the full amount you paid doesn't count as your spending.",
-   "dateModified": "2026-11-10",
+   "dateModified": "2026-11-17",
    "author": {
     "@type": "Person",
     "name": "Marco D'Onghia",
@@ -73,7 +73,7 @@
      "name": "Does Alopex connect to my Splitwise account?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Not yet. Today it reads the file you export, in your browser, and never signs in to Splitwise. Live sync through the Splitwise API is in development."
+      "text": "Yes, if you want: paste a personal API key from secure.splitwise.com/apps and Alopex reads your expenses every 6 hours, read-only. The key stays in your own Supabase project's Vault. You can also keep importing the file you export, which never signs in to Splitwise."
      }
     },
     {
@@ -460,10 +460,10 @@ ol.steps li::before{margin:0;grid-row:span 2}
 <p class="meta">Shared costs · Updated <time datetime="2026-11-10">10 November 2026</time> · By Marco D'Onghia</p>
 </section>
 <section class="ibody">
-<div><h2>What it does</h2><ul><li>Your share of each group expense, in your spending by category.</li><li>Who owes you: balances per person, with a Settle toggle.</li><li>Find in bank: link an expense to the payment on your bank account, so only your share counts.</li><li>Undo the last import.</li></ul></div>
-<div><h2>What it can't do</h2><ul><li>Sync live with Splitwise yet: for now, export and import again to update. Live sync through the Splitwise API is in development.</li><li>Read files over 2 MB.</li></ul></div>
-<div class="full"><h2>Set it up</h2><ol><li>In Splitwise, open the group, then Settings › Export as spreadsheet.</li><li>In Alopex, open Who owes you and import the file.</li><li>Check the rows, link payments with Find in bank if you want, then import.</li></ol></div>
-<div class="full"><h2>Questions</h2><details><summary>Does Alopex connect to my Splitwise account?</summary><p>Not yet. Today it reads the file you export, in your browser, and never signs in to Splitwise. Live sync through the Splitwise API is in development.</p></details><details><summary>Why link a Splitwise expense to a bank payment?</summary><p>If you paid €60 for dinner and your share is €20, linking the two makes Alopex count €20 as spending, not €60.</p></details></div>
+<div><h2>What it does</h2><ul><li>Your share of each group expense, in your spending by category.</li><li>Who owes you: balances per person, with a Settle toggle.</li><li>Find in bank: link an expense to the payment on your bank account, so only your share counts.</li><li>Automatic sync with your own Splitwise API key: new expenses, edits and deletions every 6 hours, plus Sync now.</li><li>Undo the last import.</li></ul></div>
+<div><h2>What it can't do</h2><ul><li>Write to Splitwise: the sync only reads. Add and settle expenses in Splitwise as usual.</li><li>Read files over 2 MB.</li></ul></div>
+<div class="full"><h2>Set it up</h2><ol><li>Automatic: register an app at secure.splitwise.com/apps, generate an API key, and paste it in Alopex.</li><li>Or by file: in Splitwise, open the group, then Settings › Export as spreadsheet, and import it under Who owes you.</li><li>Check the expenses you paid, link payments with Find in bank if you want, or count them.</li></ol></div>
+<div class="full"><h2>Questions</h2><details><summary>Does Alopex connect to my Splitwise account?</summary><p>Yes, if you want: paste a personal API key from secure.splitwise.com/apps and Alopex reads your expenses every 6 hours, read-only. The key stays in your own Supabase project's Vault. You can also keep importing the file you export, which never signs in to Splitwise.</p></details><details><summary>Why link a Splitwise expense to a bank payment?</summary><p>If you paid €60 for dinner and your share is €20, linking the two makes Alopex count €20 as spending, not €60.</p></details></div>
 </section>
 <div class="icta"><button type="button" class="cmd" data-copy="npx create-alopex" aria-label="Copy install command: npx create-alopex"><span class="ps" aria-hidden="true">$</span> <span class="lbl">npx create-alopex</span><span class="tip" role="status" aria-live="polite"></span><span class="cp" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M10.5 5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5H5"/></svg></span></button><a class="btn" href="https://github.com/marcodonghiaa/alopex-web#readme">Read the docs</a><a class="btn" href="https://app.alopex.finance/demo">Live demo</a></div>
 <p class="icat">More integrations</p>

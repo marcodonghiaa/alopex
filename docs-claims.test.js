@@ -45,3 +45,14 @@ test('UPGRADING.md has a section for the installer version', () => {
   assert.notStrictEqual(version, '0.1.0', 'this release bumps the installer past v0.1.0');
   assert.match(read('UPGRADING.md'), new RegExp(`^## v${version.replace(/\./g, '\\.')}\\b`, 'm'));
 });
+
+// protects=a plain `supabase functions deploy` gates every function as documented; fails_when=a new
+// function dir has no verify_jwt entry in config.toml or no entry in supabase/functions/README.md
+test('every Edge Function has a verify_jwt entry and a README entry', () => {
+  const dirs = fs.readdirSync(path.join(__dirname, 'supabase/functions'), { withFileTypes: true })
+    .filter((d) => d.isDirectory() && !d.name.startsWith('_')).map((d) => d.name);
+  const config = read('supabase/config.toml');
+  const readme = read('supabase/functions/README.md');
+  assert.deepStrictEqual(dirs.filter((f) => !new RegExp(`\\[functions\\.${f}\\]\\nverify_jwt = (true|false)`).test(config)), []);
+  assert.deepStrictEqual(dirs.filter((f) => !readme.includes(`- **${f}**`)), []);
+});

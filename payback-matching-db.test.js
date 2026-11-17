@@ -271,9 +271,11 @@ test('payback matching on a real Postgres', { skip }, async (t) => {
              ('pr-pay', '${ACC_A}', '${A}', 5, 'EUR', 'CRDT', '${today}', null, 'Fede Rosa', null, null, false)`);
     try {
       // 5 + 50 would cover the 10 bill, but only by using 10 of the 50: nothing settles, 5 left.
-      const out = as(A, `select public.record_payback('${ACC_A}', 'pr-pay', 'Fede', false)`, { keep: false });
+      const out = as(A, `select public.record_payback('${ACC_A}', 'pr-pay', 'Fede', false); select string_agg(entry_reference || '=' || owed_settled, ',' order by entry_reference) from public.transactions where entry_reference in ('pr-b1', 'pr-ref')`, { keep: false });
       assert.match(out, /"settled": \[\]/);
       assert.match(out, /"left_eur": 5/);
+      // The 10 bill the loop had marked is open again in the same transaction.
+      assert.match(out, /pr-b1=false,pr-ref=false/);
       // 70 + 50 covers both bills (110) and uses the credit fully: 10 left, refund closed.
       admin("update public.transactions set amount = 70 where entry_reference = 'pr-pay'");
       const full = as(A, `select public.record_payback('${ACC_A}', 'pr-pay', 'Fede', false)`);

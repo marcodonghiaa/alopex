@@ -221,8 +221,11 @@ begin
   v_left := v_left - v_credits;
 
   for v_bill in
-    select * from jsonb_to_recordset(v_rows) as x(account_uid uuid, entry_reference text, owed_eur numeric)
+    select x.account_uid, x.entry_reference, x.owed_eur
+      from jsonb_array_elements(v_rows) with ordinality as e(r, n),
+           jsonb_to_record(e.r) as x(account_uid uuid, entry_reference text, owed_eur numeric)
      where x.owed_eur > 0
+     order by e.n
   loop
     exit when v_left is null or v_bill.owed_eur > v_left + 0.005;
     update public.transactions

@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { type Deps, syncAccountBalance, syncAccountTransactions } from "./bank-sync.ts";
+import { type Deps, recordSyncError, syncAccountBalance, syncAccountTransactions, syncErrorPatch, syncStatus } from "./bank-sync.ts";
+import { memoryDb } from "./memory-db.test-helper.ts";
 
 const EB = "https://api.enablebanking.com/accounts";
 const TODAY = "2026-10-27";
@@ -64,7 +65,7 @@ Deno.test("transactions: calls EB with eb_account_uid; rows and cursor use uid",
   assert(urls[0].startsWith(`${EB}/eb/transactions?`));
   assertEquals(writes[0].filters, [{ onConflict: "account_uid,entry_reference" }]);
   assert((writes[0].data as { account_uid: string }[]).every((row) => row.account_uid === "pk"));
-  assertEquals(result, { upserted: 1, rejected: null, cursor: TODAY });
+  assertEquals(result, { upserted: 1, rejected: null, cursor: TODAY, error: null });
 });
 
 Deno.test("transactions: marks rows whose counterparty is one of the user's own accounts", async () => {
@@ -134,7 +135,7 @@ Deno.test("transactions: a 404 is rejected and the cursor stays", async () => {
 
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
 
-  assertEquals(result, { upserted: 0, rejected: 404, cursor: null });
+  assertEquals(result, { upserted: 0, rejected: 404, cursor: null, error: "HTTP_404" });
   assertEquals(writes, []);
 });
 
@@ -144,7 +145,7 @@ Deno.test("transactions: a failed upsert leaves the cursor", async () => {
 
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
 
-  assertEquals(result, { upserted: 0, rejected: null, cursor: null });
+  assertEquals(result, { upserted: 0, rejected: null, cursor: null, error: "SAVE_FAILED" });
 });
 
 Deno.test("balance: calls EB with eb_account_uid and builds the row under uid", async () => {
@@ -226,7 +227,7 @@ Deno.test("balance: EXPIRED_SESSION marks the consent as ending today (compare-a
     data: { consent_valid_until: TODAY },
     filters: [["eq", "uid", "pk"], ["eq", "consent_valid_until", consent]],
   }]);
-  assertEquals(result, { row: null, rejected: 401, renewed: true, ebFailed: true });
+  assertEquals(result, { row: null, rejected: 401, renewed: true, ebFailed: true, error: "EXPIRED_SESSION" });
 });
 
 Deno.test("balance: a 429 on balances reports ebFailed so the caller stops", async () => {
@@ -235,7 +236,7 @@ Deno.test("balance: a 429 on balances reports ebFailed so the caller stops", asy
 
   const result = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
 
-  assertEquals(result, { row: null, rejected: null, renewed: false, ebFailed: true });
+  assertEquals(result, { row: null, rejected: null, renewed: false, ebFailed: true, error: "HTTP_429" });
 });
 
 Deno.test("balance: EXPIRED_SESSION never moves an earlier consent date later", async () => {
@@ -256,3 +257,184 @@ Deno.test("balance: a 401 that is not EXPIRED_SESSION, or not JSON, leaves the d
     assertEquals(result.rejected, 401);
   }
 });
+
+Deno.test("transactions: the first sync asks for the longest history the bank keeps", async () => {
+  const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [TX] } } });
+  const { supabase } = fakeSupabase();
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account(), null, TODAY);
+
+  const params = new URL(urls[0]).searchParams;
+  assertEquals(params.get("strategy"), "longest");
+  assertEquals(params.has("date_from"), false);
+});
+
+Deno.test("transactions: an empty longest page with a continuation_key keeps paging", async () => {
+  const urls: string[] = [];
+  const fetch = (async (url: string) => {
+    urls.push(url);
+    const body = urls.length === 1 ? { transactions: [], continuation_key: "k2" } : { transactions: [TX] };
+    return { ok: true, status: 200, json: async () => body };
+  }) as unknown as Deps["fetch"];
+  const { supabase } = fakeSupabase();
+
+  const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), null, TODAY);
+
+  assertEquals(urls.length, 2);
+  assertEquals(new URL(urls[1]).searchParams.get("continuation_key"), "k2");
+  assertEquals(result.upserted, 1);
+});
+
+Deno.test("transactions: later syncs keep the default strategy", async () => {
+  const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [] } } });
+  const { supabase } = fakeSupabase();
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
+
+  assertEquals(new URL(urls[0]).searchParams.has("strategy"), false);
+});
+
+Deno.test("transactions: WRONG_TRANSACTIONS_PERIOD (cursor older than the bank keeps) retries with longest", async () => {
+  const urls: string[] = [];
+  const fetch = (async (url: string) => {
+    urls.push(url);
+    if (urls.length === 1) {
+      return { ok: false, status: 422, json: async () => ({ error: "WRONG_TRANSACTIONS_PERIOD" }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ transactions: [TX] }) };
+  }) as unknown as Deps["fetch"];
+  const { supabase } = fakeSupabase();
+
+  const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-01-10", TODAY);
+
+  const retry = new URL(urls[1]).searchParams;
+  assertEquals(retry.get("strategy"), "longest");
+  assertEquals(retry.get("date_from"), "2026-01-03");
+  assertEquals(result, { upserted: 1, rejected: null, cursor: TODAY, error: null });
+});
+
+Deno.test("transactions: pages fetched before a failure are saved, the cursor stays", async () => {
+  let page = 0;
+  const fetch = (async () => {
+    page++;
+    if (page === 1) return { ok: true, status: 200, json: async () => ({ transactions: [TX], continuation_key: "k2" }) };
+    return { ok: false, status: 429, json: async () => ({ error: "ASPSP_RATE_LIMIT_EXCEEDED" }) };
+  }) as unknown as Deps["fetch"];
+  const { supabase, writes } = fakeSupabase();
+
+  const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), null, TODAY);
+
+  assertEquals(writes.length, 1);
+  assertEquals(result, { upserted: 1, rejected: null, cursor: null, error: "ASPSP_RATE_LIMIT_EXCEEDED" });
+});
+
+Deno.test("transactions: a network failure reports NETWORK, a timeout TIMEOUT", async () => {
+  for (const [thrown, code] of [[new TypeError("fetch failed"), "NETWORK"], [new DOMException("t", "TimeoutError"), "TIMEOUT"]] as const) {
+    const fetch = (async () => {
+      throw thrown;
+    }) as unknown as Deps["fetch"];
+    const { supabase } = fakeSupabase();
+    const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
+    assertEquals(result.error, code);
+  }
+});
+
+Deno.test("balance: a revoked or closed consent is marked for renewal like an expired one", async () => {
+  for (const error of ["REVOKED_SESSION", "CLOSED_SESSION"]) {
+    const { fetch } = fakeFetch({ "/balances": { ok: false, status: 401, body: { ...EXPIRED, error } } });
+    const { supabase, writes } = fakeSupabase();
+    const consent = "2027-03-06T00:00:00+00:00";
+
+    const result = await syncAccountBalance({ fetch, supabase }, "t", account({ consent_valid_until: consent }), TODAY);
+
+    assertEquals(writes.length, 1);
+    assertEquals(writes[0].data, { consent_valid_until: TODAY });
+    assertEquals(result.renewed, true);
+    assertEquals(result.error, error);
+  }
+});
+
+Deno.test("balance: a saved balance reports no error", async () => {
+  const { fetch } = fakeFetch({ "/balances": { body: BALANCES } });
+  const { supabase } = fakeSupabase();
+
+  const result = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
+
+  assertEquals(result.error, null);
+});
+
+Deno.test("syncErrorPatch: stores a new error with its time, clears it on success, skips no change", () => {
+  const at = "2026-11-17T10:00:00.000Z";
+  assertEquals(syncErrorPatch(account(), "ASPSP_TIMEOUT", at), { sync_error: "ASPSP_TIMEOUT", sync_error_at: at });
+  assertEquals(syncErrorPatch(account({ sync_error: "ASPSP_TIMEOUT" }), null, at), { sync_error: null, sync_error_at: null });
+  assertEquals(syncErrorPatch(account({ sync_error: "ASPSP_TIMEOUT" }), "ASPSP_TIMEOUT", at), null);
+  assertEquals(syncErrorPatch(account(), null, at), null);
+});
+
+Deno.test("syncStatus: 200 synced, 429 for the bank's daily limit, 502 for other failures", () => {
+  assertEquals(syncStatus("2026-11-17", null), 200);
+  assertEquals(syncStatus(null, "ASPSP_RATE_LIMIT_EXCEEDED"), 429);
+  assertEquals(syncStatus(null, "ASPSP_ERROR"), 502);
+});
+
+// Polish 1 #2: a first sync that ran out of time restarts longest from page 1 every run (the
+// continuation key dies with the run), spending the bank's daily calls forever on a long history.
+Deno.test("transactions: a first sync that timed out falls back to the last 90 days", async () => {
+  const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [TX] } } });
+  const { supabase } = fakeSupabase();
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account({ sync_error: "TIMEOUT" }), null, TODAY);
+
+  const params = new URL(urls[0]).searchParams;
+  assertEquals(params.has("strategy"), false);
+  assertEquals(params.get("date_from"), "2026-07-29"); // TODAY 2026-10-27 minus 90 days
+});
+
+Deno.test("transactions: a first sync after another error still asks for the longest history", async () => {
+  const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [] } } });
+  const { supabase } = fakeSupabase();
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account({ sync_error: "ASPSP_ERROR" }), null, TODAY);
+
+  assertEquals(new URL(urls[0]).searchParams.get("strategy"), "longest");
+});
+
+Deno.test("balance: an error name over 64 letters is not stored, the HTTP status is", async () => {
+  for (const [name, expected] of [["A".repeat(64), "A".repeat(64)], ["A".repeat(65), "HTTP_502"]]) {
+    const { fetch } = fakeFetch({ "/balances": { ok: false, status: 502, body: { error: name } } });
+    const { supabase } = fakeSupabase();
+    const result = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
+    assertEquals(result.error, expected);
+  }
+});
+
+// Polish 5 F1: sync-bank's last step, run on the account row itself.
+Deno.test("recordSyncError: the balance error wins, is saved on the account and returned", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null, sync_error_at: null }] });
+  const at = "2026-11-17T06:17:00.000Z";
+  assertEquals(await recordSyncError(db, account({ sync_error: null }), "HTTP_401", "ASPSP_TIMEOUT", at), "HTTP_401");
+  assertEquals(db.tables.accounts[0], { uid: "pk", sync_error: "HTTP_401", sync_error_at: at });
+});
+Deno.test("recordSyncError: a transactions error is saved when the balance went through", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null, sync_error_at: null }] });
+  assertEquals(await recordSyncError(db, account({ sync_error: null }), null, "SAVE_FAILED", "t"), "SAVE_FAILED");
+  assertEquals(db.tables.accounts[0].sync_error, "SAVE_FAILED");
+});
+Deno.test("recordSyncError: a good run clears the stored error", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: "HTTP_500", sync_error_at: "t0" }] });
+  assertEquals(await recordSyncError(db, account({ sync_error: "HTTP_500" }), null, null, "t"), null);
+  assertEquals(db.tables.accounts[0], { uid: "pk", sync_error: null, sync_error_at: null });
+});
+Deno.test("recordSyncError: a failed write never fails the sync", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null }] }, "update");
+  assertEquals(await quietly(() => recordSyncError(db, account({ sync_error: null }), "HTTP_401", null, "t")), "HTTP_401");
+});
+async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    return await fn();
+  } finally {
+    console.error = original;
+  }
+}

@@ -10,6 +10,13 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Investment events, and more detail on trades (Trade Republic complete)
+- **Migration:** `20261215000000_investment_events`. Apply it with `supabase db push --linked` BEFORE redeploying the dashboard: the new dashboard reads and writes `investment_events` and the new `holding_trades` columns, and an older database answers with an error. No Edge Function changes.
+- New table `investment_events`, owner-only: dividends, interest, rewards, fees, taxes, deposits, withdrawals, transfers in and out, and corporate actions, from any broker. A re-import skips what's saved (unique per user, source and the broker's id).
+- `holding_trades` gets optional columns: `tax_eur`, `traded_at`, `note`, `currency` + `price_native`, `group_id`. Existing rows are unchanged.
+- `delete_holding` also deletes the holding's events.
+- Trade Republic: trades imported before this release are skipped on re-import, so they stay without tax. To get the tax, delete the holding's Trade Republic trades and import the file again.
+- **Roll back:** revert the dashboard first, then run `supabase/rollbacks/20261215000000_investment_events.down.sql` and `supabase migration repair --status reverted 20261215000000 --linked`. Imported events are lost, and so are the trades' tax, time, note, native price and group (tax becomes 0). Importing the broker files again brings the events back, but not the trade detail: already-saved trades are skipped. To get it back, delete those trades and import again.
 ### Who owes you: "Is this Anna?" on incoming payments
 - **Migration:** `20261214000000_payback_matching`. Apply it with `supabase db push --linked` BEFORE redeploying the dashboard. On an older database the new dashboard breaks two things: the payment suggestions on Who owes you do not load, and ticking a split bill as settled fails (the dashboard now also clears the new `settled_by_*` columns). No Edge Function changes.
 - New on `transactions`: `payback_contact` (on an incoming payment, who paid you back; empty = "not a payback"), `settled_by_account` / `settled_by_ref` (on a split bill, the payment that settled it). New table `payer_links` (a payer name, as the bank writes it, linked to a contact; names only, never IBANs) with row level security. New functions `payback_candidates`, `record_payback`, `undo_payback`, `payback_eligible`, `payer_key`, `payer_name_of`. Existing rows are not changed.

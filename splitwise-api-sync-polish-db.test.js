@@ -374,4 +374,32 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(sql('select status || linked_entry_reference from public.splitwise_review where splitwise_id = 2102'), 'linkedp21');
     assert.strictEqual(tx('p21'), '25.00|-|-');
   });
+
+  await t.test('polish-5 #2: links that live only on the review list are undone by the rollback, and can be made again', () => {
+    sql(`select public.splitwise_save_connection('${A}', 'key-one', 111, 'Ann')`);
+    pay('p52-zero', 40, '2026-05-03'); pay('p52-multi', 40, '2026-05-03'); pay('p52-settle', 25, '2026-05-04');
+    const reviews = [review(5201, { booking_date: '2026-05-03', cost: '40', my_share: '0', my_paid: '40' }),
+      review(5202, { kind: 'multi_payer', booking_date: '2026-05-03', cost: '100', my_share: '50', my_paid: '40' }),
+      review(5203, { kind: 'settle_out', booking_date: '2026-05-04', description: 'Payment', cost: '25', my_share: '25', my_paid: '25' })];
+    apply({ reviews });
+    link(5201, 'p52-zero'); link(5202, 'p52-multi'); link(5203, 'p52-settle');
+    assert.strictEqual(counted(5202, 'p52-multi'), '50.00');
+    sql(`delete from public.splitwise_balances where currency = 'USD'`); // see the rollback test above
+    applySql(DOWN);
+    // Nothing could free these links without the list: the rollback puts the payments back as they were.
+    assert.strictEqual(tx('p52-zero'), '-|-|-');
+    assert.strictEqual(tx('p52-multi'), '-|-|-');
+    assert.strictEqual(tx('p52-settle'), '-|-|-');
+    assert.strictEqual(sql(`select count(*) from public.splitwise_expenses where fingerprint in ('sw:5201', 'sw:5202', 'sw:5203')`), '0', 'no leftover share');
+    applySql(UP);
+    sql(`select public.splitwise_save_connection('${A}', 'key-one', 111, 'Ann')`);
+    apply({ reviews });
+    assert.strictEqual(sql(`select string_agg(status, ',' order by splitwise_id) from public.splitwise_review where splitwise_id in (5201, 5202, 5203)`),
+      'pending,pending,pending');
+    // Linked again on the list: same result as the first time, nothing counted twice.
+    for (const [sid, ref] of [[5201, 'p52-zero'], [5202, 'p52-multi'], [5203, 'p52-settle']]) assert.doesNotMatch(link(sid, ref), /ERROR/);
+    assert.strictEqual(tx('p52-zero'), '0.00|-|-');
+    assert.strictEqual(counted(5202, 'p52-multi'), '50.00');
+    assert.strictEqual(tx('p52-settle'), '-|transfer|user');
+  });
 });

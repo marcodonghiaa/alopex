@@ -1,6 +1,7 @@
 -- Rollback of 20261213000000_splitwise_api_sync. Stops the sync and removes the connections
--- (their API keys are deleted from Vault first) and the review list. Shares the sync already
--- wrote stay as ordinary Splitwise shares (they keep counting), without their Splitwise ids.
+-- (their API keys are deleted from Vault first) and the review list; links that lived only on the
+-- list are undone (see below). Shares the sync already wrote stay as ordinary Splitwise shares
+-- (they keep counting), without their Splitwise ids.
 -- Balances from the API are deleted: import the group's file again to see them.
 select cron.unschedule(jobname) from cron.job where jobname = 'sync-splitwise';
 
@@ -21,6 +22,34 @@ drop function if exists public.dismiss_splitwise_review(uuid);
 drop function if exists public.reject_splitwise_match(uuid, text);
 drop function if exists public.splitwise_release(uuid, bigint[]);
 drop function if exists public.splitwise_csv_match(uuid, text, date, text, numeric, text);
+
+-- Links made on the To link list that live only on its row (an expense I paid all for others,
+-- several payers, a settle-up) are undone: without the list nothing could free them, and after a
+-- re-apply the expense would wait on the list with its payment refused. The payment counts as it
+-- did before linking, and the extra share of a several-payers expense goes. A link backed by a
+-- share (that share keeps it) or made by a CSV import stays.
+do $$
+begin
+  if to_regclass('public.splitwise_review') is null then return; end if;
+  update public.transactions t
+     set personal_amount = case when r.kind in ('paid_by_me', 'multi_payer') then null else t.personal_amount end,
+         flow_type = case when r.kind in ('settle_out', 'settle_in') and t.flow_type = 'transfer' then null else t.flow_type end,
+         flow_source = case when r.kind in ('settle_out', 'settle_in') and t.flow_type = 'transfer' then null else t.flow_source end,
+         import_batch_id = null
+    from public.splitwise_review r
+   where r.status = 'linked' and not r.from_csv and r.linked_entry_reference is not null
+     and t.user_id = r.user_id and t.account_uid = r.linked_account_uid
+     and t.entry_reference = r.linked_entry_reference and t.import_batch_id is not null
+     and not exists (select 1 from public.splitwise_expenses s
+                      where s.user_id = r.user_id and s.splitwise_id = r.splitwise_id
+                        and s.linked_entry_reference = r.linked_entry_reference);
+  delete from public.splitwise_expenses s
+   using public.splitwise_review r
+   where r.status = 'linked' and not r.from_csv and r.kind in ('paid_by_me', 'multi_payer') and r.my_share > r.my_paid
+     and s.user_id = r.user_id and s.splitwise_id = r.splitwise_id
+     and s.fingerprint like 'sw:%' and s.linked_entry_reference is null;
+end;
+$$;
 drop table if exists public.splitwise_review;
 
 delete from public.splitwise_balances where basis = 'api';

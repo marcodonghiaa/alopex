@@ -64,6 +64,7 @@ create unique index splitwise_balances_one_me_idx on public.splitwise_balances (
 drop index if exists public.splitwise_expenses_splitwise_id;
 alter table public.splitwise_expenses
   drop constraint if exists splitwise_expenses_source_check,
+  drop column if exists splitwise_description,
   drop column if exists splitwise_updated_at,
   drop column if exists source,
   drop column if exists splitwise_id;

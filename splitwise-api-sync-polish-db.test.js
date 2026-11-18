@@ -331,6 +331,32 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(owner("select synced_data::text from public.get_splitwise_connection()"), 'true'); // A's own, not D's
   });
 
+  await t.test('polish-5 #5: a description edited in Splitwise reaches the share, unless you renamed it here', () => {
+    const desc = (sid) => sql(`select description || '|' || coalesce(category, '-') from public.splitwise_expenses where splitwise_id = ${sid}`);
+    // A plain share: follows Splitwise, and stops following once you rename it.
+    apply({ shares: [share(5301, { description: 'Train' })] });
+    run('authenticated', A, `update public.splitwise_expenses set category = 'Transport' where splitwise_id = 5301`);
+    apply({ shares: [share(5301, { description: 'Train (return)' })] });
+    assert.strictEqual(desc(5301), 'Train (return)|Transport');
+    run('authenticated', A, `update public.splitwise_expenses set description = 'Mine' where splitwise_id = 5301`);
+    apply({ shares: [share(5301, { description: 'Train again' })] });
+    assert.strictEqual(desc(5301), 'Mine|Transport');
+    // A share adopted from a CSV import keeps the file's text until Splitwise really renames it.
+    sql(`insert into public.splitwise_expenses (user_id, group_name, fingerprint, booking_date, description, category, amount, currency, batch_id)
+      values ('${A}', 'Flat', 'csv-53', '2026-04-02', 'Pizza', 'Dine Out', 9.5, 'EUR', gen_random_uuid())`);
+    apply({ shares: [share(5303, { booking_date: '2026-04-02', description: ' PIZZA', amount: '9.50' })] });
+    assert.strictEqual(desc(5303), 'Pizza|Dine Out');
+    apply({ shares: [share(5303, { booking_date: '2026-04-02', description: 'Pizza party', amount: '9.50' })] });
+    assert.strictEqual(desc(5303), 'Pizza party|Dine Out');
+    // The share of an expense I paid and linked: follows its review row, the bank link stays.
+    pay('p53', 60, '2026-04-03');
+    apply({ reviews: [review(5302, { booking_date: '2026-04-03', description: 'Dinner out' })] });
+    link(5302, 'p53');
+    apply({ reviews: [review(5302, { booking_date: '2026-04-03', description: 'Dinner out (team)' })] });
+    assert.strictEqual(sql('select description || linked_entry_reference from public.splitwise_expenses where splitwise_id = 5302'), 'Dinner out (team)p53');
+    assert.strictEqual(sql('select status from public.splitwise_review where splitwise_id = 5302'), 'linked');
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

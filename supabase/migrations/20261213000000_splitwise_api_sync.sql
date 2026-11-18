@@ -108,7 +108,10 @@ $$;
 alter table public.splitwise_expenses
   add column if not exists splitwise_id bigint,
   add column if not exists source text not null default 'csv',
-  add column if not exists splitwise_updated_at timestamptz;
+  add column if not exists splitwise_updated_at timestamptz,
+  -- The description as Splitwise last sent it: a share whose description still reads the same
+  -- follows a rename in Splitwise; one you renamed here keeps yours.
+  add column if not exists splitwise_description text;
 alter table public.splitwise_expenses drop constraint if exists splitwise_expenses_source_check;
 alter table public.splitwise_expenses add constraint splitwise_expenses_source_check check (source in ('csv', 'api'));
 create unique index if not exists splitwise_expenses_splitwise_id
@@ -563,18 +566,19 @@ begin
      where e.user_id = p_user and e.splitwise_id is null and e.fingerprint = 'sw:' || r.splitwise_id limit 1;
     v_match := coalesce(v_match, public.splitwise_csv_match(p_user, r.group_name, r.booking_date, r.description, r.amount, r.currency));
     if v_match is not null then
-      update public.splitwise_expenses set splitwise_id = r.splitwise_id, source = 'api' where id = v_match;
+      update public.splitwise_expenses set splitwise_id = r.splitwise_id, source = 'api',
+             splitwise_description = coalesce(splitwise_description, r.description) where id = v_match;
       n_adopted := n_adopted + 1;
     end if;
   end loop;
 
-  -- Shares: Splitwise owns date, amount and currency; the description, category and bank link
-  -- you have stay as they are.
+  -- Shares: Splitwise owns date, amount and currency, and the description unless you renamed the
+  -- share here; the category and bank link you have stay as they are.
   with up as (
     insert into public.splitwise_expenses (user_id, group_name, fingerprint, booking_date, description, category,
-        amount, currency, batch_id, splitwise_id, source, splitwise_updated_at)
+        amount, currency, batch_id, splitwise_id, source, splitwise_updated_at, splitwise_description)
       select distinct on (x.splitwise_id) p_user, x.group_name, 'sw:' || x.splitwise_id, x.booking_date, x.description,
-             x.category, x.amount, x.currency, v_batch, x.splitwise_id, 'api', x.splitwise_updated_at
+             x.category, x.amount, x.currency, v_batch, x.splitwise_id, 'api', x.splitwise_updated_at, x.description
         from jsonb_to_recordset(coalesce(p_shares, '[]')) as x(splitwise_id bigint, group_name text, booking_date date,
              description text, category text, amount numeric, currency text, splitwise_updated_at timestamptz)
     on conflict (user_id, splitwise_id) where splitwise_id is not null do update
@@ -583,6 +587,11 @@ begin
       set group_name = case when splitwise_expenses.fingerprint like 'sw:%' then excluded.group_name
                             else splitwise_expenses.group_name end,
           booking_date = excluded.booking_date,
+          description = case
+            when lower(btrim(splitwise_expenses.description)) = lower(btrim(splitwise_expenses.splitwise_description))
+             and lower(btrim(excluded.description)) <> lower(btrim(splitwise_expenses.splitwise_description))
+            then excluded.description else splitwise_expenses.description end,
+          splitwise_description = excluded.description,
           category = coalesce(splitwise_expenses.category, excluded.category),
           amount = excluded.amount,
           currency = excluded.currency,
@@ -654,6 +663,16 @@ begin
       n_adopted := n_adopted + 1;
     end if;
   end loop;
+
+  -- A renamed expense I paid: the share its link or count wrote follows, unless you renamed it here.
+  update public.splitwise_expenses e
+     set description = x.description
+    from public.splitwise_review rv
+    join jsonb_to_recordset(coalesce(p_review, '[]')) as x(splitwise_id bigint, description text)
+      on x.splitwise_id = rv.splitwise_id
+   where rv.user_id = p_user and e.user_id = p_user and e.splitwise_id = rv.splitwise_id
+     and lower(btrim(e.description)) = lower(btrim(rv.description))
+     and lower(btrim(x.description)) <> lower(btrim(rv.description));
 
   -- Review rows: a row you dismissed, linked or counted keeps its status unless its amounts changed.
   with up as (

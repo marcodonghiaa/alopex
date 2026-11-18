@@ -136,7 +136,7 @@ Alopex can read your Splitwise expenses by itself, every 6 hours and on **Sync n
 
 Shares of expenses someone else paid come in by themselves. Expenses you paid and settle-ups wait on a review list: link each to its bank payment (the payment then counts only your share, or becomes a transfer), count it if you paid outside your linked banks, or dismiss it. Edits and deletions in Splitwise follow; a category or description you change in Alopex stays. Shares you already imported from a Splitwise CSV are recognised, not doubled.
 
-Privacy: the key is stored in Supabase Vault in your own project, never in a table column, and only the `sync-splitwise` function reads it; Alopex only reads from Splitwise, never writes. **Disconnect** deletes the key (and, if you choose, everything the sync brought in); deleting your account deletes both. Splitwise's [API terms](https://dev.splitwise.com/) allow it for your own account and **not for commercial use**: don't offer Splitwise sync as part of a paid service without Splitwise's permission.
+Privacy: the key is stored in Supabase Vault in your own project, never in a table column, and only the `sync-splitwise` function reads it; Alopex only reads from Splitwise, never writes. **Disconnect** deletes the key (and, if you choose, the expenses the sync added; your CSV imports stay); deleting your account deletes both. Splitwise's [API terms](https://dev.splitwise.com/) allow it for your own account and **not for commercial use**: don't offer Splitwise sync as part of a paid service without Splitwise's permission.
 
 Codespaces path: run `./setup.sh` again any time: it keeps what's in `.env`, asks only for what's missing, and applies new migrations and functions. Forgot your password? `./setup.sh --reset-password`.
 

@@ -275,14 +275,35 @@ test('Splitwise API sync on a real Postgres', { skip }, async (t) => {
     assert.match(apply({ shares: many }), /Too many rows/);
   });
 
-  await t.test('disconnect: key gone; with deleteData, what the sync brought in goes too', () => {
+  await t.test('disconnect: key gone; with deleteData, what the sync brought in goes, CSV imports stay', () => {
     sql(`select public.splitwise_save_connection('${B}', 'key-b', 333, 'Bo')`);
     apply({ user: B, shares: [share(1)] });
     run('service_role', null, `select public.splitwise_disconnect('${B}', false)`);
     assert.strictEqual(sql(`select count(*) from public.splitwise_expenses where user_id = '${B}'`), '1', 'data kept');
     assert.strictEqual(sql(`select count(*) from vault.secrets where secret = 'key-b'`), '0');
+    // Imported from the CSV before connecting, then adopted by the sync: an expense I paid, linked
+    // to its bank payment, and a settle-up the import marked as a transfer.
+    sql(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, personal_amount, flow_type, import_batch_id)
+      values ('csv-taxi', '${ACC}', '${A}', 90, 'EUR', 'DBIT', '2026-10-10', 30, null, gen_random_uuid()),
+             ('csv-settle', '${ACC}', '${A}', 40, 'EUR', 'DBIT', '2026-10-12', null, 'transfer', gen_random_uuid());
+      insert into public.splitwise_expenses (user_id, group_name, fingerprint, booking_date, description, category, amount, currency, batch_id, linked_account_uid, linked_entry_reference)
+      values ('${A}', 'Flat', 'csv-3', '2026-10-10', 'Taxi', 'Transport', 30, 'EUR', gen_random_uuid(), '${ACC}', 'csv-taxi');`);
+    const settleBefore = tx('csv-settle');
+    assert.strictEqual(apply({ reviews: [review(30, { booking_date: '2026-10-10', description: 'Taxi', cost: '90', my_share: '30', my_paid: '90' }),
+      review(31, { kind: 'settle_out', booking_date: '2026-10-11', description: 'Payment', cost: '40', my_share: '40', my_paid: '40' })] }).adopted, 2);
+    const synced = Number(sql(`select count(*) from public.splitwise_expenses where user_id = '${A}' and fingerprint like 'sw:%'`))
+      + Number(sql(`select count(*) from public.splitwise_review where user_id = '${A}' and splitwise_id not in (30, 31)
+        and splitwise_id not in (select splitwise_id from public.splitwise_expenses where user_id = '${A}' and splitwise_id is not null)`));
     const out = JSON.parse(run('service_role', null, `select public.splitwise_disconnect('${A}', true)`));
-    assert.ok(out.deleted >= 3);
+    assert.strictEqual(out.deleted, synced, 'only what the sync added is counted as removed');
+    // The CSV rows stay, with their category and bank link, as CSV rows again; their bank payments
+    // keep counting my share, and the settle-up stays a transfer.
+    assert.strictEqual(sql(`select string_agg(fingerprint || ':' || source || ':' || coalesce(splitwise_id::text, '-') || ':' || coalesce(category, '-')
+      || ':' || coalesce(linked_entry_reference, '-'), ',' order by fingerprint) from public.splitwise_expenses where fingerprint in ('csv-1', 'csv-3')`),
+      'csv-1:csv:-:Dine Out:-,csv-3:csv:-:Transport:csv-taxi');
+    assert.strictEqual(tx('csv-taxi'), '30|-|-', 'personal amount kept');
+    assert.strictEqual(tx('csv-settle'), settleBefore);
+    assert.strictEqual(sql(`select count(*) from public.splitwise_expenses where user_id = '${A}' and fingerprint like 'sw:%'`), '0');
     assert.strictEqual(sql(`select count(*) from public.splitwise_expenses where user_id = '${A}' and splitwise_id is not null`), '0');
     assert.strictEqual(sql(`select count(*) from public.splitwise_review where user_id = '${A}'`), '0');
     assert.strictEqual(sql(`select count(*) from public.splitwise_balances where user_id = '${A}' and basis = 'api'`), '0');

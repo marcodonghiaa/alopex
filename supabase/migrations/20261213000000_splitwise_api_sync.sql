@@ -165,6 +165,9 @@ create table public.splitwise_review (
   rejected_entry_references text[] not null default '{}' check (cardinality(rejected_entry_references) <= 200),
   linked_account_uid uuid,
   linked_entry_reference text,
+  -- Settled by a CSV import before the sync saw it (adopted): the link is the import's, so
+  -- deleting the synced data leaves it alone. Linking or counting on the list makes it the sync's.
+  from_csv boolean not null default false,
   created_at timestamptz not null default now(),
   unique (user_id, splitwise_id),
   check ((linked_account_uid is null) = (linked_entry_reference is null))
@@ -508,6 +511,7 @@ declare
   v_match uuid;
   v_acc uuid;
   v_ref text;
+  v_fp text;
   n_new int := 0;
   n_adopted int := 0;
   n_review int := 0;
@@ -610,12 +614,12 @@ begin
     v_match := coalesce(v_match, public.splitwise_csv_match(p_user, r.group_name, r.booking_date, r.description, r.my_share, r.currency));
     if v_match is not null then
       update public.splitwise_expenses set splitwise_id = r.splitwise_id, source = 'api' where id = v_match
-        returning linked_account_uid, linked_entry_reference into v_acc, v_ref;
+        returning linked_account_uid, linked_entry_reference, fingerprint into v_acc, v_ref, v_fp;
       insert into public.splitwise_review (user_id, splitwise_id, kind, group_name, booking_date, description, cost,
-          my_share, my_paid, currency, splitwise_updated_at, status, linked_account_uid, linked_entry_reference)
+          my_share, my_paid, currency, splitwise_updated_at, status, linked_account_uid, linked_entry_reference, from_csv)
         values (p_user, r.splitwise_id, r.kind, r.group_name, r.booking_date, r.description, r.cost, r.my_share,
                 r.my_paid, r.currency, r.splitwise_updated_at, case when v_ref is null then 'counted' else 'linked' end,
-                v_acc, v_ref);
+                v_acc, v_ref, v_fp not like 'sw:%');
       n_adopted := n_adopted + 1;
     end if;
   end loop;
@@ -644,9 +648,9 @@ begin
      limit 1;
     if found then
       insert into public.splitwise_review (user_id, splitwise_id, kind, group_name, booking_date, description, cost,
-          my_share, my_paid, currency, splitwise_updated_at, status, linked_account_uid, linked_entry_reference)
+          my_share, my_paid, currency, splitwise_updated_at, status, linked_account_uid, linked_entry_reference, from_csv)
         values (p_user, r.splitwise_id, r.kind, r.group_name, r.booking_date, r.description, r.cost, r.my_share,
-                r.my_paid, r.currency, r.splitwise_updated_at, 'linked', v_acc, v_ref);
+                r.my_paid, r.currency, r.splitwise_updated_at, 'linked', v_acc, v_ref, true);
       n_adopted := n_adopted + 1;
     end if;
   end loop;
@@ -734,8 +738,9 @@ begin
 end;
 $$;
 
--- Disconnect: the key and the connection go. p_delete_data also removes everything the sync
--- brought in (shares, review list, API balances), freeing the bank payments it changed.
+-- Disconnect: the key and the connection go. p_delete_data also removes what the sync added
+-- (its shares, the review list, API balances), freeing the bank payments it changed. CSV imports
+-- it adopted stay, as CSV rows again, with their category, bank links and transfer marks.
 create or replace function public.splitwise_disconnect(p_user uuid, p_delete_data boolean) returns jsonb
 language plpgsql
 security definer
@@ -746,6 +751,9 @@ declare
 begin
   if p_user is null then raise exception 'Missing user'; end if;
   if p_delete_data then
+    update public.splitwise_expenses set splitwise_id = null, source = 'csv', splitwise_updated_at = null
+     where user_id = p_user and splitwise_id is not null and fingerprint not like 'sw:%';
+    delete from public.splitwise_review where user_id = p_user and from_csv;
     select array_agg(distinct i) into v_ids from (
       select splitwise_id as i from public.splitwise_expenses where user_id = p_user and splitwise_id is not null
       union all
@@ -825,7 +833,7 @@ begin
           linked_account_uid = excluded.linked_account_uid, linked_entry_reference = excluded.linked_entry_reference;
   end if;
   update splitwise_review
-     set status = 'linked', linked_account_uid = p_account_uid, linked_entry_reference = p_entry_reference
+     set status = 'linked', linked_account_uid = p_account_uid, linked_entry_reference = p_entry_reference, from_csv = false
    where id = p_id and user_id = uid;
   return jsonb_build_object('status', 'linked');
 end;
@@ -856,7 +864,7 @@ begin
     on conflict (user_id, splitwise_id) where splitwise_id is not null do update
       set amount = excluded.amount, linked_account_uid = null, linked_entry_reference = null;
   end if;
-  update splitwise_review set status = 'counted' where id = p_id and user_id = uid;
+  update splitwise_review set status = 'counted', from_csv = false where id = p_id and user_id = uid;
   return jsonb_build_object('status', 'counted');
 end;
 $$;

@@ -87,8 +87,8 @@ and commit the updated lock.
   Vault (`splitwise_save_connection`; never a table column), returning `{ displayName }`; 5 tries
   per 10 minutes per user (`splitwise_attempts`).
   `{ "disconnect": true, "deleteData": true|false }` deletes the key and the connection, and with
-  `deleteData` the shares, review list and balances the sync brought in (bank payments it changed
-  are freed). `verify_jwt: true`.
+  `deleteData` the shares, review list and balances the sync added (bank payments it changed are
+  freed; CSV-imported shares it adopted stay). `verify_jwt: true`.
 - **sync-splitwise** — reads each connected user's Splitwise expenses and groups with their own key
   and writes them with `splitwise_sync_apply`: shares of expenses someone else paid, a review list
   for the ones you paid and settle-ups, edits, deletions and balances per currency. Changes since

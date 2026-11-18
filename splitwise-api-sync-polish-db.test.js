@@ -371,6 +371,14 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.strictEqual(sql('select status from public.splitwise_review where splitwise_id = 5302'), 'linked');
   });
 
+  await t.test('polish-5 #11: a settle-up keeps the name of the other person, for the dashboard to match on', () => {
+    apply({ reviews: [review(5401, { kind: 'settle_out', description: 'Payment', cost: '20', my_share: '20', my_paid: '20', counterparty: 'Dana Other' })] });
+    assert.strictEqual(owner('select counterparty from public.splitwise_review where splitwise_id = 5401'), 'Dana Other');
+    apply({ reviews: [review(5401, { kind: 'settle_out', description: 'Payment', cost: '20', my_share: '20', my_paid: '20', counterparty: 'Dana O.' })] });
+    assert.strictEqual(owner('select counterparty from public.splitwise_review where splitwise_id = 5401'), 'Dana O.', 'renamed in Splitwise');
+    assert.match(apply({ reviews: [review(5402, { kind: 'settle_out', counterparty: 'x'.repeat(201) })] }), /check constraint/);
+  });
+
   // ---- rollback (keep last) ----
   await t.test('the rollback brings back the functions this migration redefines', () => {
     // Not covered by this pass (logged as a new finding): the rollback's old primary key can't take

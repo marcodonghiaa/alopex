@@ -169,6 +169,8 @@ create table public.splitwise_review (
   splitwise_updated_at timestamptz,
   status text not null default 'pending' check (status in ('pending', 'dismissed', 'linked', 'counted')),
   rejected_entry_references text[] not null default '{}' check (cardinality(rejected_entry_references) <= 200),
+  -- A settle-up's other person, as Splitwise names them: the dashboard prefers their payment.
+  counterparty text check (counterparty is null or char_length(counterparty) <= 200),
   linked_account_uid uuid,
   linked_entry_reference text,
   -- Settled by a CSV import before the sync saw it (adopted): the link is the import's, so
@@ -500,7 +502,7 @@ $$;
 -- ---- The sync's write ----
 
 -- p_shares items: {splitwise_id, group_name, booking_date, description, category, amount, currency, splitwise_updated_at}
--- p_review items: {splitwise_id, kind, group_name, booking_date, description, cost, my_share, my_paid, currency, splitwise_updated_at}
+-- p_review items: {splitwise_id, kind, group_name, booking_date, description, cost, my_share, my_paid, currency, splitwise_updated_at, counterparty}
 -- p_deleted: ids deleted in Splitwise, no longer mine, or gone (full check).
 -- p_balances items: {group_name, person, balance, currency, is_me}; null leaves balances alone.
 -- p_cursor: newest updated_at seen (null: keep). p_full: this run read every expense.
@@ -680,12 +682,12 @@ begin
   -- Review rows: a row you dismissed, linked or counted keeps its status unless its amounts changed.
   with up as (
     insert into public.splitwise_review (user_id, splitwise_id, kind, group_name, booking_date, description, cost,
-        my_share, my_paid, currency, splitwise_updated_at)
+        my_share, my_paid, currency, splitwise_updated_at, counterparty)
       select distinct on (x.splitwise_id) p_user, x.splitwise_id, x.kind, x.group_name, x.booking_date, x.description,
-             x.cost, x.my_share, x.my_paid, x.currency, x.splitwise_updated_at
+             x.cost, x.my_share, x.my_paid, x.currency, x.splitwise_updated_at, x.counterparty
         from jsonb_to_recordset(coalesce(p_review, '[]')) as x(splitwise_id bigint, kind text, group_name text,
              booking_date date, description text, cost numeric, my_share numeric, my_paid numeric, currency text,
-             splitwise_updated_at timestamptz)
+             splitwise_updated_at timestamptz, counterparty text)
     on conflict (user_id, splitwise_id) do update
       set status = case
             when (splitwise_review.kind, splitwise_review.cost, splitwise_review.my_share, splitwise_review.my_paid, splitwise_review.currency)
@@ -699,7 +701,8 @@ begin
           my_share = excluded.my_share,
           my_paid = excluded.my_paid,
           currency = excluded.currency,
-          splitwise_updated_at = excluded.splitwise_updated_at
+          splitwise_updated_at = excluded.splitwise_updated_at,
+          counterparty = excluded.counterparty
     returning (xmax = 0) as inserted
   )
   select count(*) filter (where inserted) into n_review from up;

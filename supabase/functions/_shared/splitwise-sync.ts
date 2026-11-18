@@ -19,6 +19,7 @@ import { centsToDecimal, type SwExpense, type SwGroup, type SwUser, toCents } fr
 export const NON_GROUP = "Non-group expenses";
 const MAX_GROUP = 100;
 const MAX_DESCRIPTION = 300;
+const MAX_NAME = 200;
 const MAX_CENTS = 100_000_000_000; // the tables allow amounts below 1e9
 
 export type ShareRow = {
@@ -32,7 +33,14 @@ export type ShareRow = {
   splitwise_updated_at: string | null;
 };
 export type ReviewKind = "paid_by_me" | "multi_payer" | "settle_out" | "settle_in";
-export type ReviewRow = Omit<ShareRow, "category" | "amount"> & { kind: ReviewKind; cost: string; my_share: string; my_paid: string };
+export type ReviewRow = Omit<ShareRow, "category" | "amount"> & {
+  kind: ReviewKind;
+  cost: string;
+  my_share: string;
+  my_paid: string;
+  /** A settle-up's other person, as Splitwise names them (the dashboard prefers their payment). */
+  counterparty?: string | null;
+};
 export type BalanceRow = { group_name: string; person: string; balance: string; currency: string; is_me: boolean };
 export type Classified =
   | { type: "share"; row: ShareRow }
@@ -134,8 +142,23 @@ export function classify(e: SwExpense, me: number, labels: Map<number, string>):
     row: { ...base, kind, cost: centsToDecimal(cost), my_share: centsToDecimal(share), my_paid: centsToDecimal(paid) },
   });
   if (e.payment) {
-    if (paid > 0) return review("settle_out", paid);
-    if (owed > 0) return review("settle_in", owed);
+    // The other side of the payment: who received it when I paid, who paid it when I received.
+    const positive = (v: string) => {
+      try {
+        return cents(v) > 0;
+      } catch {
+        return false; // an unreadable share names no one
+      }
+    };
+    const other = (e.users ?? []).find((u) => u.user_id !== me && positive(paid > 0 ? u.owed_share : u.paid_share));
+    const name = [other?.user?.first_name, other?.user?.last_name].map((n) => (n ?? "").trim()).filter(Boolean).join(" ");
+    const settle = (kind: ReviewKind, share: number): Classified => {
+      const c = review(kind, share);
+      if (c.type === "review") c.row.counterparty = name ? cut(name, MAX_NAME) : null;
+      return c;
+    };
+    if (paid > 0) return settle("settle_out", paid);
+    if (owed > 0) return settle("settle_in", owed);
     return { type: "gone", id: e.id };
   }
   if (paid > 0) return review(otherPayers > 0 ? "multi_payer" : "paid_by_me", owed);

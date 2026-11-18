@@ -57,15 +57,33 @@ Deno.test("settle-ups: out when I paid, in when I received, never spending", () 
   const out = expense({ payment: true, cost: "25.00", users: [share(ME, "25.00", "0.00"), share(2, "0.00", "25.00")] });
   assertEquals(classify(out, ME, labels), {
     type: "review",
-    row: { ...base, kind: "settle_out", cost: "25.00", my_share: "25.00", my_paid: "25.00" },
+    row: { ...base, kind: "settle_out", cost: "25.00", my_share: "25.00", my_paid: "25.00", counterparty: "P2" },
   });
   const inn = expense({ payment: true, cost: "25.00", users: [share(2, "25.00", "0.00"), share(ME, "0.00", "25.00")] });
   assertEquals(classify(inn, ME, labels), {
     type: "review",
-    row: { ...base, kind: "settle_in", cost: "25.00", my_share: "25.00", my_paid: "0.00" },
+    row: { ...base, kind: "settle_in", cost: "25.00", my_share: "25.00", my_paid: "0.00", counterparty: "P2" },
   });
   const others = expense({ payment: true, users: [share(2, "25.00", "0.00"), share(3, "0.00", "25.00"), share(ME, "0.00", "0.00")] });
   assertEquals(classify(others, ME, labels), { type: "gone", id: 100 });
+});
+
+// polish-5 #11: the dashboard prefers a bank payment to (or from) the person the settle-up names.
+Deno.test("settle-ups name the other person: first and last name, null when Splitwise sends none", () => {
+  const named = (user: { id: number; first_name?: string | null; last_name?: string | null } | null) =>
+    expense({ payment: true, cost: "25.00", users: [{ ...share(ME, "25.00", "0.00") }, { user_id: 2, paid_share: "0.00", owed_share: "25.00", user }] });
+  const who = (e: SwExpense) => {
+    const c = classify(e, ME, labels);
+    return c.type === "review" ? c.row.counterparty : "not a review";
+  };
+  assertEquals(who(named({ id: 2, first_name: " Dana ", last_name: "Other" })), "Dana Other");
+  assertEquals(who(named({ id: 2, first_name: "Dana", last_name: null })), "Dana");
+  assertEquals(who(named(null)), null);
+  const unreadable = expense({ payment: true, cost: "25.00", users: [share(ME, "25.00", "0.00"), { ...share(2, "0.00", "25.00"), owed_share: "x" }] });
+  assertEquals(who(unreadable), null);
+  // An expense, not a settle-up: no one to name.
+  const paid = classify(expense({ users: [share(ME, "10.00", "5.00"), share(2, "0.00", "5.00")] }), ME, labels);
+  assertEquals(paid.type === "review" && "counterparty" in paid.row, false);
 });
 
 Deno.test("not involved, or involved for nothing: gone (removed if we had it)", () => {

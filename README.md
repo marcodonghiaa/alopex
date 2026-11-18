@@ -126,6 +126,18 @@ Sign in on your dashboard. On **Accounts**, use **Connect a bank**: balances sho
 
 Bank access lasts 180 days. Two weeks before it ends the Accounts page shows a **Renew access** banner, and you get a push notification the day the banner appears, then 7 days, 1 day and on the day it expires.
 
+### Splitwise (optional)
+
+Alopex can read your Splitwise expenses by itself, every 6 hours and on **Sync now**, so your spending counts only your share of what you split. Each person connects their own account with a personal API key:
+
+1. Sign in at [secure.splitwise.com/apps](https://secure.splitwise.com/apps) and register an app (any name; the homepage and callback URLs don't matter for a personal key).
+2. On the app's page, generate an **API key** and copy it.
+3. In Alopex, paste it under Splitwise and confirm that Alopex may read your Splitwise expenses.
+
+Shares of expenses someone else paid come in by themselves. Expenses you paid and settle-ups wait on a review list: link each to its bank payment (the payment then counts only your share, or becomes a transfer), count it if you paid outside your linked banks, or dismiss it. Edits and deletions in Splitwise follow; a category or description you change in Alopex stays. Shares you already imported from a Splitwise CSV are recognised, not doubled.
+
+Privacy: the key is stored in Supabase Vault in your own project, never in a table column, and only the `sync-splitwise` function reads it; Alopex only reads from Splitwise, never writes. **Disconnect** deletes the key (and, if you choose, the expenses the sync added; your CSV imports stay); deleting your account deletes both. Splitwise's [API terms](https://dev.splitwise.com/) allow it for your own account and **not for commercial use**: don't offer Splitwise sync as part of a paid service without Splitwise's permission.
+
 Codespaces path: run `./setup.sh` again any time: it keeps what's in `.env`, asks only for what's missing, and applies new migrations and functions. Forgot your password? `./setup.sh --reset-password`.
 
 <details>
@@ -193,6 +205,7 @@ Every table is Row Level Security scoped to `auth.uid() = user_id`.
 | Banking | `accounts`, `transactions` (primary key `(account_uid, entry_reference)`), `net_worth_snapshots`, `fx_rates` |
 | Rules | `category_rules`, `subscription_billing_overrides` |
 | Investments | `portfolio_holdings` / `portfolio_snapshots`, `crypto_holdings` / `crypto_snapshots` |
+| Splitwise | `splitwise_expenses` (your shares), `splitwise_review` (to link or count), `splitwise_balances`; `splitwise_connections` is server-only (no dashboard access), its API key lives in Vault |
 
 The dashboard reads `security_invoker` views such as `v_net_worth_daily`, `v_transactions_eur` and `v_subscriptions`. Schema changes live in [`supabase/migrations`](supabase/migrations).
 

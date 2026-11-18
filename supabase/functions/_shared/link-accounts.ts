@@ -5,9 +5,10 @@
 import { EB_NO_ACCOUNTS, signEnableBankingJwt } from "./enable-banking.ts";
 import { errorTag } from "./log-safe.ts";
 import { accountType, matchAccount, matchPatch, type StoredAccount } from "./account-match.ts";
-import { bankLogo, type BankInfo } from "./bank-info.ts";
+import { bankLogo, type BankInfo, fetchAspsps } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
+import { closeReplaced, relinkPatch } from "./eb-sessions.ts";
 
 export const LINK_FAILED = "Couldn't link the bank, please try again";
 
@@ -53,24 +54,17 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     const bankCountry = aspsp?.country ?? null;
     let logo: string | null = null;
     if (bankName && bankCountry) {
-      try {
-        const aspspRes = await fetch(
-          `https://api.enablebanking.com/aspsps?country=${encodeURIComponent(bankCountry)}`,
-          { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) },
-        );
-        if (aspspRes.ok) logo = bankLogo((await aspspRes.json()).aspsps ?? null, bankName);
-      } catch {
-        // best-effort, logo stays null
-      }
+      logo = bankLogo(await fetchAspsps(token, bankCountry), bankName);
     }
     const bank: BankInfo = { bank_name: bankName, bank_country: bankCountry, bank_logo: logo };
 
     // Kept so the session can be closed at Enable Banking when the user deletes their account.
     // Best effort: a failed write only means that session is left to expire on its own.
-    if (typeof data.session_id === "string") {
+    const sessionId: string | null = typeof data.session_id === "string" ? data.session_id : null;
+    if (sessionId) {
       const { error: sessionError } = await supabase
         .from("bank_sessions")
-        .upsert({ session_id: data.session_id, user_id: userId, bank_name: bankName }, { onConflict: "session_id" });
+        .upsert({ session_id: sessionId, user_id: userId, bank_name: bankName }, { onConflict: "session_id" });
       if (sessionError) console.error(`bank session not stored: ${errorTag(sessionError)}`);
     }
     const savedRows: Array<{ uid: string; ebUid: string; label: string | null; currency: string }> = [];
@@ -81,9 +75,13 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     // Match on identification_hash (IBAN + currency, unique per Revolut pocket), then IBAN + currency.
     const { data: storedRows, error: storedError } = await supabase
       .from("accounts")
-      .select("uid, iban, currency, identification_hash, account_type")
+      .select("uid, iban, currency, identification_hash, account_type, bank_session_id")
       .eq("user_id", userId);
     if (storedError) return fail(storedError);
+    const sessionsBefore: Array<{ uid: string; bank_session_id?: string | null }> = storedRows ?? [];
+    const relinked = new Set<string>(); // existing accounts this consent renewed
+    // Which session each account reads from, so a renewal can close the one it replaced.
+    const sessionPatch = relinkPatch(sessionId);
     let stored: StoredAccount[] = storedRows ?? [];
 
     const newUids: string[] = []; // first-synced right away; relinked ones wait for the cron
@@ -107,6 +105,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
           user_id: userId,
           consent_valid_until: consentValidUntil,
           ...bank,
+          ...sessionPatch,
         });
         if (!error) {
           stored = [...stored, { uid: a.uid, iban, currency: a.currency, identification_hash: identificationHash, account_type: type }];
@@ -133,6 +132,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
       const patch = {
         ...matchPatch({ iban, currency: a.currency, identification_hash: identificationHash, label }, a.uid, consentValidUntil, bank),
         ...(storedType === null && type !== null && { account_type: type }),
+        ...sessionPatch,
       };
       const { error } = await supabase
         .from("accounts")
@@ -147,7 +147,12 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
           : s
       );
       savedRows.push({ uid, ebUid: a.uid, label, currency: a.currency });
+      relinked.add(uid);
     }
+
+    // A renewal leaves the old session open at Enable Banking until it expires: close it once
+    // no account reads from it.
+    if (sessionId) await closeReplaced(supabase, userId, sessionsBefore, relinked, sessionId);
 
     // Fetch an immediate balance for each linked account instead of leaving
     // it invisible until the next scheduled sync (up to 6 hours away) --

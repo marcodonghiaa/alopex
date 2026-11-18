@@ -78,3 +78,14 @@ test('the site describes Splitwise as API sync plus the file import everywhere i
     assert.match(summaries[where], /export|file|CSV/i, `${where} still mentions the file import`);
   }
 });
+
+// protects=the site doesn't call the Splitwise key read-only: a Splitwise personal API key can
+// write; only Alopex's use of it is read-only (README); fails_when=a sentence about Splitwise says
+// "read-only key" / "read-only API key" (polish-5 re-audit P3-C)
+test('the site never calls the Splitwise API key read-only', () => {
+  const files = ['site/llms.txt', 'site/integrations.html', 'site/index.html',
+    ...fs.readdirSync(path.join(__dirname, 'site/integrations')).map((f) => `site/integrations/${f}`)];
+  const wrong = /Splitwise[^.<"\n]{0,60}read-only (personal )?(API )?keys?|read-only (personal )?(API )?keys? or from a Splitwise/gi;
+  const found = files.flatMap((f) => (read(f).match(wrong) ?? []).map((m) => `${f}: ${m}`));
+  assert.deepStrictEqual(found, []);
+});

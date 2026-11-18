@@ -198,6 +198,7 @@ export const syncNowHandler = (deps: HandlerDeps) => async (req: Request, json: 
   const body = await req.json().catch(() => null);
   const preview = body?.preview === true;
   // Claimed before any work, a failed run's included: Sync now and its preview, once a minute each.
+  // Saving a new key (reconnect) frees both, so a run refused for the old key doesn't hold it back.
   const attempt = await deps.rpc("splitwise_attempt", { p_user: userId, p_kind: preview ? "preview" : "sync", p_max: 1, p_window: "1 minute" });
   if (attempt.error) {
     console.error(`sync-splitwise: attempt check failed: ${errorTag(attempt.error)}`);

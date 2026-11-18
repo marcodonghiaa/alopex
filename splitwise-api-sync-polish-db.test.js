@@ -313,6 +313,20 @@ test('Splitwise API sync, polish pass 1, on a real Postgres', { skip }, async (t
     assert.deepStrictEqual(await attemptsAtOnce(1, 'connect', 5, '10 minutes'), ['t']);
   });
 
+  // A run refused for a bad key used the minute's Sync now; the user reconnects at once and Start
+  // sync was answered "Synced a moment ago" though nothing synced.
+  await t.test('polish-5 #10: a new key (reconnect) frees the Sync now and preview attempts, not the connect tries', async () => {
+    sql(`delete from public.splitwise_attempts where user_id = '${A}'`);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'sync', 1, '1 minute'), ['t']);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'preview', 1, '1 minute'), ['t']);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'connect', 5, '10 minutes'), ['t']);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'sync', 1, '1 minute'), ['f']);
+    sql(`select public.splitwise_save_connection('${A}', 'key-new', 111, 'Ann')`);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'sync', 1, '1 minute'), ['t']);
+    assert.deepStrictEqual(await attemptsAtOnce(1, 'preview', 1, '1 minute'), ['t']);
+    assert.strictEqual(sql(`select count(*) from public.splitwise_attempts where user_id = '${A}' and kind = 'connect'`), '1');
+  });
+
   await t.test('phase 2 #6: after "disconnect, keep data" the synced data can still be found and deleted', () => {
     const D = 'dddddddd-0000-0000-0000-000000000006';
     const asD = (q) => run('authenticated', D, q);

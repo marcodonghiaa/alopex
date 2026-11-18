@@ -87,6 +87,9 @@ begin
         status = 'ok',
         last_error = null,
         consent_at = excluded.consent_at;
+  -- A new key starts fresh: a run refused for the old one must not hold back the first sync with
+  -- this one ("Synced a moment ago"). Connect tries keep counting (they limit this call).
+  delete from public.splitwise_attempts where user_id = p_user and kind in ('sync', 'preview');
 end;
 $$;
 

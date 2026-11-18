@@ -56,3 +56,25 @@ test('every Edge Function has a verify_jwt entry and a README entry', () => {
   assert.deepStrictEqual(dirs.filter((f) => !new RegExp(`\\[functions\\.${f}\\]\\nverify_jwt = (true|false)`).test(config)), []);
   assert.deepStrictEqual(dirs.filter((f) => !readme.includes(`- **${f}**`)), []);
 });
+
+// protects=the site says what the Splitwise integration does now; fails_when=a summary of it still
+// says file-only (export / spreadsheet) while Alopex also syncs with a personal API key (polish-5 #12)
+test('the site describes Splitwise as API sync plus the file import everywhere it sums it up', () => {
+  const page = read('site/integrations/splitwise.html');
+  const card = read('site/integrations.html').match(/href="\/integrations\/splitwise">[\s\S]*?<\/a>/)[0];
+  const llms = read('site/llms.txt').split('\n').find((l) => l.includes('/integrations/splitwise'));
+  const summaries = {
+    title: page.match(/<title>(.*)<\/title>/)[1],
+    meta: page.match(/<meta name="description" content="([^"]*)"/)[1],
+    og: page.match(/<meta property="og:description" content="([^"]*)"/)[1],
+    lede: page.match(/<p class="answer">(.*?)<\/p>/)[1],
+    card,
+    llms,
+  };
+  for (const [where, text] of Object.entries(summaries)) {
+    assert.match(text, /\bsync|API/i, `${where} mentions the API sync: ${text}`);
+  }
+  for (const where of ['meta', 'lede', 'card', 'llms']) {
+    assert.match(summaries[where], /export|file|CSV/i, `${where} still mentions the file import`);
+  }
+});

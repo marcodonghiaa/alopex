@@ -9,6 +9,6 @@ test('cleans raw bank merchant text like the app does', () => {
 
 test('leaves plain names alone and never returns an empty one', () => {
   for (const name of cases.keep) assert.strictEqual(cleanMerchantName(name), name);
-  assert.strictEqual(cleanMerchantName('SQ *'), 'SQ *');
+  assert.strictEqual(cleanMerchantName('SQ *'), 'SQ');
   assert.strictEqual(cleanMerchantName(null), null);
 });

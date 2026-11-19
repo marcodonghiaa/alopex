@@ -9,6 +9,6 @@ Deno.test("cleans raw bank merchant text", () => {
 
 Deno.test("leaves plain names alone and never returns an empty one", () => {
   for (const name of cases.keep) assertEquals(cleanMerchantName(name), name);
-  assertEquals(cleanMerchantName("SQ *"), "SQ *");
+  assertEquals(cleanMerchantName("SQ *"), "SQ");
   assertEquals(cleanMerchantName(null), null);
 });

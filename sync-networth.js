@@ -44,15 +44,18 @@ async function fillMissingIds(fetch, supabase, token, account) {
   }
 }
 
-// EXPIRED_SESSION: the bank closed the consent before consent_valid_until. Ending it today
+// Same codes as the Edge sync (CONSENT_ENDED in _shared/bank-sync.ts).
+const CONSENT_ENDED = new Set(['EXPIRED_SESSION', 'REVOKED_SESSION', 'CLOSED_SESSION']);
+
+// The consent ended before consent_valid_until (expired, revoked by the user, closed by the bank). Ending it today
 // shows the Renew banner and the consent push. Never moves a date later; best effort like
 // fillMissingIds. Returns whether the row was marked.
 async function markForRenewal(supabase, account, err, today) {
-  if (err.code !== 'EXPIRED_SESSION') return false;
+  if (!CONSENT_ENDED.has(err.code)) return false;
   if (account.consent_valid_until && account.consent_valid_until.slice(0, 10) <= today) return false;
   try {
     // Compare-and-set on the date read at start: a Renew during the sync writes a new date
-    // that a stale EXPIRED_SESSION must not overwrite.
+    // that a stale ended-consent error must not overwrite.
     const query = supabase.from('accounts').update({ consent_valid_until: today }).eq('uid', account.uid);
     const { error } = await (account.consent_valid_until
       ? query.eq('consent_valid_until', account.consent_valid_until)

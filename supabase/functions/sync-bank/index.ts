@@ -14,9 +14,11 @@ import { retryRejectedToken } from "../_shared/postgrest-retry.ts";
 import {
   ACCOUNT_COLUMNS,
   errorTag,
+  recordSyncError,
   type SyncAccount,
   syncAccountBalance,
   syncAccountTransactions,
+  syncStatus,
 } from "../_shared/bank-sync.ts";
 
 // A project without secret keys (Settings -> API Keys) gets 401 on every call: create them first.
@@ -51,7 +53,8 @@ Deno.serve(async (req) => {
   const cursorRead = await supabase
     .from("sync_cursors").select("last_synced").eq("account_uid", account.uid).maybeSingle();
   if (cursorRead.error) {
-    // Without the cursor the sync would re-read 90 days: spend no bank call on a guess.
+    // Without the cursor the sync would treat this as a first sync and re-read the longest
+    // history the bank keeps: spend no bank call on a guess.
     console.error(`Failed to read sync cursor: ${errorTag(cursorRead.error)}`);
     return fail(500, "cursor lookup failed");
   }
@@ -77,7 +80,7 @@ Deno.serve(async (req) => {
 
   // The bank just refused or failed this account: don't spend more of its daily calls on it.
   const tx = balance.ebFailed
-    ? { upserted: 0, rejected: null, cursor: null }
+    ? { upserted: 0, rejected: null, cursor: null, error: null }
     : await syncAccountTransactions(deps, token, account, cursorRead.data?.last_synced ?? null, today);
   if (tx.cursor) {
     const { error } = await supabase
@@ -85,14 +88,18 @@ Deno.serve(async (req) => {
     if (error) console.error(`Sync cursor not saved: ${errorTag(error)}`);
   }
 
+  // The first failure of this run, shown on the account until a run succeeds.
+  const syncError = await recordSyncError(supabase, account, balance.error, tx.error, new Date().toISOString());
+
   const result = {
     upserted: tx.upserted,
     balance_saved: balanceSaved,
     rejected: balance.rejected ?? tx.rejected,
     renewed: balance.renewed,
+    error: syncError,
     ms: Date.now() - started,
   };
   console.log(`sync-bank: ${JSON.stringify(result)}`);
-  // 502 when the transactions did not sync, so pg_net's net._http_response shows the failure.
-  return Response.json(result, { status: tx.cursor ? 200 : 502 });
+  // Not 200 when the transactions did not sync, so pg_net's net._http_response shows the failure.
+  return Response.json(result, { status: syncStatus(tx.cursor, syncError) });
 });

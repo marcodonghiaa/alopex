@@ -56,3 +56,59 @@ export async function closeSessions(
   }
   return closed;
 }
+
+// Sessions a renewal replaced: the old session of each relinked account, when no account of the
+// user still reads from it. Closing them leaves one live consent per bank instead of two until
+// the old one expires. Accounts linked before bank_session_id existed (null) are never closed.
+export function replacedSessions(
+  before: Array<{ uid: string; bank_session_id?: string | null }>,
+  relinked: Set<string>,
+  newSession: string,
+): string[] {
+  const stillUsed = new Set(before.filter((a) => !relinked.has(a.uid)).map((a) => a.bank_session_id));
+  stillUsed.add(newSession);
+  const old = before.filter((a) => relinked.has(a.uid)).map((a) => a.bank_session_id);
+  return [...new Set(old)].filter((id): id is string => !!id && !stillUsed.has(id));
+}
+
+/** Account patch for a renewed consent: records the new session and clears the last sync error. */
+export function relinkPatch(sessionId: string | null) {
+  return sessionId ? { bank_session_id: sessionId, sync_error: null, sync_error_at: null } : {};
+}
+
+// deno-lint-ignore no-explicit-any
+type Db = { from(table: string): any };
+
+// After a renewal: closes the sessions it replaced. Accounts are re-read just before closing,
+// because a second renewal running at the same time may have pointed accounts at one of them.
+// Best effort: a failure only leaves the old session to expire on its own; its bank_sessions
+// row stays unless every close succeeded, so deleting the user account can still close it.
+export async function closeReplaced(
+  supabase: Db,
+  userId: string,
+  before: Array<{ uid: string; bank_session_id?: string | null }>,
+  relinked: Set<string>,
+  newSession: string,
+  fetchFn: typeof fetch = fetch,
+  sign: () => Promise<string> = signEnableBankingJwt,
+): Promise<void> {
+  const candidates = replacedSessions(before, relinked, newSession);
+  if (candidates.length === 0) return;
+  try {
+    const { data, error: readError } = await supabase
+      .from("accounts")
+      .select("bank_session_id")
+      .eq("user_id", userId)
+      .in("bank_session_id", candidates);
+    if (readError) throw readError;
+    const inUse = new Set((data ?? []).map((r: { bank_session_id: string }) => r.bank_session_id));
+    const replaced = candidates.filter((id) => !inUse.has(id));
+    if (replaced.length === 0) return;
+    if (await closeSessions(replaced, fetchFn, sign) === replaced.length) {
+      const { error } = await supabase.from("bank_sessions").delete().eq("user_id", userId).in("session_id", replaced);
+      if (error) throw error;
+    }
+  } catch (err) {
+    console.error(`replaced bank session not closed: ${errorTag(err)}`);
+  }
+}

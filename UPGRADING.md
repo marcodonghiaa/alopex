@@ -8,7 +8,20 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Release notes, newest first
 
-## Unreleased
+## v0.4.0 (19 Nov 2026)
+
+Splitwise syncs by itself, "Is this Anna?" on incoming paybacks, complete Trade Republic imports (dividends, fees, taxes, cash) and Ledger Live, and banks that keep a longer history and say why a sync stopped.
+
+**Upgrade with the installer:** run `npx create-alopex@0.4.0` from the same place as the first time, or inside the install folder. It keeps `backend/.env`, applies the new migrations, deploys the Edge Functions and redeploys the dashboard, in that order.
+
+**Upgrade by hand**, in this order:
+1. Backend: `git pull`, then `supabase db push --linked` (4 migrations, 20261212000000 to 20261215000000).
+2. `supabase functions deploy` (new functions `splitwise-connect` and `sync-splitwise`; `sync-bank`, `start-bank-consent` and shared code changed).
+3. Dashboard: `git pull` and redeploy. The new dashboard needs steps 1 and 2 first.
+4. Docker or launchd sync only: rebuild or restart it (`sync-networth.js` now handles revoked or closed bank consents).
+
+No new secrets. Each change below says what it needs and how to roll it back.
+
 
 ### Investment events, and more detail on trades (Trade Republic complete)
 - **Migration:** `20261215000000_investment_events`. Apply it with `supabase db push --linked` BEFORE redeploying the dashboard: the new dashboard reads and writes `investment_events` and the new `holding_trades` columns, and an older database answers with an error. No Edge Function changes.

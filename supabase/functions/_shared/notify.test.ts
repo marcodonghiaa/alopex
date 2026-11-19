@@ -143,6 +143,7 @@ Deno.test("the push shows the clean merchant name, or the name the user gave it"
   assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3")]).body, "43.03 USD at Amazon — Shopping");
   assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3", "Birthday gift")]).body, "43.03 USD at Birthday gift — Shopping");
   assertEquals(buildPayload([tx(null)]).body, "43.03 USD at a merchant — Shopping");
+  assertEquals(buildPayload([tx("   ", "  ")]).body, "43.03 USD at a merchant — Shopping");
   assertEquals(
     buildPayload([tx("Tst*zuckers Bagels & S"), tx("PAYPAL *SPOTIFY"), tx(""), tx("X")]).body,
     "4 purchases today: Zuckers Bagels, SPOTIFY, a merchant +1 more",

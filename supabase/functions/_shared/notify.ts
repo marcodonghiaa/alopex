@@ -37,7 +37,7 @@ export async function fetchEligibleTransactions(db: Db, userId: string, now: Dat
 }
 
 // The name the app shows: the user's own name for it, else the bank's without codes ("Amazon Mark* E46na7fw3" -> "Amazon").
-const merchant = (t: Row): string => t.custom_name?.trim() || cleanMerchantName(t.creditor_name) || "a merchant";
+const merchant = (t: Row): string => t.custom_name?.trim() || cleanMerchantName(t.creditor_name)?.trim() || "a merchant";
 
 // One transaction: the deep-link prompt. Several at once become ONE digest push.
 export function buildPayload(transactions: Row[]) {

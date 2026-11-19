@@ -33,7 +33,7 @@ async function fetchEligibleTransactions(supabase, userId, now) {
 // from a period without sync) become ONE digest push instead of a stack
 // of separate notifications for the same shopping spree.
 // The name the app shows: the user's own name for it, else the bank's without codes.
-const merchant = (t) => (t.custom_name && t.custom_name.trim()) || cleanMerchantName(t.creditor_name) || 'a merchant';
+const merchant = (t) => (t.custom_name && t.custom_name.trim()) || cleanMerchantName(t.creditor_name)?.trim() || 'a merchant';
 
 function buildPayload(transactions) {
   if (transactions.length === 1) {

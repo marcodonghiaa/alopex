@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { SplitwiseApiError, SplitwiseAuthError, SplitwiseRateLimitError, type SwUser } from "./splitwise-api.ts";
+import { SplitwiseApiError, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError, type SwUser } from "./splitwise-api.ts";
 import { connectHandler, type ConnectDeps } from "./splitwise-connect.ts";
 
 const KEY = "AbCdEf0123456789xyz";
@@ -86,6 +86,19 @@ Deno.test("connect: what Splitwise answers decides the reply; nothing is stored 
   assertEquals((await setup({ me: new SplitwiseRateLimitError("x", 429) }).call({ apiKey: KEY, consent: true })).status, 429);
   assertEquals((await setup({ me: new SplitwiseApiError("x", 500) }).call({ apiKey: KEY, consent: true })).status, 502);
   assertEquals((await setup({ me: new TypeError("net") }).call({ apiKey: KEY, consent: true })).status, 502);
+});
+
+// Splitwise serves API keys only to accounts with Splitwise Pro; the file import works without.
+Deno.test("connect: a key whose account has no Splitwise Pro is refused with code pro_required; nothing stored", async () => {
+  const s = setup({ me: new SplitwiseProRequiredError("x", 403) });
+  assertEquals(await s.call({ apiKey: KEY, consent: true }), {
+    status: 400,
+    body: {
+      error: "This key's Splitwise account has no active Splitwise Pro subscription, which Splitwise requires for API keys. Import a Splitwise file instead.",
+      code: "pro_required",
+    },
+  });
+  assertEquals(s.calls.filter((c) => c.fn === "splitwise_save_connection"), []);
 });
 
 Deno.test("connect: a nameless Splitwise user gets a generic name; a database failure is a 500", async () => {

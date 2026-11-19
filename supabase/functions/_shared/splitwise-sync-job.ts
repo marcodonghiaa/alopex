@@ -10,12 +10,13 @@
 // shortcut: a deletion is seen early only if Splitwise bumps updated_at (unverified); otherwise
 // the share goes at the weekly full check. Splitwise's notifications (type 2, expense deleted)
 // could catch it sooner; not read yet.
-// A refused key marks the connection needs_reconnect (the cron skips it until the user connects
-// again); a rate limit stops the run and keeps the status. Logs counts and error tags only.
+// A refused key marks the connection needs_reconnect, and a 403 naming Splitwise Pro marks it
+// pro_required (the cron skips both until the user connects again); a rate limit stops the run
+// and keeps the status. Logs counts and error tags only.
 import type { Db } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import type { Reply } from "./origins.ts";
-import { type SplitwiseClient, SplitwiseApiError, SplitwiseAuthError, SplitwiseRateLimitError } from "./splitwise-api.ts";
+import { type SplitwiseClient, SplitwiseApiError, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 import { balancesFrom, groupLabels, planSync } from "./splitwise-sync.ts";
 
 const DAY = 86_400_000;
@@ -25,7 +26,10 @@ const CHUNK = 5000; // splitwise_sync_apply's limit per array
 const PAGE = 1000; // PostgREST caps a response at 1000 rows
 const MAX_SURE_GONE = 10; // a full check may always remove this many
 const CONNECTION_COLS = "user_id, splitwise_user_id, cursor_updated_at, last_full_check_at, last_synced_at";
-const RECONNECT = "Splitwise refused the API key. Connect again with a new key.";
+// A 401 on a key that worked: revoked or regenerated, or (since 2026) a Splitwise Pro subscription
+// that ended, which Splitwise answers the same way.
+const RECONNECT = "Splitwise refused the API key, or your Splitwise Pro subscription ended. Connect again, or import a Splitwise file.";
+const PRO_REQUIRED = "Splitwise needs an active Splitwise Pro subscription for API keys. Renew it and connect again, or import a Splitwise file.";
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 export type Connection = {
@@ -118,18 +122,20 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
   return { ...counts, skipped: plan.skipped.length, full, ...(held > 0 ? { held } : {}) };
 }
 
-type Outcome = "needs_reconnect" | "error" | "rate_limited";
+type Outcome = "needs_reconnect" | "pro_required" | "error" | "rate_limited";
 
 /** Records why a user's sync failed (never Splitwise's or the database's own words). */
 async function markFailure(db: Db, user: string, err: unknown): Promise<Outcome> {
   if (err instanceof SplitwiseRateLimitError) return "rate_limited";
-  const auth = err instanceof SplitwiseAuthError;
-  const last_error = auth ? RECONNECT : err instanceof SplitwiseApiError ? err.message : `Sync failed (${errorTag(err)})`;
-  const { error } = await db.from("splitwise_connections")
-    .update({ status: auth ? "needs_reconnect" : "error", last_error })
-    .eq("user_id", user);
+  const status: Outcome = err instanceof SplitwiseProRequiredError
+    ? "pro_required"
+    : err instanceof SplitwiseAuthError ? "needs_reconnect" : "error";
+  const last_error = status === "pro_required" ? PRO_REQUIRED
+    : status === "needs_reconnect" ? RECONNECT
+    : err instanceof SplitwiseApiError ? err.message : `Sync failed (${errorTag(err)})`;
+  const { error } = await db.from("splitwise_connections").update({ status, last_error }).eq("user_id", user);
   if (error) console.error(`sync-splitwise: status not saved: ${errorTag(error)}`);
-  return auth ? "needs_reconnect" : "error";
+  return status;
 }
 
 export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
@@ -160,7 +166,7 @@ export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
         result.skipped = list.length - i - 1;
         break;
       }
-      if (outcome === "needs_reconnect") result.needsReconnect++;
+      if (outcome === "needs_reconnect" || outcome === "pro_required") result.needsReconnect++;
       else result.failed++;
     }
   }
@@ -221,6 +227,7 @@ export const syncNowHandler = (deps: HandlerDeps) => async (req: Request, json: 
       ? (err instanceof SplitwiseRateLimitError ? "rate_limited" : "error")
       : await markFailure(deps.db, userId, err);
     if (outcome === "needs_reconnect") return json({ error: RECONNECT, code: "needs_reconnect" }, 409);
+    if (outcome === "pro_required") return json({ error: PRO_REQUIRED, code: "pro_required" }, 409);
     if (outcome === "rate_limited") return json({ error: "Splitwise asked to slow down. Try again later." }, 429);
     return json({ error: "Couldn't sync with Splitwise. Try again later." }, 502);
   }

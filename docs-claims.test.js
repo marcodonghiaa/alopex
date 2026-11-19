@@ -89,3 +89,33 @@ test('the site never calls the Splitwise API key read-only', () => {
   const found = files.flatMap((f) => (read(f).match(wrong) ?? []).map((m) => `${f}: ${m}`));
   assert.deepStrictEqual(found, []);
 });
+
+// protects=a self-hoster learns before making a key that Splitwise gives API keys only to
+// Splitwise Pro accounts, and that the file import works without it; fails_when=a summary of the
+// Splitwise sync (README, site page, cards, llms.txt) offers the API key without naming Pro
+test('every Splitwise API sync summary says it needs Splitwise Pro, and the file import does not', () => {
+  const page = read('site/integrations/splitwise.html');
+  const cardRe = /href="\/integrations\/splitwise">[\s\S]*?<\/a>/g;
+  const cards = ['site/integrations.html', ...fs.readdirSync(path.join(__dirname, 'site/integrations'))
+    .map((f) => `site/integrations/${f}`)]
+    .flatMap((f) => (read(f).match(cardRe) ?? []).map((c) => [`card in ${f}`, c]));
+  const readme = read('README.md');
+  const summaries = [
+    ['README Splitwise section', readme.slice(readme.indexOf('### Splitwise'), readme.indexOf('Shares of expenses'))],
+    ['page meta', page.match(/<meta name="description" content="([^"]*)"/)[1]],
+    ['page og', page.match(/<meta property="og:description" content="([^"]*)"/)[1]],
+    ['page lede', page.match(/<p class="answer">(.*?)<\/p>/)[1]],
+    ['page setup', page.match(/<h2>Set it up<\/h2>([\s\S]*?)<\/ol>/)[1]],
+    ['page FAQ', page.match(/Does Alopex connect to my Splitwise account\?<\/summary><p>(.*?)<\/p>/)[1]],
+    ['page FAQ (JSON-LD)', page.match(/"text": "(Yes, if you want[^"]*)"/)[1]],
+    ['llms.txt', read('site/llms.txt').split('\n').find((l) => l.includes('/integrations/splitwise'))],
+    ...cards,
+  ];
+  assert.ok(cards.length >= 2, 'found the Splitwise cards');
+  for (const [where, text] of summaries) {
+    assert.match(text, /Splitwise Pro/, `${where} says the API sync needs Splitwise Pro: ${text}`);
+  }
+  for (const [where, text] of [summaries[0], summaries[3], summaries[4], summaries[7]]) {
+    assert.match(text, /(file|export|CSV)[^.]*(anyone|everyone|without (Splitwise )?Pro|any account|free)/i, `${where} says the file import works without Pro: ${text}`);
+  }
+});

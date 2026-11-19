@@ -8,6 +8,14 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Release notes, newest first
 
+## Unreleased
+
+### Splitwise sync needs Splitwise Pro
+- **Migration:** `20261216000000_splitwise_pro_required`. Apply it with `supabase db push --linked`, then `supabase functions deploy` (`splitwise-connect` and `sync-splitwise` changed), then redeploy the dashboard.
+- Since 2026 Splitwise serves API keys only while the account that registered the app has an active Splitwise Pro subscription. Each Alopex user registers their own key, so each user who wants the automatic sync needs Splitwise Pro. The CSV import works for everyone, without Pro.
+- When Splitwise says the key's account has no Pro, connecting says so, and a sync marks the connection `pro_required` (new status; the cron skips it until you connect again, as for a refused key). A key that worked and is now refused may mean the Pro subscription ended: the message says so.
+- **Roll back:** run `supabase/rollbacks/20261216000000_splitwise_pro_required.down.sql` and `supabase migration repair --status reverted 20261216000000 --linked`; `pro_required` connections become `needs_reconnect`.
+
 ## v0.4.0 (19 Nov 2026)
 
 Splitwise syncs by itself, "Is this Anna?" on incoming paybacks, complete Trade Republic imports (dividends, fees, taxes, cash) and Ledger Live, and banks that keep a longer history and say why a sync stopped.

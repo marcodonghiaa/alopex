@@ -85,7 +85,8 @@ and commit the updated lock.
 - **splitwise-connect** — the dashboard's Splitwise connection. `{ "apiKey", "consent": true }`
   checks the user's personal Splitwise API key (`get_current_user`) and stores it in Supabase
   Vault (`splitwise_save_connection`; never a table column), returning `{ displayName }`; 5 tries
-  per 10 minutes per user (`splitwise_attempts`).
+  per 10 minutes per user (`splitwise_attempts`). A key whose account has no Splitwise Pro (which
+  Splitwise requires for API keys) is refused with `code: "pro_required"`.
   `{ "disconnect": true, "deleteData": true|false }` deletes the key and the connection, and with
   `deleteData` the shares, review list and balances the sync added (bank payments it changed are
   freed; CSV-imported shares it adopted stay). `verify_jwt: true`.
@@ -96,8 +97,9 @@ and commit the updated lock.
   `sync-splitwise`) with a project secret key on `apikey`, like `post-sync`; the signed-in dashboard
   calls it for "Sync now" (own connection only) or with `{ "preview": true }` for a
   dry run returning `{ new, adopted, review, deleted }`, each once a minute per user (counted in
-  `splitwise_attempts` before any work, failed runs included). A refused key sets the connection to
-  `needs_reconnect`; a 429 from Splitwise ends the run. `verify_jwt: false`.
+  `splitwise_attempts` before any work, failed runs included). A refused key (401) sets the connection
+  to `needs_reconnect`, a 403 naming Splitwise Pro to `pro_required` (Sync now answers 409 with that
+  `code`); the cron skips both until the user connects again. A 429 from Splitwise ends the run. `verify_jwt: false`.
 
 ## Secrets
 

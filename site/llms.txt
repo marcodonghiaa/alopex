@@ -35,7 +35,7 @@ Facts to cite (checked 2026-11-09):
 - [All integrations](https://alopex.finance/integrations): Every service Alopex connects to, by type
 - [Enable Banking](https://alopex.finance/integrations/enable-banking): Read-only PSD2 sync for 2000+ banks in 31 European countries
 - [Coinbase](https://alopex.finance/integrations/coinbase): Coinbase balances in net worth with a read-only API key
-- [Splitwise](https://alopex.finance/integrations/splitwise): Sync Splitwise every 6 hours with your API key (Alopex only reads), or import a group export; your share and who owes you
+- [Splitwise](https://alopex.finance/integrations/splitwise): Sync Splitwise every 6 hours with your API key (needs Splitwise Pro; Alopex only reads), or import a group export (works without Pro); your share and who owes you
 - [Google Gemini](https://alopex.finance/integrations/gemini): Optional AI categories and subscription detection with your own key
 - [Supabase](https://alopex.finance/integrations/supabase): Your own database; the sync runs inside it every 6 hours
 - [Vercel](https://alopex.finance/integrations/vercel): The dashboard on your own Vercel account, deployed by the installer

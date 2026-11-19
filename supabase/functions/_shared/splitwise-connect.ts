@@ -6,7 +6,7 @@
 // also what the sync brought in (splitwise_disconnect). The key never appears in a reply or log.
 import { errorTag } from "./log-safe.ts";
 import type { Reply } from "./origins.ts";
-import { type SplitwiseClient, SplitwiseAuthError, SplitwiseRateLimitError } from "./splitwise-api.ts";
+import { type SplitwiseClient, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 
 const MAX_BODY = 16 * 1024;
 // Splitwise keys are letters and digits; a little slack, never spaces.
@@ -67,6 +67,9 @@ export const connectHandler = (deps: ConnectDeps) => async (req: Request, json: 
     me = await deps.client(apiKey).currentUser();
   } catch (err) {
     console.error(`splitwise-connect: key check failed: ${errorTag(err)}`);
+    if (err instanceof SplitwiseProRequiredError) {
+      return json({ error: "This key's Splitwise account has no active Splitwise Pro subscription, which Splitwise requires for API keys. Import a Splitwise file instead.", code: "pro_required" }, 400);
+    }
     if (err instanceof SplitwiseAuthError) return json({ error: "Splitwise did not accept this API key." }, 400);
     if (err instanceof SplitwiseRateLimitError) return json({ error: "Splitwise asked to slow down. Try again later." }, 429);
     return json({ error: "Couldn't reach Splitwise. Try again later." }, 502);

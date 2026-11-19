@@ -4,6 +4,7 @@ import {
   splitwiseClient,
   SplitwiseApiError,
   SplitwiseAuthError,
+  SplitwiseProRequiredError,
   SplitwiseRateLimitError,
   toCents,
 } from "./splitwise-api.ts";
@@ -118,6 +119,27 @@ Deno.test("401 is an auth error, without the key in the message", async () => {
   const err = await assertRejects(() => splitwiseClient("secret-key", f.fn).currentUser(), SplitwiseAuthError);
   assertEquals(err.message.includes("secret-key"), false);
   assertEquals(err.status, 401);
+});
+
+// Since 2026 Splitwise answers 403 when the account that registered the API app has no Splitwise
+// Pro; the message is in the user's language, but "Pro" is always there.
+Deno.test("403 naming Splitwise Pro, in any language, is a pro-required error; other 403s are not", async () => {
+  const f = fakeFetch([
+    { status: 403, body: { errors: { base: ["Invalid API request: its developer does not have an active Splitwise Pro subscription"] } } },
+    { status: 403, body: { errors: { base: ["Ungültige API-Anfrage: Der Entwickler hat kein aktives Splitwise Pro-Abonnement"] } } },
+    { status: 403, body: { errors: { base: ["Invalid API request: you do not have permission to view this problem"] } } },
+    { status: 403, body: "<html>proxy</html>" },
+  ]);
+  const api = splitwiseClient("secret-key", f.fn);
+  for (let i = 0; i < 2; i++) {
+    const err = await assertRejects(() => api.currentUser(), SplitwiseProRequiredError);
+    assertEquals([err.status, err.message], [403, "Splitwise Pro is required for API keys"]);
+    assertEquals(err instanceof SplitwiseAuthError, true, "the sync stops for it like a refused key");
+  }
+  const plain = await assertRejects(() => api.currentUser(), SplitwiseApiError);
+  assertEquals([plain instanceof SplitwiseProRequiredError, plain.message], [false, "Splitwise answered HTTP 403"]);
+  const junk = await assertRejects(() => api.currentUser(), SplitwiseApiError);
+  assertEquals([junk instanceof SplitwiseProRequiredError, junk.status], [false, 403]);
 });
 
 Deno.test("429 is a rate-limit error", async () => {

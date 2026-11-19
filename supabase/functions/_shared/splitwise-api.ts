@@ -14,6 +14,21 @@ export class SplitwiseApiError extends Error {
 export class SplitwiseAuthError extends SplitwiseApiError {
   override name = "SplitwiseAuthError";
 }
+/**
+ * 403 naming Splitwise Pro: Splitwise serves API keys only while the account that registered the
+ * app has an active Splitwise Pro subscription. Each Alopex user registers their own, so each
+ * needs Pro; the file import works without. A kind of refused key: the sync stops the same way.
+ */
+export class SplitwiseProRequiredError extends SplitwiseAuthError {
+  override name = "SplitwiseProRequiredError";
+}
+// Splitwise words it in the user's language, "Pro" always among them ("Pro subscription",
+// "Pro-Abonnement"). Only this is read from its answer, never kept.
+const PRO = /\bpro\b/i;
+const namesPro = (body: unknown) => {
+  const base = (body as { errors?: { base?: unknown } } | null)?.errors?.base;
+  return Array.isArray(base) && base.some((m) => typeof m === "string" && PRO.test(m));
+};
 /** 429: slow down. Splitwise publishes no limits; the run stops and the next one tries again. */
 export class SplitwiseRateLimitError extends SplitwiseApiError {
   override name = "SplitwiseRateLimitError";
@@ -91,6 +106,11 @@ export function splitwiseClient(
     if (res.status === 429) {
       await res.body?.cancel();
       throw new SplitwiseRateLimitError("Splitwise asked to slow down", 429);
+    }
+    if (res.status === 403) {
+      const answer = await res.json().catch(() => null);
+      if (namesPro(answer)) throw new SplitwiseProRequiredError("Splitwise Pro is required for API keys", 403);
+      throw new SplitwiseApiError("Splitwise answered HTTP 403", 403);
     }
     if (!res.ok) {
       await res.body?.cancel();

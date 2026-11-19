@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { memoryDb } from "./memory-db.test-helper.ts";
-import { SplitwiseApiError, SplitwiseAuthError, SplitwiseRateLimitError, type SwExpense, type SwGroup } from "./splitwise-api.ts";
+import { SplitwiseApiError, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError, type SwExpense, type SwGroup } from "./splitwise-api.ts";
 import { type Connection, type JobDeps, needsFullCheck, runAllUsers, syncNowHandler, syncUser } from "./splitwise-sync-job.ts";
 
 const NOW = Date.parse("2026-11-17T12:00:00Z");
@@ -193,6 +193,32 @@ Deno.test("cron: a refused key asks to reconnect; a rate limit stops the run and
   assertEquals([result.rateLimited, result.skipped, result.failed], [true, 1, 0]);
   assertEquals(r.asked.length, 1);
   assertEquals(r.db.tables.splitwise_connections.map((c) => c.status), ["ok", "ok"]);
+});
+
+// Splitwise Pro: the key's account has no Pro (403 naming Pro), or a key that worked is now
+// refused (401), which is also what Splitwise answers once a Pro subscription ends.
+const PRO = "Splitwise needs an active Splitwise Pro subscription for API keys. Renew it and connect again, or import a Splitwise file.";
+const REFUSED = "Splitwise refused the API key, or your Splitwise Pro subscription ended. Connect again, or import a Splitwise file.";
+
+Deno.test("cron: no Splitwise Pro is its own state, skipped like a refused key; a 401 may mean Pro ended", async () => {
+  const pro = setup({ expenses: new SplitwiseProRequiredError("Splitwise Pro is required for API keys", 403) });
+  assertEquals((await runAllUsers(pro.deps, () => true)).needsReconnect, 1);
+  assertEquals([pro.db.tables.splitwise_connections[0].status, pro.db.tables.splitwise_connections[0].last_error], ["pro_required", PRO]);
+  assertEquals((await runAllUsers(pro.deps, () => true)).users, 0, "not tried again until the user connects");
+  const refused = setup({ expenses: new SplitwiseAuthError("Splitwise refused the API key", 401) });
+  await runAllUsers(refused.deps, () => true);
+  assertEquals([refused.db.tables.splitwise_connections[0].status, refused.db.tables.splitwise_connections[0].last_error], ["needs_reconnect", REFUSED]);
+});
+
+Deno.test("handler: Sync now and its preview answer pro_required with what to do", async () => {
+  for (const preview of [false, true]) {
+    const s = setup({ connections: [conn()], expenses: new SplitwiseProRequiredError("x", 403) });
+    const res = await call(handler(s), user(preview ? { preview: true } : {}));
+    assertEquals([res.status, res.body.code, res.body.error], [409, "pro_required", PRO]);
+    assertEquals(s.db.tables.splitwise_connections[0].status, "pro_required");
+  }
+  const s = setup({ connections: [conn()], expenses: new SplitwiseAuthError("x", 401) });
+  assertEquals((await call(handler(s), user({}))).body.error, REFUSED);
 });
 
 Deno.test("cron: an API error keeps its safe message; out of time leaves the rest for next run", async () => {

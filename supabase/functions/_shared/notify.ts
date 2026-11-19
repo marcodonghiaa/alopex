@@ -1,5 +1,6 @@
 // Deno port of notify-worth-it.js and consent-notice.js, run by the notify Edge Function.
 import { errorTag } from "./log-safe.ts";
+import { cleanMerchantName } from "./merchant-name.ts";
 import { fetchSubscriptions, type SendPush, sendToAllSubscriptions } from "./push.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -20,7 +21,7 @@ export async function fetchEligibleTransactions(db: Db, userId: string, now: Dat
   const bookingFloor = new Date(now.getTime() - MAX_BOOKING_AGE_DAYS * 86400 * 1000).toISOString().slice(0, 10);
   const { data, error } = await db
     .from("transactions")
-    .select("entry_reference, account_uid, creditor_name, amount, currency, category, flow_type, deleted_at")
+    .select("entry_reference, account_uid, creditor_name, custom_name, amount, currency, category, flow_type, deleted_at")
     .eq("user_id", userId)
     .eq("credit_debit_indicator", "DBIT")
     .in("category", DISCRETIONARY_CATEGORIES)
@@ -35,17 +36,20 @@ export async function fetchEligibleTransactions(db: Db, userId: string, now: Dat
   return data.filter((t: Row) => !t.deleted_at && t.flow_type !== "refunded" && t.flow_type !== "transfer");
 }
 
+// The name the app shows: the user's own name for it, else the bank's without codes ("Amazon Mark* E46na7fw3" -> "Amazon").
+const merchant = (t: Row): string => t.custom_name?.trim() || cleanMerchantName(t.creditor_name) || "a merchant";
+
 // One transaction: the deep-link prompt. Several at once become ONE digest push.
 export function buildPayload(transactions: Row[]) {
   if (transactions.length === 1) {
     const tx = transactions[0];
     return {
       title: "Worth it?",
-      body: `${tx.amount} ${tx.currency} at ${tx.creditor_name || "a merchant"} — ${tx.category}`,
+      body: `${tx.amount} ${tx.currency} at ${merchant(tx)} — ${tx.category}`,
       url: `/transactions?highlight=${encodeURIComponent(tx.entry_reference)}`,
     };
   }
-  const names = transactions.slice(0, 3).map((t) => t.creditor_name || "a merchant");
+  const names = transactions.slice(0, 3).map(merchant);
   const extra = transactions.length > 3 ? ` +${transactions.length - 3} more` : "";
   return { title: "Worth it?", body: `${transactions.length} purchases today: ${names.join(", ")}${extra}`, url: "/transactions" };
 }

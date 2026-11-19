@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { fetchEligibleTransactions } = require('./notify-worth-it');
+const { buildPayload, fetchEligibleTransactions } = require('./notify-worth-it');
 
 // Records every builder call as [method, ...args]; awaiting it resolves { data: [], error: null }.
 function fakeSupabase() {
@@ -88,4 +88,17 @@ test('refunded, deleted and transfer rows are not prompted', async () => {
   });
   const got = await fetchEligibleTransactions(builder, 'user', NOW);
   assert.deepStrictEqual(got.map((t) => t.entry_reference), ['ok', 'new']);
+});
+
+// protects=the push names the shop like the app does; fails_when=the bank's raw text with codes
+// ("Amazon Mark* E46na7fw3") reaches the lock screen, or the user's own name for it is ignored
+test('the push shows the clean merchant name, or the name the user gave it', () => {
+  const tx = (creditor_name, custom_name = null) => ({ entry_reference: 'r1', creditor_name, custom_name, amount: 43.03, currency: 'USD', category: 'Shopping' });
+  assert.strictEqual(buildPayload([tx('Amazon Mark* E46na7fw3')]).body, '43.03 USD at Amazon — Shopping');
+  assert.strictEqual(buildPayload([tx('Amazon Mark* E46na7fw3', 'Birthday gift')]).body, '43.03 USD at Birthday gift — Shopping');
+  assert.strictEqual(buildPayload([tx(null)]).body, '43.03 USD at a merchant — Shopping');
+  assert.strictEqual(
+    buildPayload([tx('Tst*zuckers Bagels & S'), tx('PAYPAL *SPOTIFY'), tx(''), tx('X')]).body,
+    '4 purchases today: Zuckers Bagels, SPOTIFY, a merchant +1 more',
+  );
 });

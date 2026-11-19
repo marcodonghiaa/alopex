@@ -12,3 +12,10 @@ test('leaves plain names alone and never returns an empty one', () => {
   assert.strictEqual(cleanMerchantName('SQ *'), 'SQ');
   assert.strictEqual(cleanMerchantName(null), null);
 });
+
+test('cleans very long bank text without stalling', () => {
+  const start = Date.now();
+  for (const raw of ['-'.repeat(50000) + 'x', 'a'.repeat(50000), 'PAYPAL *' + 'A'.repeat(50000) + '1'])
+    cleanMerchantName(raw);
+  assert.ok(Date.now() - start < 100);
+});

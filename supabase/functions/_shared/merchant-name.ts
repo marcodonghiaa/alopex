@@ -15,7 +15,7 @@ const AMAZON =
   /^(amazon|amzn)(\.[a-z]{2,3})*(\s+(mark|mktp|mktplace|marketplace|reta|retail|payments?|eu|europe)\w*)*(\s+[a-z]{2})?(\s+(sarl|s\.?\s?a\.?\s?r\.?\s?l\.?|s\.?c\.?a\.?))?\s*(\*.*)?$/i;
 /** Words a card or POS terminal puts before the merchant ("POS LIDL"), followed by a letter. */
 const CARD_PREFIX =
-  /^(pos( purchase)?|card (payment|purchase)( to| at)?|contactless( payment)?|pagamento (pos|carta)|acquisto (pos|carta)|kartenzahlung|compra con tarjeta) (?=\p{L})/iu;
+  /^(pos( purchase)?|(debit )?card (payment|purchase)( to| at)?|contactless( payment)?|pagamento (pos|carta)|acquisto (pos|carta)|kartenzahlung|compra con tarjeta) (?=\p{L})/iu;
 /** A whole name that is a web address: "NETFLIX.COM", "www.ryanair.com", "apple.com/bill". */
 const DOMAIN =
   /^(www\.)?([a-z0-9-]+)\.(com|it|io|eu|net|org|co|uk|de|fr|es|nl|be|at|ch|ie|pt|pl|app|tv|me)(\/\S*)?$/i;
@@ -35,7 +35,7 @@ export function cleanMerchantName(raw: string | null | undefined): string | null
     const right = name.slice(star + 1).trim();
     // A processor tag hides the merchant after it, unless only a code follows ("PAYPAL *1234AB");
     // otherwise "Merchant*REF": keep the merchant.
-    const merchantFollows = /^[^\s\d]*\p{L}{2}[^\s\d]*(\s|$)/u.test(right);
+    const merchantFollows = /^(?=[^\s\d]*\p{L}{2})[^\s\d]*(\s|$)/u.test(right);
     name = PROCESSORS.has(left.toLowerCase()) && merchantFollows ? right : left;
   }
 
@@ -44,7 +44,7 @@ export function cleanMerchantName(raw: string | null | undefined): string | null
 
   name = name
     .replace(/(?<![\s-])[\s-]+\d{5,}$/, "") // store or terminal number: "Mbta-550057141438"
-    .replace(/(\p{L}{4,})\s+&\s*\S?$/u, "$1") // cut off mid-word: "Bagels & S"; "H & M" stays
+    .replace(/(?<=\p{L}{4})\s+&\s*\S?$/u, "") // cut off mid-word: "Bagels & S"; "H & M" stays
     .trim();
 
   if (!name) return raw;

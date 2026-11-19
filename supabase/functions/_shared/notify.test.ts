@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { buildConsentPayload, consentNotices, fetchEligibleTransactions, notifyUser, runConsent, userIdsWithSubscriptions } from "./notify.ts";
+import { buildConsentPayload, buildPayload, consentNotices, fetchEligibleTransactions, notifyUser, runConsent, userIdsWithSubscriptions } from "./notify.ts";
 import { sendToAllSubscriptions, type Subscription } from "./push.ts";
 
 // Records every builder call as [method, ...args]; awaiting it resolves the given rows.
@@ -134,4 +134,18 @@ Deno.test("runConsent reminds only users with a subscription, and counts deliver
   const sent: string[] = [];
   assertEquals(await runConsent(db, async (_s, payload) => void sent.push(JSON.parse(payload).body), TODAY), { reminded: 1 });
   assert(sent[0].startsWith("Revolut stops syncing in 7 days"));
+});
+
+// protects=the push names the shop like the app does; fails_when=the bank's raw text with codes
+// ("Amazon Mark* E46na7fw3") reaches the lock screen, or the user's own name for it is ignored
+Deno.test("the push shows the clean merchant name, or the name the user gave it", () => {
+  const tx = (creditor_name: string | null, custom_name: string | null = null) => ({ entry_reference: "r1", creditor_name, custom_name, amount: 43.03, currency: "USD", category: "Shopping" });
+  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3")]).body, "43.03 USD at Amazon — Shopping");
+  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3", "Birthday gift")]).body, "43.03 USD at Birthday gift — Shopping");
+  assertEquals(buildPayload([tx(null)]).body, "43.03 USD at a merchant — Shopping");
+  assertEquals(buildPayload([tx("   ", "  ")]).body, "43.03 USD at a merchant — Shopping");
+  assertEquals(
+    buildPayload([tx("Tst*zuckers Bagels & S"), tx("PAYPAL *SPOTIFY"), tx(""), tx("X")]).body,
+    "4 purchases today: Zuckers Bagels, SPOTIFY, a merchant +1 more",
+  );
 });

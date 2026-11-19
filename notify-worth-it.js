@@ -1,4 +1,5 @@
 const { errorTag } = require('./log-safe');
+const { cleanMerchantName } = require('./merchant-name');
 
 // ponytail: hardcoded allowlist, add a per-user setting if this ever needs
 // to be user-configurable instead of a personal tuning knob.
@@ -12,7 +13,7 @@ async function fetchEligibleTransactions(supabase, userId, now) {
   const bookingFloor = new Date(now.getTime() - MAX_BOOKING_AGE_DAYS * 86400 * 1000).toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('transactions')
-    .select('entry_reference, account_uid, creditor_name, amount, currency, category, flow_type, deleted_at')
+    .select('entry_reference, account_uid, creditor_name, custom_name, amount, currency, category, flow_type, deleted_at')
     .eq('user_id', userId)
     .eq('credit_debit_indicator', 'DBIT')
     .in('category', DISCRETIONARY_CATEGORIES)
@@ -31,16 +32,19 @@ async function fetchEligibleTransactions(supabase, userId, now) {
 // where multiple purchases all crossed the 3h line together, or an old backlog
 // from a period without sync) become ONE digest push instead of a stack
 // of separate notifications for the same shopping spree.
+// The name the app shows: the user's own name for it, else the bank's without codes.
+const merchant = (t) => (t.custom_name && t.custom_name.trim()) || cleanMerchantName(t.creditor_name)?.trim() || 'a merchant';
+
 function buildPayload(transactions) {
   if (transactions.length === 1) {
     const tx = transactions[0];
     return {
       title: 'Worth it?',
-      body: `${tx.amount} ${tx.currency} at ${tx.creditor_name || 'a merchant'} — ${tx.category}`,
+      body: `${tx.amount} ${tx.currency} at ${merchant(tx)} — ${tx.category}`,
       url: `/transactions?highlight=${encodeURIComponent(tx.entry_reference)}`,
     };
   }
-  const names = transactions.slice(0, 3).map((t) => t.creditor_name || 'a merchant');
+  const names = transactions.slice(0, 3).map(merchant);
   const extra = transactions.length > 3 ? ` +${transactions.length - 3} more` : '';
   return {
     title: 'Worth it?',

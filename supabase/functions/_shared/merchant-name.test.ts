@@ -12,3 +12,11 @@ Deno.test("leaves plain names alone and never returns an empty one", () => {
   assertEquals(cleanMerchantName("SQ *"), "SQ");
   assertEquals(cleanMerchantName(null), null);
 });
+
+Deno.test("cleans very long bank text without stalling", () => {
+  const start = performance.now();
+  for (const raw of ["-".repeat(50_000) + "x", "a".repeat(50_000), "PAYPAL *" + "A".repeat(50_000) + "1", "AMAZON" + " EUROPE".repeat(30) + "!"]) {
+    cleanMerchantName(raw);
+  }
+  assertEquals(performance.now() - start < 100, true);
+});

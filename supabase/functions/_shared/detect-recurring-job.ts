@@ -44,7 +44,11 @@ async function userCharges(db: Db, user: string): Promise<Charge[]> {
 
 /** Detects and stores one user's streams; returns how many. Throws on a read or save failure. */
 export async function detectUser(db: Db, rpc: Rpc, user: string, today: string): Promise<number> {
-  const found = detectStreams(await userCharges(db, user), today);
+  const { data: confirmed, error: readError } = await db.from("recurring_streams").select("stream_key")
+    .eq("user_id", user).eq("user_status", "confirmed");
+  if (readError) throw readError;
+  const keep = new Set((confirmed as Row[]).map((r) => r.stream_key as string));
+  const found = detectStreams(await userCharges(db, user), today, keep);
   const rows = [...new Map(found.map((s) => [s.stream_key, s])).values()];
   // Always called, even with no rows: the RPC also clears this user's streams no longer found.
   const { error } = await rpc("upsert_detected_streams", { p_user: user, p_rows: rows });

@@ -13,7 +13,7 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 ### Subscriptions follow your transaction edits
 - **Migration:** `20261218000000_recurring_streams_gone`. Apply it with `supabase db push --linked`, then `supabase functions deploy` (new function `refresh-recurring`; `detect-recurring` changed), then redeploy the dashboard.
 - Renaming a transaction, marking it One-time, recategorizing or deleting it now shows on the Subscriptions page as soon as you open it, instead of after the next 6-hour run.
-- A subscription you confirmed or archived that is no longer found (say its charges are now One-time) is hidden instead of staying forever. It keeps your choices and comes back if it is found again.
+- A subscription you confirmed or archived that is no longer found (say its charges are now One-time) is hidden instead of staying forever. It keeps your choices and comes back if it is found again. A confirmed one-off charge (no regular rhythm) stays listed under Stopped however old it gets, as before.
 - **Roll back:** run `supabase/rollbacks/20261218000000_recurring_streams_gone.down.sql` and `supabase migration repair --status reverted 20261218000000 --linked`.
 
 ## v0.4.1 (21 Nov 2026)

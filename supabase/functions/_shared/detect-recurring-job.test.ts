@@ -162,3 +162,31 @@ Deno.test("detectUser throws when the rpc fails, so the caller can answer with a
   }
   assertEquals(threw, true);
 });
+
+Deno.test("detectUser keeps the user's confirmed streams past the 400-day cut", async () => {
+  const { calls, rpc } = recorder();
+  const tables = build(["u1"]);
+  tables.transactions = [tx("u1", "o1", "2025-01-10", { transaction_type: "Subscription" })];
+  tables.v_transactions_eur = [eur("u1", "o1", -20)];
+  await detectUser(memoryDb(tables), rpc, "u1", "2026-10-20");
+  assertEquals(calls[0].p_rows, []);
+  tables.recurring_streams = [
+    { user_id: "u1", stream_key: "zorblax|a-u1", user_status: "confirmed" },
+    { user_id: "u2", stream_key: "other", user_status: "confirmed" },
+  ];
+  await detectUser(memoryDb(tables), rpc, "u1", "2026-10-20");
+  assertEquals(calls[1].p_rows.map((r) => r.stream_key), ["zorblax|a-u1"]);
+});
+
+Deno.test("detectUser throws, saving nothing, when your confirmed streams can't be read", async () => {
+  const db = memoryDb(build(["u1"]));
+  const broken = { from: (t: string) => t === "recurring_streams" ? { select: () => ({ eq: () => ({ eq: () => Promise.resolve({ data: null, error: { code: "42P01" } }) }) }) } : db.from(t) };
+  const { calls, rpc } = recorder();
+  let threw = false;
+  try {
+    await detectUser(broken, rpc, "u1", "2026-10-20");
+  } catch {
+    threw = true;
+  }
+  assertEquals([threw, calls], [true, []]);
+});

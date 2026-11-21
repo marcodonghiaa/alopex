@@ -129,3 +129,13 @@ Deno.test("an everyday category is never proposed by rhythm alone and never auto
     assertEquals(detectStreams(tagged, "2026-11-08").map((r) => r.detected_status), ["suggested"], category);
   }
 });
+
+// Polish 1 #13: a confirmed stream with no rhythm (one tagged charge) used to stay listed (under
+// Stopped) when its charge got old; the 400-day cut must not turn it 'gone'.
+Deno.test("a stream you confirmed is kept past the 400-day cut; an undecided one is not", () => {
+  const old = [charge({ booking_date: "2025-10-01", transaction_type: "Subscription", category: "Services" })];
+  const today = "2026-11-20"; // 415 days later
+  assertEquals(detectStreams(old, today), []);
+  const kept = detectStreams(old, today, new Set(["streamflix|acc-1"]));
+  assertEquals(kept.map((s) => [s.stream_key, s.detected_status, s.last_charged]), [["streamflix|acc-1", "suggested", "2025-10-01"]]);
+});

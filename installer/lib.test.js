@@ -156,3 +156,28 @@ test('installRoot: inside an install with no folder, updates that install', () =
 test('parseArgs: no folder hint for a word the % rule would refuse', () => {
   assert.doesNotMatch(lib.parseArgs(['-x%']).error, /\.\//);
 });
+
+test('orgAfterCreate lists the orgs again: create answers in plain text, not JSON (e2e #3)', () => {
+  const calls = [];
+  const orgs = lib.orgsAfterCreate(
+    (args) => {
+      calls.push(args[1]);
+      return args[1] === 'create' ? 'Created organization: abc\n' : '[{"id":"abc","name":"me\'s org"}]';
+    },
+    "me's org",
+  );
+  assert.deepStrictEqual(calls, ['create', 'list']);
+  assert.deepStrictEqual(orgs, [{ id: 'abc', name: "me's org" }]);
+});
+
+test('loginProblem refuses an empty or malformed email and a short password (e2e #5)', () => {
+  assert.match(lib.loginProblem('', 'secret1'), /email/i);
+  assert.match(lib.loginProblem('marco', 'secret1'), /email/i);
+  assert.match(lib.loginProblem('a@b.co', '12345'), /6/);
+  assert.strictEqual(lib.loginProblem('a@b.co', '123456'), null);
+  assert.strictEqual(lib.loginProblem(' a@b.co ', '123456'), null);
+});
+
+test('banner names the installer version, so a user can tell which release runs (e2e #2)', () => {
+  assert.match(lib.banner('0.4.1'), /create-alopex 0\.4\.1/);
+});

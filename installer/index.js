@@ -123,6 +123,7 @@ async function main() {
   const dashboard = path.join(root, 'dashboard');
 
   bold(`${APP} setup: about 30 minutes the first time, most of it on Enable Banking's site.`);
+  bold(lib.banner(require('./package.json').version));
   console.log(`Installs into ${root}. Every question shows a recommended answer: press Enter to accept it.`);
   console.log('Answers are saved as you go: stop any time and run the same command again.');
 
@@ -163,7 +164,8 @@ async function main() {
     if (orgs.length === 0) {
       const name = `${os.userInfo().username}'s org`;
       console.log(`No Supabase organization yet: creating "${name}".`);
-      orgs = [JSON.parse(supabaseMust(['orgs', 'create', name, '--output', 'json', '--yes'], sb, 'Could not create an organization.'))];
+      orgs = lib.orgsAfterCreate((args) => supabaseMust(args, sb, 'Could not create an organization.'), name);
+      if (orgs.length === 0) die('Created the organization, but Supabase does not list it yet: run the same command again.');
     }
     let org = orgs[0];
     if (orgs.length > 1) {
@@ -207,8 +209,15 @@ async function main() {
     console.log(`Already set up for ${saved.LOGIN_EMAIL}. Forgot the password? In ${backend}: ./setup.sh --reset-password`);
   } else {
     console.log('The app has no sign-up screen: your login is created here. Save the password in your password manager.');
-    const email = await ask('Email');
-    const password = await askHidden('Password (6+ characters, not shown)');
+    let email = '';
+    let password = '';
+    for (;;) {
+      email = (await ask('Email')).trim();
+      password = await askHidden('Password (6+ characters, not shown)');
+      const problem = lib.loginProblem(email, password);
+      if (!problem) break;
+      console.log(problem);
+    }
     const { ensureUser } = require(path.join(backend, 'first-user.js'));
     const userId = await ensureUser({ url, secretKey: keys.secret, email, password }).catch((e) => die(e.message));
     saveEnv({ USER_ID: userId, LOGIN_EMAIL: email });
@@ -233,8 +242,9 @@ async function main() {
   Data protection email ... ${saved.LOGIN_EMAIL || 'your email'}
   Privacy URL / Terms URL . ${repoUrl}
 
-Click Register: a .pem key file downloads. Then click 'Activate by linking accounts' and link any one
-of your accounts there (this unlocks the free plan; your banks are connected later, from the dashboard).
+Click Register: a .pem key file downloads. Then click 'Activate by linking accounts' and link every
+bank you want in Alopex there, once each: a free app only sees banks linked here. After that you
+connect them, and renew them, from the dashboard. A bank you add later: link it here first.
 The APP_ID is the long id shown next to your app.`);
     openBrowser('https://enablebanking.com/sign-in/');
     appId = await ask('Enable Banking APP_ID');

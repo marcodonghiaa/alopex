@@ -36,6 +36,8 @@ const ERROR_TAG_ONLY_PATHS = [
   'supabase/functions/add-holding/index.ts',
   'supabase/functions/parse-statement/index.ts',
   'supabase/functions/reapply-rules/handler.ts',
+  'supabase/functions/refresh-recurring/handler.ts',
+  'supabase/functions/_shared/caller.ts',
   'supabase/functions/_shared/splitwise-api.ts',
   'supabase/functions/_shared/splitwise-sync.ts',
   'supabase/functions/_shared/splitwise-sync-job.ts',

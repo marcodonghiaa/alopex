@@ -90,7 +90,8 @@ function clusters(group: Charge[], aggregator: boolean): Charge[][] {
   return out;
 }
 
-export function detectStreams(charges: Charge[], today: string): DetectedStream[] {
+// keep: stream_keys the user confirmed. Those skip the age cut below, so an old one-off stays listed (as Stopped).
+export function detectStreams(charges: Charge[], today: string, keep: ReadonlySet<string> = new Set()): DetectedStream[] {
   const groups = new Map<string, Charge[]>();
   for (const c of charges) {
     if (
@@ -121,10 +122,12 @@ export function detectStreams(charges: Charge[], today: string): DetectedStream[
       const days = [...new Set(sorted.map((c) => toDays(c.booking_date)))];
       const picked = days.length >= 2 ? pickCadence(days.slice(1).map((d, i) => d - days[i])) : null;
       const everyday = RHYTHM_ONLY_DENY.has(newest.category ?? "");
+      // R4/R5: the aggregator anchor (cluster minimum) stays put when the price rises.
+      const streamKey = aggregator ? `${groupKey}|${Math.min(...stream.map((c) => c.amount)).toFixed(2)}` : groupKey;
       let status: "suggested" | "active";
       if (tagged) {
         // A rhythm makes it active (an everyday category caps it at suggested); no rhythm: suggested while recent.
-        if (!picked && toDays(today) - toDays(newest.booking_date) > TAG_RECENT_DAYS) continue;
+        if (!picked && !keep.has(streamKey) && toDays(today) - toDays(newest.booking_date) > TAG_RECENT_DAYS) continue;
         status = picked && !everyday ? "active" : "suggested";
       } else {
         // R3: rhythm alone completes the list, never auto-active; 3+ distinct dates.
@@ -133,8 +136,7 @@ export function detectStreams(charges: Charge[], today: string): DetectedStream[
       }
       const [cadence, period] = picked ?? [null, null];
       out.push({
-        // R4/R5: the aggregator anchor (cluster minimum) stays put when the price rises.
-        stream_key: aggregator ? `${groupKey}|${Math.min(...stream.map((c) => c.amount)).toFixed(2)}` : groupKey,
+        stream_key: streamKey,
         merchant_key: newest.merchant_key!,
         account_uid: newest.account_uid,
         currency: newest.currency,

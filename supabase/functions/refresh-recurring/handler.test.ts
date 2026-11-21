@@ -21,12 +21,12 @@ const seed = () =>
 type Call = { p_user: string; p_rows: unknown[] };
 const call = async (
   init: RequestInit & { headers?: Record<string, string> } = {},
-  opts: { mfa?: { body: object; status: number } | null; rpcFails?: boolean; authDown?: boolean } = {},
+  opts: { mfa?: { body: object; status: number } | null; rpcFails?: boolean; authDown?: boolean; mfaDown?: boolean } = {},
 ) => {
   const calls: Call[] = [];
   const handler = refreshHandler({
     userIdFor: (a) => opts.authDown ? Promise.reject(new Error("down")) : Promise.resolve(a === "Bearer good" ? "u1" : null),
-    mfaRefusal: () => Promise.resolve(opts.mfa ?? null),
+    mfaRefusal: () => opts.mfaDown ? Promise.reject(new Error("down")) : Promise.resolve(opts.mfa ?? null),
     admin: () => seed(),
     rpc: (_fn, args) => {
       if (opts.rpcFails) return Promise.resolve({ data: null, error: { code: "XX000" } });
@@ -55,6 +55,12 @@ Deno.test("no or bad token: 401, nothing detected", async () => {
 
 Deno.test("auth unreachable: 503", async () => {
   assertEquals((await call({}, { authDown: true })).status, 503);
+});
+
+// Polish 1 #4: the 503 when the two-step check can't be reached had no test.
+Deno.test("two-step check unreachable: 503, nothing detected", async () => {
+  const res = await call({}, { mfaDown: true });
+  assertEquals([res.status, res.calls], [503, []]);
 });
 
 Deno.test("two-step sign-in missing: the refusal is passed on, nothing detected", async () => {

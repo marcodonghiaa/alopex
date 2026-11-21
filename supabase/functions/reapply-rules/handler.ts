@@ -2,6 +2,8 @@
 import type { Db } from "../_shared/batch-update.ts";
 import type { Reply } from "../_shared/origins.ts";
 import { errorTag } from "../_shared/log-safe.ts";
+import { type CallerDeps, callerOrReply } from "../_shared/caller.ts";
+export { userIdFrom } from "../_shared/caller.ts";
 import { PartialApplyError, reapplyRules } from "../_shared/reapply-rules.ts";
 import type { Rule } from "../_shared/rules.ts";
 
@@ -26,34 +28,14 @@ export function retiredFrom(body: unknown): Rule | null | undefined {
   return { user_id: "", match_field: r.match_field, match_text: r.match_text, match_mode: r.match_mode ?? "contains", set_category: r.set_category };
 }
 
-export interface Deps {
-  // Who signed this request; null for a bad or expired token, throws if auth can't be reached.
-  userIdFor(authorization: string): Promise<string | null>;
-  // The database's two-step sign-in check, asked with the caller's JWT: the service key below
-  // skips it. null when satisfied, else the reply to send (see _shared/mfa.ts).
-  mfaRefusal(authorization: string): Promise<{ body: object; status: number } | null>;
+export interface Deps extends CallerDeps {
   admin(): Db; // service-role client: the user's own JWT would trip the hand-edit trigger
 }
 
 export const reapplyHandler = (deps: Deps) => async (req: Request, json: Reply): Promise<Response> => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  const authorization = req.headers.get("Authorization");
-  let userId: string | null = null;
-  try {
-    userId = authorization ? await deps.userIdFor(authorization) : null;
-  } catch (err) {
-    console.error(`reapply-rules auth check failed: ${errorTag(err)}`);
-    return json({ error: "Sign-in check is unavailable, please try again" }, 503);
-  }
-  if (!userId) return json({ error: "Not signed in" }, 401);
-  let refusal: { body: object; status: number } | null;
-  try {
-    refusal = await deps.mfaRefusal(authorization!);
-  } catch (err) {
-    console.error(`reapply-rules two-step check failed: ${errorTag(err)}`);
-    return json({ error: "Sign-in check is unavailable, please try again" }, 503);
-  }
-  if (refusal) return json(refusal.body, refusal.status);
+  const userId = await callerOrReply(req, deps, json, "reapply-rules");
+  if (userId instanceof Response) return userId;
 
   // The real body is a few hundred bytes: refuse a large one before reading or parsing it.
   if (Number(req.headers.get("Content-Length") ?? 0) > MAX_BODY) return json({ error: "Request too large" }, 413);
@@ -75,14 +57,3 @@ export const reapplyHandler = (deps: Deps) => async (req: Request, json: Reply):
     return json({ error }, 500);
   }
 };
-
-// Reads auth.getUser()'s result: the user's id; null when the token is bad, expired or missing
-// (auth answers 4xx); throws when auth is down or unreachable (5xx, network: status 0 or none).
-export function userIdFrom(result: {
-  data: { user: { id: string } | null };
-  error: { status?: number } | null;
-}): string | null {
-  const { data, error } = result;
-  if (error && !(error.status && error.status < 500)) throw error;
-  return error ? null : data.user?.id ?? null;
-}

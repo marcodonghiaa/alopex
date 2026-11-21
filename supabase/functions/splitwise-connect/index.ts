@@ -11,7 +11,7 @@ import { serveWithCors } from "../_shared/origins.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
 import { splitwiseClient } from "../_shared/splitwise-api.ts";
 import { connectHandler } from "../_shared/splitwise-connect.ts";
-import { userIdFrom } from "../reapply-rules/handler.ts";
+import { userIdFrom } from "../_shared/caller.ts";
 
 const url = Deno.env.get("SUPABASE_URL")!;
 const service = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);

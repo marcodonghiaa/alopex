@@ -14,7 +14,7 @@ import { serveWithCors } from "../_shared/origins.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
 import { splitwiseClient } from "../_shared/splitwise-api.ts";
 import { syncNowHandler } from "../_shared/splitwise-sync-job.ts";
-import { userIdFrom } from "../reapply-rules/handler.ts";
+import { userIdFrom } from "../_shared/caller.ts";
 
 const url = Deno.env.get("SUPABASE_URL")!;
 const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));

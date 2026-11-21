@@ -9,7 +9,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
-import { userIdFrom } from "../reapply-rules/handler.ts";
+import { userIdFrom } from "../_shared/caller.ts";
 import { refreshHandler } from "./handler.ts";
 
 const url = Deno.env.get("SUPABASE_URL")!;

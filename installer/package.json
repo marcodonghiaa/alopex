@@ -1,6 +1,6 @@
 {
   "name": "create-alopex",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "One command to self-host Alopex: Supabase backend, scheduled bank sync and the dashboard on Vercel.",
   "bin": { "create-alopex": "index.js" },
   "files": ["index.js", "lib.js"],

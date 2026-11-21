@@ -10,6 +10,12 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+## v0.4.1 (21 Nov 2026)
+
+Fixes from a fresh install end to end: the installer works on a brand-new Supabase account, a new bank is sorted minutes after linking, older foreign-currency rows get their euro amount, and Trade Republic and Splitwise imports work on a fresh install.
+
+**Upgrade with the installer:** run `npx create-alopex@latest` from the same place as the first time, or inside the install folder. It keeps `backend/.env`, applies the new migrations, deploys the Edge Functions and redeploys the dashboard, in that order.
+
 ### Fresh-install fixes (e2e test, 20 Nov 2026)
 - **Migration:** `20261217000000_queue_edge_job`. Apply it with `supabase db push --linked`, then `supabase functions deploy` (`post-sync`, `complete-bank-consent` and `reapply-rules` changed).
 - Right after you connect a bank, categories, transfers and then subscriptions are worked out at once, in rounds, instead of at the next 6-hour run.

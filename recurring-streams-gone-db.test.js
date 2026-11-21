@@ -71,13 +71,19 @@ test('streams no longer detected, on a real Postgres', { skip }, async (t) => {
     assert.strictEqual(streams()[0], 'confirmed:active:confirmed:monthly:iCloud');
   });
 
+  // Polish 1 #12: the old version ran inside begin…rollback, so it passed even when the write worked.
   await t.test('users still cannot write gone themselves', () => {
-    const seen = execFileSync('psql', [dbUrl(), '-X', '-q', '-t', '-A'], {
-      input: `begin; set local role authenticated; set local request.jwt.claims = '{"sub":"${A}"}';
-        update public.recurring_streams set detected_status = 'gone'; rollback;`,
-      encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    assert.strictEqual(seen, '');
+    let err = '';
+    try {
+      execFileSync('psql', [dbUrl(), '-X', '-q', '-v', 'ON_ERROR_STOP=1'], {
+        input: `set role authenticated; set request.jwt.claims = '{"sub":"${A}"}';
+          update public.recurring_streams set detected_status = 'gone';`,
+        encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      err = String(e.stderr);
+    }
+    assert.match(err, /permission denied/);
     assert.strictEqual(streams()[0], 'confirmed:active:confirmed:monthly:iCloud');
   });
 

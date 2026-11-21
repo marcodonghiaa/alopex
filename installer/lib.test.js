@@ -197,3 +197,8 @@ test('projectProblem: a project from another Supabase account says to sign in wi
   assert.match(msg, /supabase logout/);
   assert.match(lib.projectProblem([], 'cccccccccccccccccccc'), /isn't in the Supabase account/);
 });
+
+test('doneLine: an update is ready to use, a first install still connects a bank (e2e #21)', () => {
+  assert.equal(lib.doneLine('https://a.vercel.app', 'me@example.com', true), 'Updated! https://a.vercel.app , sign in as me@example.com.');
+  assert.match(lib.doneLine('https://a.vercel.app', 'me@example.com', false), /^Done! .*then Accounts -> Connect a bank\.$/);
+});

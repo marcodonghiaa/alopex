@@ -164,3 +164,16 @@ Deno.test("retired rule: the write guards the category with eq, not an in-list",
   assertEquals((await reapplyRules(spy, "u1", true, retiredBar)).changes, 1);
   assertEquals(guards, ["eq", "eq"]); // the read and the write
 });
+
+Deno.test("a new rule reaches rows nothing categorized yet, still never hand-set ones (e2e #18)", async () => {
+  const db = memoryDb({
+    transactions: [
+      tx("empty", "Bar Roma", { category: null, category_source: null }),
+      tx("manual-empty", "Bar Roma", { category: null, category_source: "manual" }),
+    ],
+    category_rules: [rule()],
+  });
+  assertEquals((await reapplyRules(db, "u1", false)).changes, 1);
+  assertEquals((await reapplyRules(db, "u1", true)).changes, 1);
+  assertEquals(["empty", "manual-empty"].map((r) => db.tables.transactions.find((t) => t.entry_reference === r)!.category), ["Dine Out", null]);
+});

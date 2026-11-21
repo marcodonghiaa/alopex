@@ -1,5 +1,5 @@
 // "Apply to past transactions" on the dashboard's Rules page: re-runs your current rules over
-// rows the AI or an earlier rule categorized. Hand-set categories (category_source 'manual' or
+// rows the AI or an earlier rule categorized, and rows nothing categorized yet. Hand-set categories (category_source 'manual' or
 // 'legacy') are never read and the update guards on the same column (see planRuleReapply).
 // db is the service-role client (so the hand-edit trigger doesn't mark these rows 'manual');
 // every read and write is scoped to userId.
@@ -43,7 +43,8 @@ export async function reapplyRules(db: Db, userId: string, apply: boolean, retir
     // A deleted rule can only have filed rule rows in its own category: read just those.
     query = retired
       ? query.eq("category_source", "rule").eq("category", retired.set_category)
-      : query.in("category_source", REAPPLY_SOURCES);
+      // Never-categorized rows too (source null): the ones a new user writes rules for (e2e #18).
+      : query.or(`category_source.is.null,category_source.in.(${REAPPLY_SOURCES.join(",")})`);
     const { data, error } = await query
       .order("account_uid")
       .order("entry_reference")

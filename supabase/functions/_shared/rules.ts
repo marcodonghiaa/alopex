@@ -79,7 +79,7 @@ export function applyRules<T extends Row>(rows: T[], rules: Rule[]) {
   return { matched, unmatched };
 }
 
-// Rows already categorized by the AI or an earlier rule get the (possibly new) rule's
+// Rows categorized by the AI or an earlier rule, or not at all yet, get the (possibly new) rule's
 // category. Hand-set categories are excluded here and again by the statement's guard.
 // Transfer is left alone both ways: whether a row counts as spending was decided from its
 // category at sync time (flow.ts), and re-applying doesn't redo that.
@@ -87,7 +87,8 @@ export function planRuleReapply(rows: Row[], rules: Rule[]): RowUpdate[] {
   const usable = rules.filter((r) => r.set_category);
   const items: RowUpdate[] = [];
   for (const row of rows) {
-    if (!REAPPLY_SOURCES.includes(row.category_source)) continue;
+    const empty = row.category_source == null;
+    if (!empty && !REAPPLY_SOURCES.includes(row.category_source)) continue;
     const rule = usable.find((r) => matchRule(row, r));
     if (!rule || rule.set_category === row.category) continue;
     if (row.category === TRANSFER || rule.set_category === TRANSFER) continue;
@@ -100,7 +101,8 @@ export function planRuleReapply(rows: Row[], rules: Rule[]): RowUpdate[] {
       entry_reference: row.entry_reference,
       update,
       guardColumn: "category_source",
-      guardIn: REAPPLY_SOURCES,
+      // An empty row is updated only while still empty (the default is-null guard).
+      ...(empty ? {} : { guardIn: REAPPLY_SOURCES }),
     });
   }
   return items;

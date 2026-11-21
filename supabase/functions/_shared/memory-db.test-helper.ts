@@ -31,6 +31,16 @@ export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "
           else filters.push((r) => !String(v).slice(1, -1).split(",").includes(r[c]));
           return q;
         },
+        // PostgREST or(): only the "col.is.null" and "col.in.(a,b)" terms the steps use.
+        or: (expr: string) => {
+          const terms = expr.split(/,(?![^(]*\))/).map((t) => {
+            const [c, op, ...rest] = t.split(".");
+            const v = rest.join(".");
+            return op === "is" ? (r: Row) => (r[c] ?? null) === null : (r: Row) => v.slice(1, -1).split(",").includes(r[c]);
+          });
+          filters.push((r) => terms.some((f) => f(r)));
+          return q;
+        },
         order: (c: string, o?: { ascending?: boolean }) => (orders.push([c, o?.ascending !== false]), q),
         limit: (n: number) => ((window = [0, n - 1]), q),
         range: (a: number, b: number) => ((window = [a, b]), q),

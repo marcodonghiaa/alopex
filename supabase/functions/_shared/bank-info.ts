@@ -7,6 +7,15 @@ export function bankLogo(aspsps: Array<{ name: string; logo?: string | null }> |
   return aspsps?.find((a) => a.name === name)?.logo ?? null;
 }
 
+// The bank picker's choices, A to Z. Banks Enable Banking marks beta are kept and flagged:
+// you can link them in its control panel (e2e test: Trade Republic), so hiding them left a
+// linked bank missing from Alopex.
+export function bankChoices(aspsps: Array<{ name: string; logo?: string | null; beta?: boolean }>) {
+  return aspsps
+    .map((a) => ({ name: a.name, logo: a.logo ?? null, beta: a.beta === true }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const CONSENT_DAYS = 180;
 const DAY_MS = 24 * 3600 * 1000;
 

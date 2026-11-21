@@ -16,6 +16,7 @@ import { EB_KEY_INVALID, ebErrorMessage, signEnableBankingJwt } from "../_shared
 import { serveWithCors } from "../_shared/origins.ts";
 import { isCountryCode } from "../_shared/validate.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
+import { bankChoices } from "../_shared/bank-info.ts";
 
 interface Aspsp {
   name: string;
@@ -65,10 +66,7 @@ Deno.serve(serveWithCors(async (req, json) => {
     }
     const data = await res.json();
 
-    const banks = ((data.aspsps ?? []) as Array<Aspsp>)
-      .filter((a) => !a.beta)
-      .map((a) => ({ name: a.name, logo: a.logo ?? null }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const banks = bankChoices((data.aspsps ?? []) as Array<Aspsp>);
 
     return json({ banks });
   } catch {

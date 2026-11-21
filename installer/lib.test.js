@@ -181,3 +181,9 @@ test('loginProblem refuses an empty or malformed email and a short password (e2e
 test('banner names the installer version, so a user can tell which release runs (e2e #2)', () => {
   assert.match(lib.banner('0.4.1'), /create-alopex 0\.4\.1/);
 });
+
+test('intro: an update says it keeps your settings, a first install gives the 30-minute estimate (e2e #19)', () => {
+  assert.match(lib.intro('Alopex', true), /^Updating Alopex: keeps your settings/);
+  assert.doesNotMatch(lib.intro('Alopex', true), /30 minutes/);
+  assert.match(lib.intro('Alopex', false), /about 30 minutes the first time/);
+});

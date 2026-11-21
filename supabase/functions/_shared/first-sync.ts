@@ -8,6 +8,8 @@ export async function startFirstSync(
   secretKey: string | undefined,
   accountUids: string[],
   fetchFn: typeof fetch = fetch,
+  // Then sort what came in: categories, transfers, subscriptions (e2e #7). Best effort.
+  catchUp?: () => PromiseLike<unknown>,
 ): Promise<number> {
   if (!secretKey) return 0;
   const results = await Promise.all(accountUids.map(async (uid) => {
@@ -25,5 +27,13 @@ export async function startFirstSync(
       return false;
     }
   }));
-  return results.filter(Boolean).length;
+  const synced = results.filter(Boolean).length;
+  if (synced > 0 && catchUp) {
+    try {
+      await catchUp();
+    } catch (err) {
+      console.error(`catch-up start failed: ${errorTag(err)}`);
+    }
+  }
+  return synced;
 }

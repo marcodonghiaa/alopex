@@ -156,4 +156,21 @@ function startup(argv) {
   return { folder: args.folder };
 }
 
-module.exports = { USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, pickKeys, vaultSql, authConfigToml, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };
+// `supabase orgs create` answers in plain text even with --output json ("Created organization: ..."),
+// so its output is never parsed: list the orgs again instead (e2e #3). run(args) returns stdout.
+function orgsAfterCreate(run, name) {
+  run(['orgs', 'create', name, '--output', 'json', '--yes']);
+  return JSON.parse(run(['orgs', 'list', '--output', 'json']));
+}
+
+// Why this email/password can't become the login, or null. An Enter typed during a long wait
+// used to answer the Email question with nothing (e2e #5).
+function loginProblem(email, password) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return 'That is not an email address. Type the one you will sign in with.';
+  if (password.length < 6) return 'The password needs at least 6 characters.';
+  return null;
+}
+
+const banner = (version) => `create-alopex ${version}`;
+
+module.exports = { orgsAfterCreate, loginProblem, banner, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, pickKeys, vaultSql, authConfigToml, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };

@@ -96,3 +96,10 @@ Deno.test("planRuleReapply also sets the rule's type when it changes the categor
     category: "Entertainment", category_source: "rule", transaction_type: "Subscription",
   });
 });
+
+Deno.test("reapply also files never-categorized rows, guarded on still being empty (e2e #18)", () => {
+  assertEquals(planRuleReapply([row({ category: null, category_source: null })], [rule()]), [{
+    account_uid: "a1", entry_reference: "r1", update: { category: "Entertainment", category_source: "rule" },
+    guardColumn: "category_source",
+  }]);
+});

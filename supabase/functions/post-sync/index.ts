@@ -22,6 +22,7 @@ import { buildCategorizePrompt } from "../_shared/categorize-prompt.ts";
 import { type Ask, classifyWithGemini } from "../_shared/gemini.ts";
 import { classifyTypes } from "../_shared/classify-type.ts";
 import { categorizeSplitwise } from "../_shared/splitwise.ts";
+import { nextCatchUp } from "../_shared/catch-up.ts";
 import { fillMerchantKeys } from "../_shared/merchant-key-backfill.ts";
 
 const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
@@ -64,6 +65,13 @@ Deno.serve(async (req) => {
     const refunds = timeLeft() ? await markRefunds(supabase) : { pairs: 0, failed: 0 };
     const result = { ...keys, ...categories, ...types, ...splitwise, flows: flows.total, flowsReresolved: flows.reresolved, transferPairs, refunds: refunds.pairs, refundWritesFailed: refunds.failed, stuck: flows.stuck, ms: Date.now() - started };
     console.log(`post-sync: ${JSON.stringify(result)}`);
+    // After a first sync, rounds follow each other until nothing is left (_shared/catch-up.ts).
+    const round = Number((await req.json().catch(() => ({})))?.catch_up) || 0;
+    const next = nextCatchUp(round, { ...result, splitwise: result.splitwise ?? 0 });
+    if (next) {
+      const { error } = await supabase.rpc("queue_edge_job", { job: next.job, round: next.round });
+      if (error) console.error(`catch-up round ${round + 1} not queued: ${errorTag(error)}`);
+    }
     const failed = flows.stuck || refunds.failed > 0 || categories.aiFailed || types.typeAiFailed || splitwise.splitwiseAiFailed;
     return Response.json(result, { status: failed ? 500 : 200 });
   } catch (err) {

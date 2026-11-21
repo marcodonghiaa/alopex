@@ -57,6 +57,12 @@ Deno.serve(serveWithCors(async (req, json) => {
     Deno.env.get("SUPABASE_URL")!,
     SECRET_KEYS.default ?? Object.values(SECRET_KEYS)[0],
     result.newAccountUids,
+    fetch,
+    // Then categories, transfers and subscriptions right away, not at the next 6-hour run.
+    async () => {
+      const { error } = await service.rpc("queue_edge_job", { job: "post-sync", round: 1 });
+      if (error) throw error;
+    },
   ));
   return json(result.params);
 }));

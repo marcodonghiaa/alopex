@@ -38,3 +38,18 @@ Deno.test("first sync: a refused or failed call is counted, not thrown", async (
     console.error = silence;
   }
 });
+
+Deno.test("first sync: once a sync saved something, the catch-up starts (categories now, not in 6 h: e2e #7)", async () => {
+  const { fn } = recorder(200);
+  let started = 0;
+  await startFirstSync("https://x", "k", ["a1"], fn, async () => { started++; });
+  assertEquals(started, 1);
+  const failed = recorder(500);
+  await startFirstSync("https://x", "k", ["a1"], failed.fn, async () => { started++; });
+  assertEquals(started, 1);
+});
+
+Deno.test("first sync: a failing catch-up start is logged, never thrown", async () => {
+  const { fn } = recorder(200);
+  assertEquals(await startFirstSync("https://x", "k", ["a1"], fn, () => Promise.reject(new Error("db down"))), 1);
+});

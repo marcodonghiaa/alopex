@@ -42,6 +42,16 @@ async function userCharges(db: Db, user: string): Promise<Charge[]> {
   })) as Charge[];
 }
 
+/** Detects and stores one user's streams; returns how many. Throws on a read or save failure. */
+export async function detectUser(db: Db, rpc: Rpc, user: string, today: string): Promise<number> {
+  const found = detectStreams(await userCharges(db, user), today);
+  const rows = [...new Map(found.map((s) => [s.stream_key, s])).values()];
+  // Always called, even with no rows: the RPC also clears this user's streams no longer found.
+  const { error } = await rpc("upsert_detected_streams", { p_user: user, p_rows: rows });
+  if (error) throw error;
+  return rows.length;
+}
+
 export async function runDetection(
   db: Db,
   rpc: Rpc,
@@ -62,13 +72,8 @@ export async function runDetection(
       break;
     }
     try {
-      const found = detectStreams(await userCharges(db, user), today);
-      const rows = [...new Map(found.map((s) => [s.stream_key, s])).values()];
-      // Always called, even with no rows: the RPC also removes this user's stale detector-only rows.
-      const { error } = await rpc("upsert_detected_streams", { p_user: user, p_rows: rows });
-      if (error) throw error;
+      streams += await detectUser(db, rpc, user, today);
       users++;
-      streams += rows.length;
     } catch (err) {
       failed++;
       console.error(`detect-recurring: a user failed: ${errorTag(err)}`);

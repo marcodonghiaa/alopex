@@ -172,10 +172,15 @@ function loginProblem(email, password) {
 }
 
 const banner = (version) => `create-alopex ${version}`;
+// null when the signed-in Supabase account can see the project, else what to do (e2e #20).
+const projectProblem = (projects, ref) =>
+  projects.some((p) => p.id === ref || p.ref === ref)
+    ? null
+    : `Project ${ref} isn't in the Supabase account you're signed in to. Sign in with the account that owns it (run \`supabase logout\`, then \`supabase login\`), then run this again.`;
 // An update keeps backend/.env, so the first-time estimate would mislead.
 const intro = (app, updating) =>
   updating
     ? `Updating ${app}: keeps your settings, applies what's new (a few minutes).`
     : `${app} setup: about 30 minutes the first time, most of it on Enable Banking's site.`;
 
-module.exports = { orgsAfterCreate, loginProblem, banner, intro, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, pickKeys, vaultSql, authConfigToml, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };
+module.exports = { orgsAfterCreate, loginProblem, banner, intro, projectProblem, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, pickKeys, vaultSql, authConfigToml, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };

@@ -156,8 +156,12 @@ async function main() {
   if (ref && !(await yes(`Keep using project ${ref} from your last run?`, true))) ref = '';
   if (!ref && (await yes('Use a Supabase project you already have? (New here? Press Enter)', false))) {
     ref = await ask('Project ref (the 20-letter id in the dashboard URL)');
+  }
+  if (ref) {
+    // Signed in to another Supabase account, the link below would fail 20 times as "still starting".
     const projects = JSON.parse(supabaseMust(['projects', 'list', '--output', 'json'], sb, 'Could not list your projects.'));
-    if (!projects.some((p) => p.id === ref || p.ref === ref)) die(`No project ${ref} in your Supabase account.`);
+    const problem = lib.projectProblem(projects, ref);
+    if (problem) die(problem);
   }
   if (!ref) {
     let orgs = JSON.parse(supabaseMust(['orgs', 'list', '--output', 'json'], sb, 'Could not list your organizations.'));

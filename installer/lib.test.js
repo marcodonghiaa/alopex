@@ -187,3 +187,13 @@ test('intro: an update says it keeps your settings, a first install gives the 30
   assert.doesNotMatch(lib.intro('Alopex', true), /30 minutes/);
   assert.match(lib.intro('Alopex', false), /about 30 minutes the first time/);
 });
+
+test('projectProblem: a project from another Supabase account says to sign in with its owner (e2e #20)', () => {
+  const projects = [{ id: 'aaaaaaaaaaaaaaaaaaaa' }, { ref: 'bbbbbbbbbbbbbbbbbbbb' }];
+  assert.equal(lib.projectProblem(projects, 'aaaaaaaaaaaaaaaaaaaa'), null);
+  assert.equal(lib.projectProblem(projects, 'bbbbbbbbbbbbbbbbbbbb'), null);
+  const msg = lib.projectProblem(projects, 'cccccccccccccccccccc');
+  assert.match(msg, /cccccccccccccccccccc isn't in the Supabase account you're signed in to/);
+  assert.match(msg, /supabase logout/);
+  assert.match(lib.projectProblem([], 'cccccccccccccccccccc'), /isn't in the Supabase account/);
+});

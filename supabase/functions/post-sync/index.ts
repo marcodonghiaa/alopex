@@ -23,6 +23,8 @@ import { type Ask, classifyWithGemini } from "../_shared/gemini.ts";
 import { classifyTypes } from "../_shared/classify-type.ts";
 import { categorizeSplitwise } from "../_shared/splitwise.ts";
 import { nextCatchUp } from "../_shared/catch-up.ts";
+import { backfillFx } from "../_shared/fx-backfill.ts";
+import { getJson } from "../_shared/prices.ts";
 import { fillMerchantKeys } from "../_shared/merchant-key-backfill.ts";
 
 const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
@@ -56,6 +58,8 @@ Deno.serve(async (req) => {
   const aiTimeLeft = () => Date.now() - started < AI_BUDGET_MS;
 
   try {
+    // Past exchange rates first: a fresh install has none before today (e2e #8). Best effort.
+    const fxBackfilled = await backfillFx(supabase, getJson).catch((err) => (console.error(`fx backfill failed: ${errorTag(err)}`), 0));
     const keys = timeLeft() ? await fillMerchantKeys(supabase, timeLeft) : { keys: 0, aliases: 0 };
     const categories = await categorize(supabase, classify, aiTimeLeft);
     const types = await classifyTypes(supabase, ask, aiTimeLeft);
@@ -63,7 +67,7 @@ Deno.serve(async (req) => {
     const flows = await classifyFlows(supabase, timeLeft);
     const transferPairs = await pairTransfers(supabase, timeLeft);
     const refunds = timeLeft() ? await markRefunds(supabase) : { pairs: 0, failed: 0 };
-    const result = { ...keys, ...categories, ...types, ...splitwise, flows: flows.total, flowsReresolved: flows.reresolved, transferPairs, refunds: refunds.pairs, refundWritesFailed: refunds.failed, stuck: flows.stuck, ms: Date.now() - started };
+    const result = { fxBackfilled, ...keys, ...categories, ...types, ...splitwise, flows: flows.total, flowsReresolved: flows.reresolved, transferPairs, refunds: refunds.pairs, refundWritesFailed: refunds.failed, stuck: flows.stuck, ms: Date.now() - started };
     console.log(`post-sync: ${JSON.stringify(result)}`);
     // After a first sync, rounds follow each other until nothing is left (_shared/catch-up.ts).
     const round = Number((await req.json().catch(() => ({})))?.catch_up) || 0;

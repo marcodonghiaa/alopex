@@ -13,6 +13,7 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 ### Fresh-install fixes (e2e test, 20 Nov 2026)
 - **Migration:** `20261217000000_queue_edge_job`. Apply it with `supabase db push --linked`, then `supabase functions deploy` (`post-sync`, `complete-bank-consent` and `reapply-rules` changed).
 - Right after you connect a bank, categories, transfers and then subscriptions are worked out at once, in rounds, instead of at the next 6-hour run.
+- Transactions in another currency from before your install now get their euro amount: post-sync fetches the past exchange rates they need (Frankfurter, the source the price sync already uses).
 - Rules: "Apply to past transactions" now also files transactions that had no category yet.
 - **Roll back:** run `supabase/rollbacks/20261217000000_queue_edge_job.down.sql` and `supabase migration repair --status reverted 20261217000000 --linked`.
 

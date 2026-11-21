@@ -11,6 +11,7 @@ import { serveWithCors } from "../_shared/origins.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
 import { userIdFrom } from "../_shared/caller.ts";
 import { refreshHandler } from "./handler.ts";
+import { romeToday } from "../_shared/today.ts";
 
 const url = Deno.env.get("SUPABASE_URL")!;
 const asUser = (authorization: string) =>
@@ -26,5 +27,5 @@ Deno.serve(serveWithCors(refreshHandler({
   },
   admin: () => admin,
   rpc: (fn, args) => admin.rpc(fn, args),
-  today: () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date()),
+  today: () => romeToday(),
 })));

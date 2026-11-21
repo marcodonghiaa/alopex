@@ -123,8 +123,9 @@ async function main() {
   const dashboard = path.join(root, 'dashboard');
 
   bold(lib.banner(require('./package.json').version));
-  bold(lib.intro(APP, fs.existsSync(path.join(backend, '.env'))));
-  console.log(`Installs into ${root}. Every question shows a recommended answer: press Enter to accept it.`);
+  const updating = fs.existsSync(path.join(backend, '.env'));
+  bold(lib.intro(APP, updating));
+  console.log(`${updating ? 'Updating' : 'Installs into'} ${root}. Every question shows a recommended answer: press Enter to accept it.`);
   console.log('Answers are saved as you go: stop any time and run the same command again.');
 
   step('Downloading the app');
@@ -156,8 +157,12 @@ async function main() {
   if (ref && !(await yes(`Keep using project ${ref} from your last run?`, true))) ref = '';
   if (!ref && (await yes('Use a Supabase project you already have? (New here? Press Enter)', false))) {
     ref = await ask('Project ref (the 20-letter id in the dashboard URL)');
+  }
+  if (ref) {
+    // Signed in to another Supabase account, the link below would fail 20 times as "still starting".
     const projects = JSON.parse(supabaseMust(['projects', 'list', '--output', 'json'], sb, 'Could not list your projects.'));
-    if (!projects.some((p) => p.id === ref || p.ref === ref)) die(`No project ${ref} in your Supabase account.`);
+    const problem = lib.projectProblem(projects, ref);
+    if (problem) die(problem);
   }
   if (!ref) {
     let orgs = JSON.parse(supabaseMust(['orgs', 'list', '--output', 'json'], sb, 'Could not list your organizations.'));
@@ -225,9 +230,9 @@ async function main() {
   }
   closeAuth(sb, ref);
 
-  step('Enable Banking (on their site, about 10 minutes)');
   let appId = saved.APP_ID;
   let pem = saved.PRIVATE_KEY ? saved.PRIVATE_KEY.replace(/\\n/g, '\n') : '';
+  step(appId && pem ? 'Enable Banking' : 'Enable Banking (on their site, about 10 minutes)');
   if (appId && pem) {
     console.log(`Using the Enable Banking app from your last run (${appId}).`);
   } else {
@@ -343,7 +348,7 @@ The APP_ID is the long id shown next to your app.`);
     closeAuth(sb, ref, origin); // password-reset emails link back to the dashboard
   }
   console.log();
-  bold(`Done! ${origin || site || 'Open your Vercel project'} , sign in as ${saved.LOGIN_EMAIL}, then Accounts -> Connect a bank.`);
+  bold(lib.doneLine(origin || site || 'Open your Vercel project', saved.LOGIN_EMAIL, updating));
   console.log(`Your keys are in ${envFile} (keep it private). To update ${APP} later, run npx create-alopex@latest from the same place, or inside ${root}.`);
   console.log();
   bold('Protect the accounts that hold your data: turn on two-factor sign-in at');

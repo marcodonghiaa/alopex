@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { bankLogo, consentEnd, consentValidUntil, fetchAspsps } from "./bank-info.ts";
+import { bankChoices, bankLogo, consentEnd, consentValidUntil, fetchAspsps } from "./bank-info.ts";
 
 const aspsps = [
   { name: "Fineco", logo: "https://enablebanking.com/brands/IT/Fineco/" },
@@ -71,4 +71,16 @@ Deno.test("consentEnd: looks the bank up in its country and asks for no more tha
 Deno.test("consentEnd: a failed lookup asks for the usual 180 days", async () => {
   const fail = (() => Promise.resolve(new Response(null, { status: 500 }))) as unknown as typeof fetch;
   assertEquals(await consentEnd("tok", "IT", "B", NOW, fail), new Date(NOW + 180 * DAY).toISOString());
+});
+
+Deno.test("bankChoices keeps beta banks, flagged, A to Z (a bank linked in Enable Banking must show)", () => {
+  assertEquals(bankChoices([
+    { name: "Trade Republic", beta: true, logo: "https://x/tr.png" },
+    { name: "Fineco" },
+    { name: "bunq", beta: false, logo: null },
+  ]), [
+    { name: "bunq", logo: null, beta: false },
+    { name: "Fineco", logo: null, beta: false },
+    { name: "Trade Republic", logo: "https://x/tr.png", beta: true },
+  ]);
 });

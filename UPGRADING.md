@@ -18,6 +18,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 - Known limit: PayPal, Apple and Google subscriptions are told apart by their lowest charge. Deleting or recategorizing that cheapest charge hides the confirmed row and lists the stream again under To review.
 - **Roll back:** first redeploy the previous dashboard (this one reads and writes the new column), then run `supabase/rollbacks/20261219000000_transaction_type_source.down.sql`, then `supabase/rollbacks/20261218000000_recurring_streams_gone.down.sql`, and `supabase migration repair --status reverted 20261219000000 20261218000000 --linked`.
 
+### Trade Republic bank rows matched to your CSV
+Trade Republic over Enable Banking sends only a date and an amount, so buys counted as spending and deposits as income. Import your Trade Republic CSV (Investing -> Import) and each bank row is matched to the CSV row it came from: buys, sells, deposits and withdrawals become transfers ("Buy World ETF"), dividends, interest and Saveback income, taxes go to Taxes. What you set by hand stays; undoing the import puts the rows back. Rows with no single match stay as they were.
+- **Migration:** `20261220000000_broker_matching`. Apply it with `supabase db push --linked`, then `supabase functions deploy post-sync`.
+- **Rollback:** `supabase/rollbacks/20261220000000_broker_matching.down.sql` (matched rows keep their flow and category, names go).
+
 ## v0.4.1 (21 Nov 2026)
 
 Fixes from a fresh install end to end: the installer works on a brand-new Supabase account, a new bank is sorted minutes after linking, older foreign-currency rows get their euro amount, and Trade Republic and Splitwise imports work on a fresh install.

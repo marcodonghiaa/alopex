@@ -7,6 +7,7 @@ import { errorTag } from "./log-safe.ts";
 import { type Charge, detectStreams } from "./recurring.ts";
 
 const PAGE_SIZE = 1000; // PostgREST caps a response at 1000 rows
+const MAX_STREAMS = 2000; // upsert_detected_streams refuses more
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
@@ -49,7 +50,11 @@ export async function detectUser(db: Db, rpc: Rpc, user: string, today: string):
   if (readError) throw readError;
   const keep = new Set((confirmed as Row[]).map((r) => r.stream_key as string));
   const found = detectStreams(await userCharges(db, user), today, keep);
-  const rows = [...new Map(found.map((s) => [s.stream_key, s])).values()];
+  // Over the RPC's cap, keep the ones you confirmed (a dropped one would be marked gone), then the most
+  // recently charged (an old one is the least likely to still be billing you).
+  const rows = [...new Map(found.map((s) => [s.stream_key, s])).values()]
+    .sort((a, b) => +keep.has(b.stream_key) - +keep.has(a.stream_key) || b.last_charged.localeCompare(a.last_charged))
+    .slice(0, MAX_STREAMS);
   // Always called, even with no rows: the RPC also clears this user's streams no longer found.
   const { error } = await rpc("upsert_detected_streams", { p_user: user, p_rows: rows });
   if (error) throw error;

@@ -209,3 +209,39 @@ Deno.test("detectUser skips charges you marked One-time by hand", async () => {
   assertEquals(selects.every((c) => c.split(",").map((x) => x.trim()).includes("transaction_type_source")), true);
   assertEquals(selects.length > 0, true);
 });
+
+// S1b (re-audit): upsert_detected_streams refuses more than 2000 rows, and 2001 single charges tagged
+// Subscription make 2001 streams, so the whole refresh failed. detectUser sends at most 2000: the ones you
+// confirmed first (dropping one would mark it gone), then the most recently charged.
+const many = (n: number) => {
+  const day = (i: number) => new Date(Date.UTC(2026, 9, 20) - Math.floor(i / 10) * 86_400_000).toISOString().slice(0, 10);
+  return memoryDb({
+    accounts: [{ user_id: "u1" }],
+    transactions: Array.from({ length: n }, (_, i) =>
+      tx("u1", `r${i}`, day(i), { merchant_key: `m${i}`, transaction_type: "Subscription" })),
+    v_transactions_eur: [],
+  });
+};
+const sentKeys = (c: { p_rows: Record<string, unknown>[] }) => new Set(c.p_rows.map((r) => String(r.stream_key).split("|")[0]));
+
+Deno.test("S1b: 2000 streams are all sent", async () => {
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(many(2000), rpc, "u1", "2026-10-20"), 2000);
+  assertEquals(calls[0].p_rows.length, 2000);
+});
+
+Deno.test("S1b: of 2001 streams the 2000 most recently charged are sent", async () => {
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(many(2001), rpc, "u1", "2026-10-20"), 2000);
+  const keys = sentKeys(calls[0]);
+  assertEquals([keys.size, keys.has("m2000"), keys.has("m0")], [2000, false, true]); // m2000 is the oldest
+});
+
+Deno.test("S1b: a stream you confirmed is sent even when it is the oldest", async () => {
+  const db = many(2001);
+  db.tables.recurring_streams = [{ user_id: "u1", stream_key: "m2000|a-u1", user_status: "confirmed" }];
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(db, rpc, "u1", "2026-10-20"), 2000);
+  const keys = sentKeys(calls[0]);
+  assertEquals([keys.size, keys.has("m2000")], [2000, true]);
+});

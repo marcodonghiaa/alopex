@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
     const transferPairs = await pairTransfers(supabase, timeLeft);
     const refunds = timeLeft() ? await markRefunds(supabase) : { pairs: 0, failed: 0 };
     // Last, so transfer pairs are already there: broker bank rows (date + amount only) get the
-    // broker CSV row they came from (20261218000000_broker_matching). Best effort.
+    // broker CSV row they came from (20261220000000_broker_matching). Best effort.
     const brokerMatched = await matchBrokerRows();
     const result = { fxBackfilled, ...keys, ...categories, ...types, ...splitwise, flows: flows.total, flowsReresolved: flows.reresolved, transferPairs, refunds: refunds.pairs, brokerMatched, refundWritesFailed: refunds.failed, stuck: flows.stuck, ms: Date.now() - started };
     console.log(`post-sync: ${JSON.stringify(result)}`);

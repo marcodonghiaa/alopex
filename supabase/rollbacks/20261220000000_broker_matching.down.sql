@@ -1,4 +1,4 @@
--- Rollback of 20261218000000_broker_matching. Matched rows keep the flow and category they got
+-- Rollback of 20261220000000_broker_matching. Matched rows keep the flow and category they got
 -- (transfer / income / Taxes); their flow source goes back to 'default', so post-sync may set
 -- buys and deposits to spend/income again. Names go back to the bank's (none).
 drop function if exists public.match_broker_rows(uuid);

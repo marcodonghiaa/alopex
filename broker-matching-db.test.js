@@ -1,4 +1,4 @@
-// Broker row matching (20261218000000_broker_matching) on a real Postgres with every migration
+// Broker row matching (20261220000000_broker_matching) on a real Postgres with every migration
 // before it: Trade Republic bank rows (date + amount only) matched to the CSV import's trades and
 // events, labels, flows and categories, ties skipped, hand edits kept, Undo, two users apart. Needs psql and RLS_TEST_DATABASE_URL (a superuser URL to a throwaway
 // server); skipped without it. A fresh database is created and dropped for each run.
@@ -7,8 +7,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const { execFileSync, execFile } = require('node:child_process');
 
-const MIGRATION = 'supabase/migrations/20261218000000_broker_matching.sql';
-const ROLLBACK = 'supabase/rollbacks/20261218000000_broker_matching.down.sql';
+const MIGRATION = 'supabase/migrations/20261220000000_broker_matching.sql';
+const ROLLBACK = 'supabase/rollbacks/20261220000000_broker_matching.down.sql';
 const url = process.env.RLS_TEST_DATABASE_URL;
 const skip = url ? false : 'set RLS_TEST_DATABASE_URL to run';
 const A = 'aaaaaaaa-0000-0000-0000-000000000001';

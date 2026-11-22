@@ -35,16 +35,12 @@ export async function fetchEligibleTransactions(db: Db, userId: string, now: Dat
   // A refunded, deleted or transfer row isn't a purchase to ask about; nor is one where my share
   // (of a split) is under the minimum, e.g. a charge paid entirely for others.
   return data.filter((t: Row) =>
-    !t.deleted_at && t.flow_type !== "refunded" && t.flow_type !== "transfer" &&
-    (t.personal_amount == null || myShare(t) >= MIN_AMOUNT)
+    !t.deleted_at && t.flow_type !== "refunded" && t.flow_type !== "transfer" && myShare(t) >= MIN_AMOUNT
   );
 }
 
-/** My part of a charge: the split share if one is set, else all of it. */
-export const myShare = (t: Row): number => {
-  const total = Math.abs(Number(t.amount ?? 0));
-  return t.personal_amount == null ? total : Math.min(total, Math.abs(Number(t.personal_amount)));
-};
+// My part of a charge: the split share if one is set, else all of it (the DB keeps 0 <= share <= amount).
+const myShare = (t: Row): number => Number(t.personal_amount ?? t.amount);
 
 // The name the app shows: the user's own name for it, else the bank's without codes ("Amazon Mark* E46na7fw3" -> "Amazon").
 const merchant = (t: Row): string => t.custom_name?.trim() || cleanMerchantName(t.creditor_name)?.trim() || "a merchant";
@@ -55,7 +51,7 @@ export function buildPayload(transactions: Row[]) {
     const tx = transactions[0];
     return {
       title: "Worth it?",
-      body: `${tx.personal_amount == null ? tx.amount : myShare(tx)} ${tx.currency} at ${merchant(tx)} — ${tx.category}`,
+      body: `${myShare(tx)} ${tx.currency} at ${merchant(tx)} — ${tx.category}`,
       url: `/transactions?highlight=${encodeURIComponent(tx.entry_reference)}`,
     };
   }

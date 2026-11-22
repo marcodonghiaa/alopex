@@ -31,8 +31,8 @@ Deno.test("worth-it window: created 3-24 h ago, booked within 7 days (UTC), one 
 
 Deno.test("refunded, deleted and transfer rows are not prompted", async () => {
   const { db } = recorder([
-    { entry_reference: "ok", flow_type: "spend", deleted_at: null },
-    { entry_reference: "new", flow_type: null, deleted_at: null },
+    { entry_reference: "ok", amount: 20, flow_type: "spend", deleted_at: null },
+    { entry_reference: "new", amount: 20, flow_type: null, deleted_at: null },
     { entry_reference: "refunded", flow_type: "refunded", deleted_at: null },
     { entry_reference: "deleted", flow_type: "spend", deleted_at: "2026-10-27T10:00:00Z" },
     { entry_reference: "transfer", flow_type: "transfer", deleted_at: null },

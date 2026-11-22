@@ -53,6 +53,15 @@ Deno.test("a split charge is prompted on my share only", async () => {
   assertEquals(body, "20 EUR at Pizza — Dine Out");
 });
 
+// Polish 1 #11: the €15 line itself, and numeric values arriving as strings.
+Deno.test("a share of exactly the minimum is prompted, also when values come as strings", async () => {
+  const { db } = recorder([
+    { entry_reference: "edge", amount: "40.00", personal_amount: "15.00", flow_type: "spend", deleted_at: null },
+    { entry_reference: "under", amount: "40.00", personal_amount: "14.99", flow_type: "spend", deleted_at: null },
+  ]);
+  assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["edge"]);
+});
+
 Deno.test("every user with a push subscription is prompted, each once", async () => {
   const { db } = recorder([{ user_id: "a" }, { user_id: "b" }, { user_id: "a" }]);
   assertEquals(await userIdsWithSubscriptions(db), ["a", "b"]);

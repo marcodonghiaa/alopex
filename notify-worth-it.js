@@ -39,12 +39,21 @@ const myShare = (t) => Number(t.personal_amount ?? t.amount);
 // The name the app shows: the user's own name for it, else the bank's without codes.
 const merchant = (t) => (t.custom_name && t.custom_name.trim()) || cleanMerchantName(t.creditor_name)?.trim() || 'a merchant';
 
+// "€20.00", like the app; a code Intl doesn't know keeps the plain "20 XX1".
+const money = (n, currency) => {
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(n);
+  } catch {
+    return `${n} ${currency}`;
+  }
+};
+
 function buildPayload(transactions) {
   if (transactions.length === 1) {
     const tx = transactions[0];
     return {
       title: 'Worth it?',
-      body: `${myShare(tx)} ${tx.currency} at ${merchant(tx)} — ${tx.category}`,
+      body: `${money(myShare(tx), tx.currency)} at ${merchant(tx)} — ${tx.category}`,
       url: `/transactions?highlight=${encodeURIComponent(tx.entry_reference)}`,
     };
   }

@@ -50,7 +50,10 @@ Deno.test("a split charge is prompted on my share only", async () => {
   ]);
   assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["mine", "half"]);
   const body = buildPayload([{ entry_reference: "half", creditor_name: "Pizza", amount: 40, personal_amount: 20, currency: "EUR", category: "Dine Out" }]).body;
-  assertEquals(body, "20 EUR at Pizza — Dine Out");
+  assertEquals(body, "€20.00 at Pizza — Dine Out");
+  // Polish 1 #10: a code Intl doesn't know keeps the plain form.
+  const odd = buildPayload([{ entry_reference: "x", creditor_name: "Shop", amount: 12.5, personal_amount: null, currency: "XX1", category: "Shopping" }]).body;
+  assertEquals(odd, "12.5 XX1 at Shop — Shopping");
 });
 
 // Polish 1 #11: the €15 line itself, and numeric values arriving as strings.
@@ -162,10 +165,10 @@ Deno.test("runConsent reminds only users with a subscription, and counts deliver
 // ("Amazon Mark* E46na7fw3") reaches the lock screen, or the user's own name for it is ignored
 Deno.test("the push shows the clean merchant name, or the name the user gave it", () => {
   const tx = (creditor_name: string | null, custom_name: string | null = null) => ({ entry_reference: "r1", creditor_name, custom_name, amount: 43.03, currency: "USD", category: "Shopping" });
-  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3")]).body, "43.03 USD at Amazon — Shopping");
-  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3", "Birthday gift")]).body, "43.03 USD at Birthday gift — Shopping");
-  assertEquals(buildPayload([tx(null)]).body, "43.03 USD at a merchant — Shopping");
-  assertEquals(buildPayload([tx("   ", "  ")]).body, "43.03 USD at a merchant — Shopping");
+  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3")]).body, "$43.03 at Amazon — Shopping");
+  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3", "Birthday gift")]).body, "$43.03 at Birthday gift — Shopping");
+  assertEquals(buildPayload([tx(null)]).body, "$43.03 at a merchant — Shopping");
+  assertEquals(buildPayload([tx("   ", "  ")]).body, "$43.03 at a merchant — Shopping");
   assertEquals(
     buildPayload([tx("Tst*zuckers Bagels & S"), tx("PAYPAL *SPOTIFY"), tx(""), tx("X")]).body,
     "4 purchases today: Zuckers Bagels, SPOTIFY, a merchant +1 more",

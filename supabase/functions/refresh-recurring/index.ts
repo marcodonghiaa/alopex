@@ -28,4 +28,5 @@ Deno.serve(serveWithCors(refreshHandler({
   admin: () => admin,
   rpc: (fn, args) => admin.rpc(fn, args),
   today: () => romeToday(),
+  now: () => Date.now(),
 })));

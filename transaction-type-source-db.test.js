@@ -74,6 +74,21 @@ test('hand-set transaction types, on a real Postgres', { skip }, async (t) => {
     assert.strictEqual(row('ai'), 'One-time:-');
   });
 
+  // Audit P1: a charge already showing One-time (set by the AI) could not be claimed as yours.
+  await t.test('picking the type it already has, as yours, marks it', () => {
+    asService(`update public.transactions set transaction_type = 'One-time' where entry_reference = 'ai'`);
+    asUser(`update public.transactions set transaction_type = 'One-time', transaction_type_source = 'manual' where entry_reference = 'ai'`);
+    assert.strictEqual(row('ai'), 'One-time:manual');
+    asService(`update public.transactions set transaction_type = 'Subscription' where entry_reference = 'ai'`);
+    assert.strictEqual(row('ai'), 'One-time:manual');
+  });
+
+  // Audit P3: an empty type you set leaves no marker, so the AI may fill it again.
+  await t.test('clearing the type leaves no marker', () => {
+    asUser(`update public.transactions set transaction_type = null, transaction_type_source = 'manual' where entry_reference = 'ai'`);
+    assert.strictEqual(row('ai'), '-:-');
+  });
+
   await t.test('you can change your own choice again', () => {
     asUser(`update public.transactions set transaction_type = 'Subscription' where entry_reference = 'old'`);
     assert.strictEqual(row('old'), 'Subscription:manual');

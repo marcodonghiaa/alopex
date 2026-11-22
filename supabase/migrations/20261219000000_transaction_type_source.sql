@@ -14,7 +14,12 @@ set search_path to 'public'
 as $function$
 begin
   if auth.role() = 'authenticated' then
-    if new.transaction_type is distinct from old.transaction_type then
+    -- Yours when you change it, or pick the type it already has (sent with source 'manual').
+    -- An empty type is nobody's: the AI may fill it again.
+    if new.transaction_type is null then
+      new.transaction_type_source := null;
+    elsif new.transaction_type is distinct from old.transaction_type
+      or new.transaction_type_source is not distinct from 'manual' then
       new.transaction_type_source := 'manual';
     else
       new.transaction_type_source := old.transaction_type_source;

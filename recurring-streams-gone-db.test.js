@@ -87,6 +87,39 @@ test('streams no longer detected, on a real Postgres', { skip }, async (t) => {
     assert.strictEqual(streams()[0], 'confirmed:active:confirmed:monthly:iCloud');
   });
 
+  // S1 (polish 2): the RPC took a 1,000,000-char name, charge_count -5, amount -1e15 and 5000 rows.
+  // Lengths count characters (char_length), not bytes: each string ends in a 4-byte emoji after 2-byte é.
+  await t.test('S1: each field is bounded, at the limit passes and one past is refused', () => {
+    const chars = (n) => 'é'.repeat(n - 1) + '😀';
+    const one = (key, patch) => upsert([{ ...row(key), ...patch }]);
+    const limits = [
+      ['stream_key', 1100, (s) => ({ stream_key: s })],
+      ['merchant_key', 1000, (s) => ({ merchant_key: s })],
+      ['display_name', 500, (s) => ({ display_name: s })],
+      ['category', 100, (s) => ({ category: s })],
+    ];
+    for (const [field, n, patch] of limits) {
+      assert.strictEqual(one(`s1-${field}`, patch(chars(n))), '1', `${field} at ${n}`);
+      assert.match(one(`s1-${field}-past`, patch(chars(n + 1))), new RegExp(`${field} longer than ${n} characters`));
+    }
+    assert.strictEqual(one('s1-count0', { charge_count: 0 }), '1');
+    assert.match(one('s1-count-neg', { charge_count: -5 }), /charge_count below 0/);
+    for (const field of ['typical_amount', 'typical_amount_eur']) {
+      assert.strictEqual(one(`s1-${field}-max`, { [field]: -999999999999.99 }), '1');
+      for (const v of [1e12, -1e15, 'NaN', 'Infinity', '-Infinity']) {
+        assert.match(one(`s1-${field}-bad`, { [field]: v }), new RegExp(`${field} is not a finite amount under 1e12`), `${field}=${v}`);
+      }
+    }
+    assert.strictEqual(one('s1-eur-null', { typical_amount_eur: null }), '1');
+    const many = (n) => sql(`select public.upsert_detected_streams('${A}', (select jsonb_agg(
+      jsonb_build_object('stream_key', 's1-many-' || i, 'merchant_key', 'm', 'currency', 'EUR', 'charge_count', 1))
+      from generate_series(1, ${n}) i))`);
+    assert.strictEqual(many(2000), '2000');
+    assert.match(many(2001), /2001 streams, at most 2000/);
+    // Nothing from a refused call was written: the last good call left exactly its 2000 rows (undecided, so replaced).
+    assert.strictEqual(sql(`select count(*) from public.recurring_streams where stream_key like 's1-%'`), '2000');
+  });
+
   await t.test('rolls back (gone rows show again, as before) and applies again', () => {
     upsert([]);
     applySql(DOWN);

@@ -14,7 +14,33 @@ returns int
 language plpgsql security definer set search_path = public as $$
 declare
   v_count int;
+  v_bad text;
 begin
+  -- Bounds (polish 2 S1). Lengths in characters, with headroom over the sources: a name comes from
+  -- custom_name (<= 100) or creditor_name (<= 500 for a manual row, ~140 from a bank; detect-recurring
+  -- cuts it to 500), merchant_key from creditor_name (detect-recurring skips one over 1000), stream_key
+  -- is merchant_key + '|' + account uid (+ '|' + amount for an aggregator), category <= 100 like
+  -- category_budgets and manual rows. 2000 streams is far past any household (one per merchant and account).
+  if jsonb_array_length(p_rows) > 2000 then
+    raise exception 'upsert_detected_streams: % streams, at most 2000', jsonb_array_length(p_rows)
+      using errcode = '22023';
+  end if;
+  select m into v_bad from (
+    select case
+      when char_length(r.stream_key) > 1100 then 'stream_key longer than 1100 characters'
+      when char_length(r.merchant_key) > 1000 then 'merchant_key longer than 1000 characters'
+      when char_length(r.display_name) > 500 then 'display_name longer than 500 characters'
+      when char_length(r.category) > 100 then 'category longer than 100 characters'
+      when r.charge_count < 0 then 'charge_count below 0'
+      -- NaN sorts above every number, so this also refuses NaN and +-Infinity.
+      when not abs(r.typical_amount) < 1e12 then 'typical_amount is not a finite amount under 1e12'
+      when not abs(r.typical_amount_eur) < 1e12 then 'typical_amount_eur is not a finite amount under 1e12'
+    end as m
+    from jsonb_populate_recordset(null::public.recurring_streams, p_rows) r
+  ) x where m is not null limit 1;
+  if v_bad is not null then
+    raise exception 'upsert_detected_streams: %', v_bad using errcode = '22023';
+  end if;
   insert into public.recurring_streams (
     user_id, stream_key, merchant_key, account_uid, currency, display_name, category, cadence,
     typical_amount, typical_amount_eur, charge_count, first_charged, last_charged, next_expected,

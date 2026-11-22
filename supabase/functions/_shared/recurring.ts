@@ -17,6 +17,7 @@ export type Charge = {
   credit_debit_indicator: string;
   deleted_at: string | null;
   transaction_type?: string | null;
+  transaction_type_source?: string | null; // 'manual' when you set the type yourself
 };
 
 export type Cadence = "weekly" | "monthly" | "quarterly" | "yearly";
@@ -97,7 +98,9 @@ export function detectStreams(charges: Charge[], today: string, keep: ReadonlySe
     if (
       c.credit_debit_indicator !== "DBIT" || c.flow_type !== "spend" || c.deleted_at !== null ||
       c.merchant_key === null || EXCLUDED_CATEGORIES.has(c.category ?? "") ||
-      isTransferCode(c.bank_transaction_code) || c.booking_date > today || Number(c.amount) === 0
+      isTransferCode(c.bank_transaction_code) || c.booking_date > today || Number(c.amount) === 0 ||
+      // One-time you set yourself is final: neither the tag nor the rhythm (R3) brings it back.
+      (c.transaction_type === "One-time" && c.transaction_type_source === "manual")
     ) continue;
     // R1: currency is not part of the key, so a currency switch stays one stream.
     const key = `${c.merchant_key}|${c.account_uid}`;

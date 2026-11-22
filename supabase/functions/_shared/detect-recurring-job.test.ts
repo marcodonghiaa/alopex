@@ -190,3 +190,12 @@ Deno.test("detectUser throws, saving nothing, when your confirmed streams can't 
   }
   assertEquals([threw, calls], [true, []]);
 });
+
+// Thread decision 2026-11-22: the job reads who set the type, so hand-set One-time is honoured.
+Deno.test("detectUser skips charges you marked One-time by hand", async () => {
+  const { calls, rpc } = recorder();
+  const tables = build(["u1"]);
+  for (const t of tables.transactions) Object.assign(t, { transaction_type: "One-time", transaction_type_source: "manual" });
+  await detectUser(memoryDb(tables), rpc, "u1", "2026-10-20");
+  assertEquals(calls[0].p_rows, []);
+});

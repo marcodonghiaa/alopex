@@ -139,3 +139,21 @@ Deno.test("a stream you confirmed is kept past the 400-day cut; an undecided one
   const kept = detectStreams(old, today, new Set(["streamflix|acc-1"]));
   assertEquals(kept.map((s) => [s.stream_key, s.detected_status, s.last_charged]), [["streamflix|acc-1", "suggested", "2025-10-01"]]);
 });
+
+// Thread decision (Marco, 2026-11-22): One-time you set by hand is never rebuilt into a
+// subscription, by the AI tag or by the rhythm. The AI's own One-time keeps rule R3 working.
+Deno.test("charges you marked One-time by hand never make a stream; the AI's One-time still can", () => {
+  const dates = ["2026-08-05", "2026-09-05", "2026-10-05", "2026-11-05"];
+  const ai = dates.map((d) => charge({ booking_date: d, category: "Services", transaction_type: "One-time" }));
+  assertEquals(detectStreams(ai, "2026-11-08").map((s) => s.detected_status), ["suggested"]);
+  const mine = ai.map((c) => ({ ...c, transaction_type_source: "manual" }));
+  assertEquals(detectStreams(mine, "2026-11-08"), []);
+});
+
+Deno.test("one charge you marked One-time drops out; the stream is built from the rest", () => {
+  const dates = ["2026-07-05", "2026-08-05", "2026-09-05", "2026-10-05"];
+  const subs = dates.map((d) => charge({ booking_date: d, category: "Services", transaction_type: "Subscription" }));
+  const extra = charge({ booking_date: "2026-11-05", category: "Services", transaction_type: "One-time", transaction_type_source: "manual", amount: 99 });
+  const [s] = detectStreams([...subs, extra], "2026-11-08");
+  assertEquals([s.charge_count, s.last_charged, s.typical_amount], [4, "2026-10-05", 1]);
+});

@@ -11,11 +11,12 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 ## Unreleased
 
 ### Subscriptions follow your transaction edits
-- **Migration:** `20261218000000_recurring_streams_gone`. Apply it with `supabase db push --linked`, then `supabase functions deploy` (new function `refresh-recurring`; `detect-recurring` changed), then redeploy the dashboard.
+- **Migrations:** `20261218000000_recurring_streams_gone` and `20261219000000_transaction_type_source`. Apply them with `supabase db push --linked`, then `supabase functions deploy` (new function `refresh-recurring`; `detect-recurring` changed), then redeploy the dashboard.
+- A transaction type you pick yourself (Subscription or One-time) is now remembered: the sync, rules and the AI no longer change it, and charges you mark One-time never make a subscription, even when they come every month. Types picked before this update aren't marked: pick One-time again on those charges.
 - Renaming a transaction, marking it One-time, recategorizing or deleting it now shows on the Subscriptions page as soon as you open it, instead of after the next 6-hour run.
 - A subscription you confirmed or archived that is no longer found (say its charges are now One-time) is hidden instead of staying forever. It keeps your choices and comes back if it is found again. A confirmed one-off charge (no regular rhythm) stays listed however old it gets, as before (under Stopped once you set its frequency).
 - Known limit: PayPal, Apple and Google subscriptions are told apart by their lowest charge. Deleting or recategorizing that cheapest charge hides the confirmed row and lists the stream again under To review.
-- **Roll back:** run `supabase/rollbacks/20261218000000_recurring_streams_gone.down.sql` and `supabase migration repair --status reverted 20261218000000 --linked`.
+- **Roll back:** run `supabase/rollbacks/20261219000000_transaction_type_source.down.sql`, then `supabase/rollbacks/20261218000000_recurring_streams_gone.down.sql`, and `supabase migration repair --status reverted 20261219000000 20261218000000 --linked`.
 
 ## v0.4.1 (21 Nov 2026)
 

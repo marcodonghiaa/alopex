@@ -40,6 +40,19 @@ Deno.test("refunded, deleted and transfer rows are not prompted", async () => {
   assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["ok", "new"]);
 });
 
+// protects=Worth it? weighs only my share; fails_when=a charge paid for others (or mostly) is prompted, or the push shows the whole charge
+Deno.test("a split charge is prompted on my share only", async () => {
+  const { db } = recorder([
+    { entry_reference: "mine", amount: 40, personal_amount: null, flow_type: "spend", deleted_at: null },
+    { entry_reference: "half", amount: 40, personal_amount: 20, flow_type: "spend", deleted_at: null },
+    { entry_reference: "small", amount: 40, personal_amount: 10, flow_type: "spend", deleted_at: null },
+    { entry_reference: "others", amount: 40, personal_amount: 0, flow_type: "spend", deleted_at: null },
+  ]);
+  assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["mine", "half"]);
+  const body = buildPayload([{ entry_reference: "half", creditor_name: "Pizza", amount: 40, personal_amount: 20, currency: "EUR", category: "Dine Out" }]).body;
+  assertEquals(body, "20 EUR at Pizza — Dine Out");
+});
+
 Deno.test("every user with a push subscription is prompted, each once", async () => {
   const { db } = recorder([{ user_id: "a" }, { user_id: "b" }, { user_id: "a" }]);
   assertEquals(await userIdsWithSubscriptions(db), ["a", "b"]);

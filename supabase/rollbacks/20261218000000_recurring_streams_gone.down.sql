@@ -1,6 +1,7 @@
 -- Undoes 20261218000000_recurring_streams_gone: gone rows go back to 'suggested' (the old code kept them
 -- as last detected, and a confirmed row shows as confirmed either way), the old check comes back, and
 -- upsert_detected_streams again leaves rows you decided on as they were.
+-- The per-user run clock (recurring_detection_runs) goes too.
 update public.recurring_streams set detected_status = 'suggested' where detected_status = 'gone';
 alter table public.recurring_streams drop constraint if exists recurring_streams_detected_status_check;
 alter table public.recurring_streams add constraint recurring_streams_detected_status_check
@@ -46,3 +47,5 @@ end;
 $$;
 revoke execute on function public.upsert_detected_streams(uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.upsert_detected_streams(uuid, jsonb) to service_role;
+
+drop table if exists public.recurring_detection_runs;

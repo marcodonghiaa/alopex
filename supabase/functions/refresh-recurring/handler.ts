@@ -16,14 +16,14 @@ export interface Deps extends CallerDeps {
 // "edit a transaction, then open the page" still shows the edit).
 const WINDOW_MS = 5_000;
 
-// When this user's streams were last detected: upsert_detected_streams sets detected_at on every row it
-// writes or marks gone. No rows (or a failed read) means no limit: the limit is best effort, so it never
-// blocks a refresh on its own. Two calls at the same instant can both run.
+// When detection last ran for this user: every upsert_detected_streams call records it in
+// recurring_detection_runs, rows or not. Never run (or a failed read) means no limit: the limit is best
+// effort, so it never blocks a refresh on its own. Two calls at the same instant can both run.
 async function lastRun(db: Db, userId: string): Promise<number | null> {
-  const { data, error } = await db.from("recurring_streams").select("detected_at").eq("user_id", userId)
-    .not("detected_at", "is", null).order("detected_at", { ascending: false }).limit(1);
+  const { data, error } = await db.from("recurring_detection_runs").select("last_run_at").eq("user_id", userId)
+    .limit(1);
   if (error || !data?.length) return null;
-  return Date.parse((data as { detected_at: string }[])[0].detected_at);
+  return Date.parse((data as { last_run_at: string }[])[0].last_run_at);
 }
 
 export const refreshHandler = (deps: Deps) => async (req: Request, json: Reply): Promise<Response> => {

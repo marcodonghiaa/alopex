@@ -120,9 +120,37 @@ test('streams no longer detected, on a real Postgres', { skip }, async (t) => {
     assert.strictEqual(sql(`select count(*) from public.recurring_streams where stream_key like 's1-%'`), '2000');
   });
 
+  // S2b (polish 2 re-audit): refresh-recurring's 5 s limit read max(detected_at), which an all-gone or
+  // zero-stream user never moves. Every call now records the run time per user, rows or not.
+  await t.test('S2b: every call records when it ran, also with no rows and for a user with no streams', () => {
+    const B = 'bbbbbbbb-0000-0000-0000-000000000002';
+    sql(`insert into auth.users (id) values ('${B}')`);
+    const fresh = (u) => sql(`select last_run_at > now() - interval '1 minute'
+      from public.recurring_detection_runs where user_id = '${u}'`);
+    assert.strictEqual(fresh(B), '', 'no run yet, no row');
+    assert.strictEqual(sql(`select public.upsert_detected_streams('${B}', '[]'::jsonb)`), '0');
+    assert.strictEqual(fresh(B), 't');
+    sql(`update public.recurring_detection_runs set last_run_at = '2000-01-01' where user_id = '${A}'`);
+    upsert([]); // A's rows are all gone or overrides by now: nothing else moves
+    assert.strictEqual(fresh(A), 't');
+    assert.strictEqual(fresh(B), 't', 'one user\'s run is not another\'s');
+    let err = '';
+    try {
+      execFileSync('psql', [dbUrl(), '-X', '-q', '-v', 'ON_ERROR_STOP=1'], {
+        input: `set role authenticated; set request.jwt.claims = '{"sub":"${A}"}';
+          select * from public.recurring_detection_runs;`,
+        encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      err = String(e.stderr);
+    }
+    assert.match(err, /permission denied/);
+  });
+
   await t.test('rolls back (gone rows show again, as before) and applies again', () => {
     upsert([]);
     applySql(DOWN);
+    assert.match(sql('select 1 from public.recurring_detection_runs'), /does not exist/);
     assert.strictEqual(streams()[0], 'confirmed:suggested:confirmed:monthly:iCloud');
     assert.match(sql(`update public.recurring_streams set detected_status = 'gone'`), /check constraint/);
     applySql(UP);

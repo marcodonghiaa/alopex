@@ -9,6 +9,16 @@ alter table public.recurring_streams drop constraint if exists recurring_streams
 alter table public.recurring_streams add constraint recurring_streams_detected_status_check
   check (detected_status in ('suggested', 'active', 'gone'));
 
+-- When detection last ran for each user, set by every upsert_detected_streams call (rows or not), so
+-- refresh-recurring can allow one run per 5 s per user (polish 2 S2b). Only that function writes it;
+-- users get nothing (the dashboard never reads it).
+create table public.recurring_detection_runs (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  last_run_at timestamptz not null
+);
+alter table public.recurring_detection_runs enable row level security;
+revoke all on public.recurring_detection_runs from public, anon, authenticated;
+
 create or replace function public.upsert_detected_streams(p_user uuid, p_rows jsonb)
 returns int
 language plpgsql security definer set search_path = public as $$
@@ -74,6 +84,8 @@ begin
   update public.recurring_streams s set detected_status = 'gone', detected_at = now()
   where s.user_id = p_user and s.detected_status in ('suggested', 'active')
     and not exists (select 1 from jsonb_array_elements(p_rows) e where e->>'stream_key' = s.stream_key);
+  insert into public.recurring_detection_runs (user_id, last_run_at) values (p_user, now())
+    on conflict (user_id) do update set last_run_at = excluded.last_run_at;
   return v_count;
 end;
 $$;

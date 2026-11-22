@@ -23,7 +23,7 @@ const failingLimitRead = (db: ReturnType<typeof seed>, how: "error" | "throw") =
   ...db,
   from(table: string) {
     const q = db.from(table);
-    if (table !== "recurring_streams") return q;
+    if (table !== "recurring_detection_runs") return q;
     // deno-lint-ignore no-explicit-any
     const fail: any = new Proxy({}, {
       get: (_, k) =>
@@ -32,7 +32,7 @@ const failingLimitRead = (db: ReturnType<typeof seed>, how: "error" | "throw") =
             how === "throw" ? j(new Error("fetch failed")) : r({ data: null, error: { code: "XX000" } })
           : () => fail,
     });
-    return { ...q, select: (cols: string) => cols === "detected_at" ? fail : q.select() };
+    return { ...q, select: (cols: string) => cols === "last_run_at" ? fail : q.select() };
   },
 });
 
@@ -44,7 +44,7 @@ const call = async (
     rpcFails?: boolean;
     authDown?: boolean;
     mfaDown?: boolean;
-    db?: ReturnType<typeof seed>; // shared across calls, so a run's detected_at is seen by the next one
+    db?: ReturnType<typeof seed>; // shared across calls, so a run's time is seen by the next one
     now?: number; // ms; the clock of this call
     limitReadFails?: "error" | "throw";
   } = {},
@@ -59,14 +59,12 @@ const call = async (
     rpc: (_fn, args) => {
       if (opts.rpcFails) return Promise.resolve({ data: null, error: { code: "XX000" } });
       calls.push(args as Call);
-      // Like upsert_detected_streams: every row it writes gets detected_at = now().
-      const a = args as { p_user: string; p_rows: { stream_key: string }[] };
-      const t = (db.tables.recurring_streams ??= []);
-      for (const r of a.p_rows) {
-        const old = t.find((x) => x.user_id === a.p_user && x.stream_key === r.stream_key);
-        if (old) old.detected_at = new Date(now).toISOString();
-        else t.push({ user_id: a.p_user, stream_key: r.stream_key, detected_at: new Date(now).toISOString() });
-      }
+      // Like upsert_detected_streams: every call records the user's run time, rows or not.
+      const user = (args as Call).p_user;
+      const runs = (db.tables.recurring_detection_runs ??= []);
+      const run = runs.find((x) => x.user_id === user);
+      if (run) run.last_run_at = new Date(now).toISOString();
+      else runs.push({ user_id: user, last_run_at: new Date(now).toISOString() });
       return Promise.resolve({ data: 1, error: null });
     },
     today: () => "2026-10-20",
@@ -136,21 +134,35 @@ Deno.test("S2: a call 5 s after the last run detects again", async () => {
 
 Deno.test("S2: another user's recent run does not limit you", async () => {
   const db = seed();
-  db.tables.recurring_streams = [{ user_id: "u2", stream_key: "k", detected_at: new Date(T0).toISOString() }];
+  db.tables.recurring_detection_runs = [{ user_id: "u2", last_run_at: new Date(T0).toISOString() }];
   const res = await call({}, { db, now: T0 + 1 });
   assertEquals([res.status, res.calls.length], [200, 1]);
 });
 
-Deno.test("S2: with no saved streams (or only never-detected imports) there is no limit", async () => {
-  const db = seed();
-  db.tables.recurring_streams = [{ user_id: "u1", stream_key: "imp", detected_at: null }];
-  const res = await call({}, { db, now: T0 });
-  assertEquals([res.status, res.calls.length], [200, 1]);
+// S2b (re-audit): the limit read max(detected_at), which never moves for these two users.
+const twice = async (db: ReturnType<typeof seed>) => {
+  const first = await call({}, { db, now: T0 });
+  const again = await call({}, { db, now: T0 + 4999 });
+  return [first.status, first.calls.length, again.status, again.calls.length];
+};
+
+Deno.test("S2b: a user whose charges make no streams gets a 429 on a second call within 5 s", async () => {
+  const db = memoryDb({ accounts: [{ user_id: "u1" }], transactions: [], v_transactions_eur: [] });
+  assertEquals(await twice(db), [200, 1, 429, 0]);
+  assertEquals(db.tables.recurring_streams ?? [], []);
+});
+
+Deno.test("S2b: a user whose streams are all gone gets a 429 on a second call within 5 s", async () => {
+  const db = memoryDb({
+    accounts: [{ user_id: "u1" }], transactions: [], v_transactions_eur: [],
+    recurring_streams: [{ user_id: "u1", stream_key: "k", user_status: "confirmed", detected_status: "gone", detected_at: "2026-01-01T00:00:00Z" }],
+  });
+  assertEquals(await twice(db), [200, 1, 429, 0]);
 });
 
 Deno.test("S2: if the last-run read fails, detection still runs (the limit fails open)", async () => {
   const db = seed();
-  db.tables.recurring_streams = [{ user_id: "u1", stream_key: "k", detected_at: new Date(T0).toISOString() }];
+  db.tables.recurring_detection_runs = [{ user_id: "u1", last_run_at: new Date(T0).toISOString() }];
   for (const how of ["error", "throw"] as const) {
     const res = await call({}, { db, now: T0 + 1, limitReadFails: how });
     assertEquals([res.status, res.calls.length], [200, 1], how);

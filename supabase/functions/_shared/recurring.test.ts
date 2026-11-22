@@ -152,8 +152,9 @@ Deno.test("charges you marked One-time by hand never make a stream; the AI's One
 
 Deno.test("one charge you marked One-time drops out; the stream is built from the rest", () => {
   const dates = ["2026-07-05", "2026-08-05", "2026-09-05", "2026-10-05"];
-  const subs = dates.map((d) => charge({ booking_date: d, category: "Services", transaction_type: "Subscription" }));
-  const extra = charge({ booking_date: "2026-11-05", category: "Services", transaction_type: "One-time", transaction_type_source: "manual", amount: 99 });
+  // The rest typed One-time by the AI: rule R3 builds the stream from the rhythm of every untagged charge.
+  const subs = dates.map((d) => charge({ booking_date: d, category: "Services", transaction_type: "One-time" }));
+  const extra = charge({ booking_date: "2026-11-05", category: "Services", transaction_type: "One-time", transaction_type_source: "manual" });
   const [s] = detectStreams([...subs, extra], "2026-11-08");
   assertEquals([s.charge_count, s.last_charged, s.typical_amount], [4, "2026-10-05", 1]);
 });

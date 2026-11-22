@@ -196,6 +196,16 @@ Deno.test("detectUser skips charges you marked One-time by hand", async () => {
   const { calls, rpc } = recorder();
   const tables = build(["u1"]);
   for (const t of tables.transactions) Object.assign(t, { transaction_type: "One-time", transaction_type_source: "manual" });
-  await detectUser(memoryDb(tables), rpc, "u1", "2026-10-20");
+  const db = memoryDb(tables);
+  const selects: string[] = [];
+  const spy = { from: (t: string) => {
+    // deno-lint-ignore no-explicit-any
+    const q = db.from(t) as any;
+    return t === "transactions" ? { ...q, select: (cols: string) => (selects.push(cols), q.select(cols)) } : q;
+  } };
+  await detectUser(spy, rpc, "u1", "2026-10-20");
   assertEquals(calls[0].p_rows, []);
+  // The real database returns only the columns asked for: the marker must be one of them.
+  assertEquals(selects.every((c) => c.split(",").map((x) => x.trim()).includes("transaction_type_source")), true);
+  assertEquals(selects.length > 0, true);
 });

@@ -77,8 +77,8 @@ test('a user with nothing to prompt sends nothing', async () => {
 // Regression: refunded or deleted charges still got a "worth it?" prompt.
 test('refunded, deleted and transfer rows are not prompted', async () => {
   const rows = [
-    { entry_reference: 'ok', flow_type: 'spend', deleted_at: null },
-    { entry_reference: 'new', flow_type: null, deleted_at: null },
+    { entry_reference: 'ok', amount: 20, flow_type: 'spend', deleted_at: null },
+    { entry_reference: 'new', amount: 20, flow_type: null, deleted_at: null },
     { entry_reference: 'refunded', flow_type: 'refunded', deleted_at: null },
     { entry_reference: 'deleted', flow_type: 'spend', deleted_at: '2026-10-27T10:00:00Z' },
     { entry_reference: 'transfer', flow_type: 'transfer', deleted_at: null },
@@ -88,6 +88,24 @@ test('refunded, deleted and transfer rows are not prompted', async () => {
   });
   const got = await fetchEligibleTransactions(builder, 'user', NOW);
   assert.deepStrictEqual(got.map((t) => t.entry_reference), ['ok', 'new']);
+});
+
+// Polish 1 #2: the Docker/cron job must weigh only my share, like the edge function and the app.
+// protects=a charge paid for others (or mostly) is not prompted, and the push shows my share
+test('a split charge is prompted on my share only', async () => {
+  const rows = [
+    { entry_reference: 'mine', amount: 40, personal_amount: null, flow_type: 'spend', deleted_at: null },
+    { entry_reference: 'half', amount: 40, personal_amount: 20, flow_type: 'spend', deleted_at: null },
+    { entry_reference: 'small', amount: 40, personal_amount: 10, flow_type: 'spend', deleted_at: null },
+    { entry_reference: 'others', amount: 40, personal_amount: 0, flow_type: 'spend', deleted_at: null },
+  ];
+  const builder = new Proxy({}, {
+    get: (_, m) => (m === 'then' ? (resolve) => resolve({ data: rows, error: null }) : () => builder),
+  });
+  const got = await fetchEligibleTransactions(builder, 'user', NOW);
+  assert.deepStrictEqual(got.map((t) => t.entry_reference), ['mine', 'half']);
+  const body = buildPayload([{ entry_reference: 'half', creditor_name: 'Pizza', amount: 40, personal_amount: 20, currency: 'EUR', category: 'Dine Out' }]).body;
+  assert.strictEqual(body, '20 EUR at Pizza — Dine Out');
 });
 
 // protects=the push names the shop like the app does; fails_when=the bank's raw text with codes

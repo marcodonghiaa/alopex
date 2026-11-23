@@ -1,5 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import {
+  heldKey,
   HoldingError,
   isIsin,
   parseCoinGeckoPrice,
@@ -125,4 +126,27 @@ Deno.test("an add request needs a valid id, name and a positive quantity", () =>
   const coin = { action: "add", kind: "crypto", id: "bitcoin", symbol: "BTC", name: "Bitcoin", quantity: 0.25 } as const;
   assertEquals(parseHoldingRequest(coin), { ...coin, isin: undefined, broker: undefined });
   assertEquals(typeof parseHoldingRequest({ ...coin, id: "Bitcoin!" }), "string");
+});
+
+// H017: a stock added by name or ticker is keyed by its Yahoo symbol; adding it again by ISIN (a
+// broker import) made a second holding, priced and counted in net worth twice.
+Deno.test("heldKey finds the key you already hold a Yahoo symbol under, for that user only", async () => {
+  const filters: unknown[] = [];
+  const answer = (data: unknown, error: unknown = null) => ({
+    from: (table: string) => {
+      filters.push(["from", table]);
+      const q = {
+        select: () => q,
+        eq: (c: string, v: unknown) => (filters.push([c, v]), q),
+        limit: async () => ({ data, error }),
+      };
+      return q;
+    },
+  });
+  assertEquals(await heldKey(answer([{ isin: "VWCE.DE" }]), "u1", "VWCE.DE"), "VWCE.DE");
+  assertEquals(filters, [["from", "portfolio_holdings"], ["user_id", "u1"], ["yahoo_symbol", "VWCE.DE"]]);
+  assertEquals(await heldKey(answer([]), "u1", "VWCE.DE"), null);
+  let thrown: unknown;
+  await heldKey(answer(null, { code: "XX000" }), "u1", "VWCE.DE").catch((e) => (thrown = e));
+  assertEquals(thrown, { code: "XX000" });
 });

@@ -8,7 +8,7 @@ import { applyLearned, fetchLearned, learnedUpdate, planRelearn } from "./learne
 import { errorTag } from "./log-safe.ts";
 import { applyRules, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
 import { createStallGuard } from "./stall-guard.ts";
-import { fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
+import { aiRefs, fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
 import type { CategorizeRow } from "./categorize-prompt.ts";
 
 const BATCH_SIZE = 40;
@@ -68,18 +68,17 @@ async function learnFrom(db: Db, rows: Row[]): Promise<Row[]> {
   return unmatched;
 }
 
-async function applyCategories(db: Db, results: Array<Record<string, string>>, rows: Row[], categories: string[]) {
-  const accountByRef = new Map(rows.map((r) => [r.entry_reference, r.account_uid]));
+async function applyCategories(db: Db, results: Array<Record<string, string>>, byRef: Map<string, Row>, categories: string[]) {
   const items = [];
   let invalid = 0;
   for (const { entry_reference, category } of results) {
-    const account_uid = accountByRef.get(entry_reference);
-    if (!account_uid) continue; // model echoed a reference we never sent
+    const row = byRef.get(entry_reference);
+    if (!row) continue; // model echoed a reference we never sent
     if (!categories.includes(category)) {
       invalid++;
       continue;
     }
-    items.push({ account_uid, entry_reference, update: { category, category_source: "ai" }, guardColumn: "category" });
+    items.push({ account_uid: row.account_uid, entry_reference: row.entry_reference, update: { category, category_source: "ai" }, guardColumn: "category" });
   }
   if (invalid > 0) console.warn(`Skipping ${invalid} invalid category result(s).`);
   await applyGroupedUpdates(db, items);
@@ -105,7 +104,8 @@ async function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeL
     const unmatched = await learnFrom(db, afterRules);
     if (unmatched.length > 0) {
       const categories = await fetchUserCategories(db, unmatched[0].user_id);
-      await applyCategories(db, await classify(unmatched as CategorizeRow[], categories), unmatched, categories);
+      const { sent, byRef } = aiRefs(unmatched as Array<Row & { account_uid: string; entry_reference: string }>);
+      await applyCategories(db, await classify(sent as CategorizeRow[], categories), byRef, categories);
     }
     total += rows.length;
   }

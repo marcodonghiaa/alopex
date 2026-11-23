@@ -6,7 +6,7 @@ import { type Ask, UNTRUSTED_TEXT_NOTE } from "./gemini.ts";
 import { errorTag } from "./log-safe.ts";
 import { applyRules, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
 import { createStallGuard } from "./stall-guard.ts";
-import { fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
+import { aiRefs, fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
 
 const BATCH_SIZE = 40;
 export const TYPES = ["Subscription", "One-time"];
@@ -77,8 +77,7 @@ ${JSON.stringify(rows.map((r) => ({
 Return a JSON array of {"entry_reference": string, "transaction_type": string} for every transaction above, same order, one entry each. transaction_type must be exactly one of the allowed values.`;
 }
 
-async function applyTypes(db: Db, results: Array<Record<string, string>>, rows: Row[]) {
-  const byRef = new Map(rows.map((r) => [r.entry_reference, r]));
+async function applyTypes(db: Db, results: Array<Record<string, string>>, byRef: Map<string, Row>) {
   const items = [];
   let invalid = 0;
   for (const { entry_reference, transaction_type } of results) {
@@ -110,7 +109,10 @@ async function classifyWithAi(db: Db, rules: Rule[], ask: Ask, timeLeft: () => b
       continue;
     }
     const forAi = await applyDeterministic(db, rows, rules);
-    if (forAi.length > 0) await applyTypes(db, await ask(buildTypePrompt(forAi), "transaction_type", TYPES), forAi);
+    if (forAi.length > 0) {
+      const { sent, byRef } = aiRefs(forAi as Array<Row & { account_uid: string; entry_reference: string }>);
+      await applyTypes(db, await ask(buildTypePrompt(sent), "transaction_type", TYPES), byRef);
+    }
     total += rows.length;
   }
   return total;

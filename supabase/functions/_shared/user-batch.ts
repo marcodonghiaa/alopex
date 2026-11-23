@@ -58,3 +58,18 @@ export async function walkNullRows(
   }
   return total;
 }
+
+// The rows as the AI sees them, and its answer's entry_reference -> the row it means. The key is
+// (account_uid, entry_reference), so one reference can sit on two of a user's accounts: those
+// get a batch-local "<ref>#<n>" so each answer lands on its own row (H074).
+export function aiRefs<T extends { account_uid: string; entry_reference: string }>(rows: T[]) {
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.entry_reference, (counts.get(r.entry_reference) ?? 0) + 1);
+  const byRef = new Map<string, T>();
+  const sent = rows.map((r, i) => {
+    const ref = counts.get(r.entry_reference)! > 1 ? `${r.entry_reference}#${i}` : r.entry_reference;
+    byRef.set(ref, r);
+    return ref === r.entry_reference ? r : { ...r, entry_reference: ref };
+  });
+  return { sent, byRef };
+}

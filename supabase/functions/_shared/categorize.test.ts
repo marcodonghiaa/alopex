@@ -96,3 +96,17 @@ Deno.test("no AI batch starts once the time is up", async () => {
   await categorize(db, async () => (calls++, []), () => false);
   assertEquals(calls, 0);
 });
+
+// H074: the AI's answers were mapped back by entry_reference alone, so with the same reference on
+// two of your accounts one row got the other's category and the other none.
+Deno.test("the same reference on two accounts: each row gets its own AI answer", async () => {
+  const db = memoryDb({
+    transactions: [tx("r1", "CAFE", { account_uid: "a1" }), tx("r1", "GYM", { account_uid: "a2" })],
+    category_rules: [],
+    user_categories: [],
+  });
+  const classify: Classify = async (rows) =>
+    rows.map((r) => ({ entry_reference: r.entry_reference, category: r.creditor_name === "CAFE" ? "Dine Out" : "Health" }));
+  await categorize(db, classify);
+  assertEquals(db.tables.transactions.map((r) => [r.account_uid, r.category]), [["a1", "Dine Out"], ["a2", "Health"]]);
+});

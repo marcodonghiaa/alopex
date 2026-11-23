@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Imported spending counts on Cash flow and Reports
+- **Migration:** `20261226000000_income_expenses_spend_history`. Apply it with `supabase db push --linked`, then update the dashboard (without it, Cash flow's diagram over imported months has more spending by category than in total).
+- Past monthly spending you imported by CSV showed on Spending and Budgets but not on Cash flow, Reports (income minus spending), Income or the Transactions in/out totals, which showed no spending for those months. Those totals now count it the same way Spending does: only for a month with no bank spending. Imported months have no income, so they show as months where you spent more than you earned.
+- **Roll back:** run `supabase/rollbacks/20261226000000_income_expenses_spend_history.down.sql`, then `supabase migration repair --status reverted 20261226000000 --linked`.
+
 ### One bad holding no longer stops prices for everyone
 - **Migration:** `20261225000000_holding_quantity_checks`. Apply it with `supabase db push --linked`, then `supabase functions deploy sync-prices`.
 - A holding whose quantity was not a real number (NaN, infinite or too big to value, which only a hand-made API call could save) made the daily price sync fail for every user. The sync now skips such a holding, and new holdings must have a finite quantity of zero or more. Holdings already stored are not checked or changed; one with such a quantity gets no new price until you fix or delete it.

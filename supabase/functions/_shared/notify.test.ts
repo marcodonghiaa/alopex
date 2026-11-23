@@ -198,3 +198,21 @@ Deno.test("runConsent: one user's failure doesn't stop the reminders for the oth
   }
   assert(sent[0].startsWith("Wise stops syncing in 7 days"));
 });
+
+// H064: the €15 line was compared in each charge's own currency, so 20 HUF (about €0.05) was prompted.
+Deno.test("the minimum is in euros: a small charge in another currency isn't prompted", async () => {
+  const txs = [
+    { entry_reference: "huf-small", amount: 2000, currency: "HUF", flow_type: "spend", deleted_at: null },
+    { entry_reference: "huf-big", amount: 8000, currency: "HUF", flow_type: "spend", deleted_at: null },
+    { entry_reference: "eur", amount: 20, currency: "EUR", flow_type: "spend", deleted_at: null },
+    { entry_reference: "no-rate", amount: 20, currency: "XXX", flow_type: "spend", deleted_at: null },
+  ];
+  const answer = (rows: unknown[]) => {
+    const b: Record<string, unknown> = new Proxy({}, {
+      get: (_, m: string) => (m === "then" ? (r: (v: unknown) => void) => r({ data: rows, error: null }) : () => b),
+    });
+    return b;
+  };
+  const db = { from: (t: string) => answer(t === "fx_rates" ? [{ currency: "HUF", rate_to_eur: 0.0025, date: "2026-10-27" }] : txs) };
+  assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["huf-big", "eur", "no-rate"]);
+});

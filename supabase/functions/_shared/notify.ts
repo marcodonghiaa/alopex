@@ -12,7 +12,7 @@ type Row = Record<string, any>;
 
 // ponytail: hardcoded allowlist, add a per-user setting if it ever needs to be configurable.
 const DISCRETIONARY_CATEGORIES = ["Shopping", "Entertainment", "Dine Out", "Experiences"];
-const MIN_AMOUNT = 15; // native currency, no cross-currency threshold
+const MIN_AMOUNT = 15; // in EUR: other currencies are converted at the latest rate (H064)
 const MIN_AGE_HOURS = 3;
 const MAX_AGE_HOURS = 24; // don't blast stale transactions if the job was down
 const MAX_BOOKING_AGE_DAYS = 7; // = sync overlap: a late-posted purchase still counts
@@ -27,16 +27,31 @@ export async function fetchEligibleTransactions(db: Db, userId: string, now: Dat
     .in("category", DISCRETIONARY_CATEGORIES)
     .is("worth_it", null) // not "already pushed" -- "not yet answered" (in-app or via push)
     .is("worth_it_prompted_at", null)
-    .gte("amount", MIN_AMOUNT)
     .lte("created_at", new Date(now.getTime() - MIN_AGE_HOURS * 3600 * 1000).toISOString())
     .gte("created_at", new Date(now.getTime() - MAX_AGE_HOURS * 3600 * 1000).toISOString())
     .or(`booking_date.gte.${bookingFloor},booking_date.is.null`);
   if (error) throw error;
+  const toEur = await latestRatesToEur(db, data.map((t: Row) => t.currency));
   // A refunded, deleted or transfer row isn't a purchase to ask about; nor is one where my share
   // (of a split) is under the minimum, e.g. a charge paid entirely for others.
   return data.filter((t: Row) =>
-    !t.deleted_at && t.flow_type !== "refunded" && t.flow_type !== "transfer" && myShare(t) >= MIN_AMOUNT
+    !t.deleted_at && t.flow_type !== "refunded" && t.flow_type !== "transfer" &&
+    myShare(t) * (toEur.get(t.currency) ?? 1) >= MIN_AMOUNT
   );
+}
+
+// currency -> latest rate_to_eur, for the non-EUR currencies given. A currency with no stored
+// rate is left out, so its charges are weighed in their own amount as before.
+async function latestRatesToEur(db: Db, currencies: Array<string | null | undefined>): Promise<Map<string, number>> {
+  const wanted = [...new Set(currencies.filter((c): c is string => !!c && c !== "EUR"))];
+  const rates = new Map<string, number>();
+  if (wanted.length === 0) return rates;
+  const { data, error } = await db
+    .from("fx_rates").select("currency, rate_to_eur, date").in("currency", wanted)
+    .order("date", { ascending: false }).limit(wanted.length * 31);
+  if (error) throw error;
+  for (const r of data ?? []) if (!rates.has(r.currency)) rates.set(r.currency, Number(r.rate_to_eur));
+  return rates;
 }
 
 // My part of a charge: the split share if one is set, else all of it (the DB keeps 0 <= share <= amount).

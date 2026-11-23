@@ -314,7 +314,7 @@ The APP_ID is the long id shown next to your app.`);
   withTempFile(lib.vaultSql({ project_url: url, sync_bank_secret_key: keys.secret }), (file) =>
     supabaseMust(['db', 'query', '--remote', '--file', file, '--yes'], sb, 'Could not turn the scheduled sync on.'));
   saveEnv({ SYNC_ON: 'supabase' });
-  console.log('Functions live. Your banks sync every 6 hours inside Supabase: nothing has to stay on.');
+  console.log('Functions live. Your banks sync 4 times a day inside Supabase: nothing has to stay on.');
 
   step('Putting the dashboard online (Vercel, free account)');
   if (!vercel(['whoami'], { cwd: dashboard }).ok) {

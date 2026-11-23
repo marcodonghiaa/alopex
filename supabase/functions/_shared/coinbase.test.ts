@@ -13,8 +13,8 @@ Deno.test("a funded, mapped account becomes a holding row; zero balances are lis
 
 Deno.test("a malformed balance is skipped, never treated as zero; unmapped coins are neither written nor zeroed", () => {
   assertEquals(planHoldings([account("BTC", "oops"), account("ETH", undefined, { available_balance: undefined })], "u1"), { rows: [], zeroed: [], unmapped: [] });
-  const { rows, zeroed, unmapped } = planHoldings([account("DOGE", "5"), account("SOL", "0")], "u1");
-  assertEquals([rows, zeroed, unmapped], [[], [], ["DOGE"]]);
+  const { rows, zeroed, unmapped } = planHoldings([account("ZZZNEW", "5"), account("ZZZOLD", "0")], "u1");
+  assertEquals([rows, zeroed, unmapped], [[], [], ["ZZZNEW"]]);
 });
 
 // Regression: only the first page (about 49 accounts) was read.
@@ -52,4 +52,16 @@ Deno.test("without keys the step is skipped; with keys but no owner it fails cle
   assertEquals(await syncCoinbase({ from: () => ({}) }, {}), null);
   const err = await syncCoinbase({ from: () => ({}) }, { keyName: "k", privateKey: "p" }).catch((e) => e);
   assertEquals(err.code, "COINBASE_USER_ID_MISSING");
+});
+
+// H045/H053: the map held 4 majors plus 2 staking tokens, so most coins on Coinbase were skipped.
+Deno.test("the common Coinbase coins are priced, each under its CoinGecko id", () => {
+  const { rows, unmapped } = planHoldings(
+    ["SOL", "XRP", "ADA", "DOGE", "DOT", "LTC", "LINK", "AVAX", "POL", "XLM", "ATOM", "UNI", "SHIB", "BCH", "DAI", "EURC"]
+      .map((s) => account(s, "1")),
+    "u1",
+  );
+  assertEquals(unmapped, []);
+  assertEquals(rows.find((r) => r.asset_symbol === "SOL")?.coingecko_id, "solana");
+  assertEquals(rows.find((r) => r.asset_symbol === "EURC")?.coingecko_id, "euro-coin");
 });

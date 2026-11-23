@@ -12,13 +12,32 @@ const PATH = "/api/v3/brokerage/accounts";
 // fit one 250-row page; pass a deadline into fetchAllAccounts if that ever stops being true.
 const MAX_PAGES = 50;
 
-// Known Coinbase currency codes -> CoinGecko IDs (a symbol like "SOL" is ambiguous on CoinGecko,
-// so this is a deliberate allowlist rather than an automatic symbol search).
+// Known Coinbase currency codes -> CoinGecko IDs. A symbol is ambiguous on CoinGecko (many tokens
+// share one), so this is a deliberate allowlist rather than an automatic symbol search: the
+// common coins on Coinbase. A coin missing here is skipped with a log line; add it to price it.
 export const COINGECKO_ID_MAP: Record<string, string> = {
   BTC: "bitcoin",
   ETH: "ethereum",
   USDT: "tether",
   USDC: "usd-coin",
+  EURC: "euro-coin",
+  DAI: "dai",
+  SOL: "solana",
+  XRP: "ripple",
+  ADA: "cardano",
+  DOGE: "dogecoin",
+  DOT: "polkadot",
+  LTC: "litecoin",
+  BCH: "bitcoin-cash",
+  ETC: "ethereum-classic",
+  LINK: "chainlink",
+  AVAX: "avalanche-2",
+  POL: "polygon-ecosystem-token",
+  XLM: "stellar",
+  ATOM: "cosmos",
+  UNI: "uniswap",
+  AAVE: "aave",
+  SHIB: "shiba-inu",
   SD: "stader",
   ETHX: "stader-ethx",
 };
@@ -103,7 +122,7 @@ export async function syncCoinbase(db: Db, config: CoinbaseConfig, fetchFn: type
     return res.json();
   });
   const { rows, zeroed, unmapped } = planHoldings(accounts, config.userId);
-  if (unmapped.length > 0) console.warn(`Skipping ${unmapped.length} Coinbase asset(s): no CoinGecko ID mapped.`);
+  if (unmapped.length > 0) console.warn(`Skipping Coinbase asset(s) with no CoinGecko ID mapped: ${unmapped.join(", ")}`);
   if (rows.length > 0) {
     const { error } = await db.from("crypto_holdings").upsert(rows, { onConflict: "user_id,asset_symbol,source" });
     if (error) throw error;

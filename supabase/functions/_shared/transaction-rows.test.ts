@@ -183,3 +183,16 @@ Deno.test("a reuse whose stored row is older than the window still gets its own 
   assertEquals(amounts(table), [10, 40]);
   assertEquals(table.get("r1")?.amount, 10);
 });
+
+// H040: a row with no booking_date fell out of every monthly view and FX join.
+Deno.test("a missing booking_date falls back to the value date, then the transaction date", async () => {
+  const [a] = await buildRows([tx({ booking_date: null, value_date: "2026-10-02" })], "acc", "user");
+  const [b] = await buildRows([tx({ booking_date: null, transaction_date: "2026-10-03" })], "acc", "user");
+  const [c] = await buildRows([tx({ booking_date: "2026-10-01", value_date: "2026-10-05" })], "acc", "user");
+  assertEquals([a.booking_date, b.booking_date, c.booking_date], ["2026-10-02", "2026-10-03", "2026-10-01"]);
+});
+Deno.test("the fallback date leaves the derived reference unchanged", async () => {
+  const [row] = await buildRows([tx({ entry_reference: null, booking_date: null, value_date: "2026-10-02" })], "acc", "user");
+  const [same] = await buildRows([tx({ entry_reference: null, booking_date: undefined, value_date: "2026-10-02" })], "acc", "user");
+  assertEquals(row.entry_reference, same.entry_reference);
+});

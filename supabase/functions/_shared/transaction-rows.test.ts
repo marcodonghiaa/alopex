@@ -116,10 +116,10 @@ Deno.test("rows never carry note or tags", async () => {
 // The table, keyed on (account, entry_reference). Each sync reads the stored rows its keys may
 // meet (lookupKeys), as bank-sync does, then upserts.
 type Row = Record<string, unknown>;
-async function syncInto(table: Map<unknown, Row>, batch: EbTransaction[]) {
+async function syncInto(table: Map<unknown, Row>, batch: EbTransaction[], dateFrom: string | null = null) {
   const stored = new Map<string, string | null>();
   for (const key of await lookupKeys(batch)) if (table.has(key)) stored.set(key, storedContent(table.get(key)!.raw));
-  for (const row of await buildRows(batch, "acc", "user", undefined, stored)) table.set(row.entry_reference, row);
+  for (const row of await buildRows(batch, "acc", "user", undefined, stored, dateFrom)) table.set(row.entry_reference, row);
 }
 const amounts = (table: Map<unknown, Row>) => [...table.values()].map((r) => r.amount).sort();
 
@@ -161,4 +161,25 @@ Deno.test("the bank changing a stored row updates it, not a second row", async (
 Deno.test("a stored row with no bank payload keeps the bare reference", async () => {
   const rows = await buildRows([tx({ booking_date: "2026-11-10" })], "acc", "user", undefined, new Map([["r1", storedContent(null)]]));
   assertEquals(rows.map((r) => r.entry_reference), ["r1"]);
+});
+
+// Review of H014: "older than the window" is the window the sync asked for (date_from), not the
+// oldest row the bank happened to send. A row the bank moved forward inside the window is updated.
+Deno.test("a stored row whose date the bank moved forward inside the window is updated, not stored twice", async () => {
+  const table = new Map<unknown, Row>();
+  await syncInto(table, [tx({ booking_date: "2026-11-14", transaction_amount: { amount: "10.00", currency: "EUR" } })]);
+  await syncInto(table, [
+    tx({ booking_date: "2026-11-15", transaction_amount: { amount: "10.00", currency: "EUR" } }),
+    tx({ booking_date: "2026-11-20", transaction_amount: { amount: "40.00", currency: "EUR" } }),
+  ], "2026-11-13");
+  assertEquals(amounts(table), [10, 40]);
+  assertEquals(table.get("r1")?.booking_date, "2026-11-15");
+});
+
+Deno.test("a reuse whose stored row is older than the window still gets its own key", async () => {
+  const table = new Map<unknown, Row>();
+  await syncInto(table, [tx({ booking_date: "2026-09-01", transaction_amount: { amount: "10.00", currency: "EUR" } })]);
+  await syncInto(table, [tx({ booking_date: "2026-11-20", transaction_amount: { amount: "40.00", currency: "EUR" } })], "2026-11-13");
+  assertEquals(amounts(table), [10, 40]);
+  assertEquals(table.get("r1")?.amount, 10);
 });

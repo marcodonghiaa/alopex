@@ -60,7 +60,7 @@ async function bankKey(
   tx: EbTransaction,
   stored: StoredRefs,
   inBatch: Map<string, Set<string>>,
-  earliest: string,
+  windowStart: string,
   bareTaken: Map<string, string>,
 ): Promise<string> {
   const ref: string = tx.entry_reference;
@@ -70,11 +70,13 @@ async function bankKey(
   const was = stored.get(ref);
   if (was === null || was === content) return ref;
   if (was !== undefined) {
-    // The bare ref holds another transaction. If that one is in this batch too, or older than all
-    // of it, this is a new transaction reusing the ref. Otherwise the bank changed that row: update
-    // it, as before.
+    // The bare ref holds another transaction. If that one is in this batch too, or older than the
+    // window this sync asked for, this is a new transaction reusing the ref. Otherwise the bank
+    // changed that row: update it, as before.
+    // Known limit: a row stored under a split key that the bank then changes (a reused ref AND a
+    // new amount or date) gets a new split key, so it is stored a second time.
     const wasDate = was.split("|")[0];
-    if (inBatch.get(ref)!.has(was) || (wasDate && wasDate < earliest)) return split;
+    if (inBatch.get(ref)!.has(was) || (wasDate && wasDate < windowStart)) return split;
   }
   if (!bareTaken.has(ref)) bareTaken.set(ref, content);
   return bareTaken.get(ref) === content ? ref : split;
@@ -122,13 +124,15 @@ function mapToRow(tx: EbTransaction, accountUid: string, userId: string, entryRe
 }
 
 // ownIbans: the user's own accounts' IBANs, normalized (see normalizeIban); without it rows carry
-// no own_counterparty. stored: the rows already saved under lookupKeys(transactions).
+// no own_counterparty. stored: the rows already saved under lookupKeys(transactions). dateFrom:
+// the date_from the bank was asked for, null for its longest history.
 export async function buildRows(
   transactions: EbTransaction[],
   accountUid: string,
   userId: string,
   ownIbans?: Set<string>,
   stored: StoredRefs = new Map(),
+  dateFrom: string | null = null,
 ): Promise<Json[]> {
   const seen = new Map<string, number>();
   const byRef = new Map<string, Json>(); // one row per key, last wins
@@ -137,9 +141,10 @@ export async function buildRows(
   const inBatch = new Map<string, Set<string>>();
   for (const tx of booked) if (tx.entry_reference) inBatch.set(tx.entry_reference, (inBatch.get(tx.entry_reference) ?? new Set()).add(contentOf(tx)));
   const earliest = booked.map((tx) => tx.booking_date).filter(Boolean).sort()[0] ?? "";
+  const windowStart = dateFrom && dateFrom < earliest ? dateFrom : earliest;
   const bareTaken = new Map<string, string>();
   for (const tx of booked) {
-    const ref = tx.entry_reference ? await bankKey(tx, stored, inBatch, earliest, bareTaken) : await entryReferenceFor(tx, seen);
+    const ref = tx.entry_reference ? await bankKey(tx, stored, inBatch, windowStart, bareTaken) : await entryReferenceFor(tx, seen);
     byRef.set(ref, mapToRow(tx, accountUid, userId, ref, ownIbans));
   }
   return [...byRef.values()];

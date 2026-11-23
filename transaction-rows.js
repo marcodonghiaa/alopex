@@ -43,7 +43,7 @@ function lookupKeys(transactions) {
 
 // The key for a transaction that has a bank ref. bareTaken: ref -> the content that got the bare
 // ref in this batch, so two rows never share it.
-function bankKey(tx, stored, inBatch, earliest, bareTaken) {
+function bankKey(tx, stored, inBatch, windowStart, bareTaken) {
   const ref = tx.entry_reference;
   const content = contentOf(tx);
   const split = splitKey(ref, content);
@@ -51,11 +51,13 @@ function bankKey(tx, stored, inBatch, earliest, bareTaken) {
   const was = stored.get(ref);
   if (was === null || was === content) return ref;
   if (was !== undefined) {
-    // The bare ref holds another transaction. If that one is in this batch too, or older than all
-    // of it, this is a new transaction reusing the ref. Otherwise the bank changed that row: update
-    // it, as before.
+    // The bare ref holds another transaction. If that one is in this batch too, or older than the
+    // window this sync asked for, this is a new transaction reusing the ref. Otherwise the bank
+    // changed that row: update it, as before.
+    // Known limit: a row stored under a split key that the bank then changes (a reused ref AND a
+    // new amount or date) gets a new split key, so it is stored a second time.
     const wasDate = was.split('|')[0];
-    if (inBatch.get(ref).has(was) || (wasDate && wasDate < earliest)) return split;
+    if (inBatch.get(ref).has(was) || (wasDate && wasDate < windowStart)) return split;
   }
   if (!bareTaken.has(ref)) bareTaken.set(ref, content);
   return bareTaken.get(ref) === content ? ref : split;
@@ -102,7 +104,9 @@ function mapToRow(tx, accountUid, userId, entryReference, ownIbans) {
 
 // ownIbans: the user's own accounts' IBANs, normalized (see normalizeIban); without it rows carry
 // no own_counterparty.
-function buildRows(transactions, accountUid, userId, ownIbans, stored = new Map()) {
+// stored: the rows already saved under lookupKeys(transactions). dateFrom: the date_from the bank
+// was asked for, null for its longest history.
+function buildRows(transactions, accountUid, userId, ownIbans, stored = new Map(), dateFrom = null) {
   const seen = new Map();
   const byRef = new Map(); // Map keeps one row per key, last wins
   // A pending transaction has no stable id yet: stored now, it would be kept beside its
@@ -111,9 +115,10 @@ function buildRows(transactions, accountUid, userId, ownIbans, stored = new Map(
   const inBatch = new Map();
   for (const tx of booked) if (tx.entry_reference) inBatch.set(tx.entry_reference, (inBatch.get(tx.entry_reference) ?? new Set()).add(contentOf(tx)));
   const earliest = booked.map((tx) => tx.booking_date).filter(Boolean).sort()[0] ?? '';
+  const windowStart = dateFrom && dateFrom < earliest ? dateFrom : earliest;
   const bareTaken = new Map();
   for (const tx of booked) {
-    const ref = tx.entry_reference ? bankKey(tx, stored, inBatch, earliest, bareTaken) : entryReferenceFor(tx, seen);
+    const ref = tx.entry_reference ? bankKey(tx, stored, inBatch, windowStart, bareTaken) : entryReferenceFor(tx, seen);
     byRef.set(ref, mapToRow(tx, accountUid, userId, ref, ownIbans));
   }
   return [...byRef.values()];

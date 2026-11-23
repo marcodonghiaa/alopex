@@ -190,7 +190,7 @@ export async function syncAccountTransactions(
     try {
       const ownIbans = await fetchOwnIbans(supabase, account.user_id);
       const stored = await fetchStoredRefs(supabase, account.uid, transactions);
-      rows = await buildRows(transactions, account.uid, account.user_id, ownIbans, stored);
+      rows = await buildRows(transactions, account.uid, account.user_id, ownIbans, stored, dateFrom);
       if (rows.length > 0) {
         const { error } = await supabase.from("transactions").upsert(rows, { onConflict: "account_uid,entry_reference" });
         if (error) throw error;

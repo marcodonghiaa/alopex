@@ -79,7 +79,7 @@ async function syncAccountTransactions({ fetch, supabase }, token, account, user
     const transactions = await getAllTransactions(fetch, token, ebAccountId(account), dateFrom);
     const ownIbans = transactions.length > 0 ? await fetchOwnIbans(supabase, userId) : undefined;
     const stored = transactions.length > 0 ? await fetchStoredRefs(supabase, account.uid, transactions) : new Map();
-    const rows = buildRows(transactions, account.uid, userId, ownIbans, stored);
+    const rows = buildRows(transactions, account.uid, userId, ownIbans, stored, dateFrom);
 
     if (rows.length === 0) {
       console.log('No new transactions.');

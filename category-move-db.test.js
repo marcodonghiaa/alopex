@@ -43,7 +43,7 @@ const applySql = (file) =>
   });
 const MIGRATIONS = fs.readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql')).sort();
 const cats = (user, table, col = 'category') =>
-  admin(`select coalesce(string_agg(${col}, ',' order by ${col}), '') from public.${table} where user_id = '${user}'`);
+  admin(`select coalesce(string_agg(${col}, ',' order by ${col} collate "C"), '') from public.${table} where user_id = '${user}'`);
 
 test('category look and move on a real Postgres', { skip }, async (t) => {
   psql(url, ['-c', `create database ${db}`]);

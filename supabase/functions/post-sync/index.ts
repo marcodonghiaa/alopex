@@ -68,9 +68,9 @@ Deno.serve(async (req) => {
   try {
     // Past exchange rates first: a fresh install has none before today (e2e #8). Best effort.
     const fxBackfilled = await backfillFx(supabase, getJson).catch((err) => (console.error(`fx backfill failed: ${errorTag(err)}`), 0));
-    const keys = timeLeft() ? await fillMerchantKeys(supabase, timeLeft) : { keys: 0, aliases: 0 };
     // Each step on its own: one that throws is logged and makes the run a 500, the rest still run.
     const stepsFailed: string[] = [];
+    const keys = timeLeft() ? await runStep("merchantKeys", stepsFailed, () => fillMerchantKeys(supabase, timeLeft), { keys: 0, aliases: 0 }) : { keys: 0, aliases: 0 };
     const categories = await runStep("categorize", stepsFailed, () => categorize(supabase, classify, aiTimeLeft), { categorized: 0, relearned: 0, byRules: 0, aiFailed: false });
     const types = await runStep("types", stepsFailed, () => classifyTypes(supabase, ask, aiTimeLeft), { typed: 0, typedByRules: 0, typeAiFailed: false });
     const splitwise = await runStep("splitwise", stepsFailed, () => categorizeSplitwise(supabase, ask, aiTimeLeft), { splitwise: 0, splitwiseAiFailed: false });

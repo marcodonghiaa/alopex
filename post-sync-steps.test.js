@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 
 const code = fs.readFileSync('supabase/functions/post-sync/index.ts', 'utf8');
-const STEPS = ['categorize', 'classifyTypes', 'categorizeSplitwise', 'classifyFlows', 'pairTransfers', 'markRefunds', 'matchBrokerRows'];
+const STEPS = ['fillMerchantKeys', 'categorize', 'classifyTypes', 'categorizeSplitwise', 'classifyFlows', 'pairTransfers', 'markRefunds', 'matchBrokerRows'];
 
 test('each post-sync step is wrapped in its own runStep', () => {
   for (const step of STEPS) {

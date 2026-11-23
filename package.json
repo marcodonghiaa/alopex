@@ -4,15 +4,13 @@
   "description": "Alopex backend: self-hosted net worth tracker for European banks. Supabase migrations, Edge Functions and the Enable Banking sync.",
   "main": "index.js",
   "scripts": {
-    "test": "node --test *.test.js installer/*.test.js"
+    "test": "node --test --test-concurrency=1 *.test.js installer/*.test.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@supabase/supabase-js": "^2.114.0",
-    "dotenv": "^17.4.2",
     "web-push": "^3.6.7"
   }
 }

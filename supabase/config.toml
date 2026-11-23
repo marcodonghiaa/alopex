@@ -8,7 +8,7 @@ major_version = 17
 [auth]
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://localhost:3000"]
-# The app has no sign-up screen; setup.sh creates the one login. Keep the Auth API closed too.
+# The app has no sign-up screen; the installer creates the one login. Keep the Auth API closed too.
 enable_signup = false
 
 # Two-step sign-in with an authenticator app (Settings in the dashboard). On in hosted Supabase;

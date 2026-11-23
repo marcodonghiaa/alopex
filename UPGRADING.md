@@ -1,14 +1,20 @@
 # Upgrading
 
-Pulling new code does not update your database. Migrations are not applied automatically, and the sync scripts only change once you redeploy them. Find your version below and do what each change asks.
+Pulling new code does not update your database. Migrations are not applied automatically, and the Edge Functions only change once you redeploy them. `npx create-alopex@latest` does all of it; the steps below are for updating by hand. Find your version below and do what each change asks.
 
-For every release: `git pull`, then `supabase db push --linked` for new migrations (keep `--linked`: since Supabase CLI v3 a plain `db push` targets a local database, not your project), then rebuild or restart the sync jobs (`docker compose up -d --build`, or nothing for cron or launchd, which run the new files on their next run).
+For every release: `git pull`, then `supabase db push --linked` for new migrations (keep `--linked`: since Supabase CLI v3 a plain `db push` targets a local database, not your project), then `supabase functions deploy` for changed functions.
 
 To roll a change back: run its file from `supabase/rollbacks/` in the Supabase SQL editor (or with `psql`), then `supabase migration repair --status reverted <version> --linked` (the version is the number at the start of the file name). Without the repair, a later `supabase db push --linked` still counts the migration as applied and does not bring it back.
 
 ## Release notes, newest first
 
 ## Unreleased
+
+### The old Node sync (setup.sh, Docker, GitHub Actions, cron) is removed
+- **Who:** only installs made with `./setup.sh`, `docker compose` or the `sync.yml` workflow in a fork. `npx create-alopex` installs are not affected: their sync already runs in Supabase (pg_cron + Edge Functions).
+- That path counted moves between your own accounts as both spending and income, had no flow rules or transfer pairs, and GitHub stops a fork's scheduled workflow after 60 days without commits, so the sync went quiet.
+- **Move over:** the installer looks for its own layout, so give it your old settings first: `mkdir -p alopex/backend && cp <your old clone>/.env alopex/backend/.env`, then run `npx create-alopex@latest` next to that `alopex` folder and keep your Supabase project when it asks. It reuses `.env` (your push keys too, so subscribed phones keep working), sets the two Vault secrets the pg_cron jobs need and deploys the functions. Coinbase: the installer does not set it up; add the Edge Function secrets `COINBASE_API_KEY_NAME`, `COINBASE_API_PRIVATE_KEY` and `COINBASE_USER_ID` (see supabase/functions/README.md). Then stop the old jobs: `docker compose down`, disable the Sync workflow in your fork, or remove the cron/launchd entries. Running both would spend your banks' ~4 daily calls twice.
+- **Roll back:** check out the previous tag; nothing in the database changed.
 
 ### A ruled Transfer you change back counts as spending again
 - **Function:** `post-sync` changed. Run `supabase functions deploy post-sync`. No migration.

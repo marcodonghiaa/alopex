@@ -156,7 +156,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
 
     // Fetch an immediate balance for each linked account instead of leaving
     // it invisible until the next scheduled sync (up to 6 hours away) --
-    // same /accounts/{id}/balances call sync-networth.js makes on its
+    // same /accounts/{id}/balances call the bank sync makes on its
     // batch schedule, just run once here for the accounts that just linked.
     // Best-effort: a failure here doesn't fail the link, the batch job
     // catches it up at the next sync regardless.
@@ -189,7 +189,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     }
 
     // A fresh instance has no fx_rates until the first sync, and v_net_worth_eur counts a currency
-    // with no rate as 0. Seed the latest rates now. Best-effort, fx-sync.js keeps them current.
+    // with no rate as 0. Seed the latest rates now. Best-effort, sync-prices keeps them current.
     try {
       const rows = await latestFxRows(savedRows.map((r) => r.currency));
       if (rows.length > 0) {

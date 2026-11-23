@@ -1,4 +1,4 @@
-// Deno port of learned-categories.js. What you set by hand is the best guess for the next
+// What you set by hand is the best guess for the next
 // transaction from the same merchant: before the AI, a new row takes the category you most
 // recently chose for that merchant's other rows (category_source 'manual'). Rules still come first.
 import type { Db } from "./batch-update.ts";

@@ -16,7 +16,7 @@ Deno.test("keeps bank-provided entry_reference", async () => {
   assertEquals(row.amount, 12.5);
 });
 
-// protects=switching from the Node sync; fails_when=the Deno hash differs from transaction-rows.js,
+// protects=rows already stored (some by the old Node sync); fails_when=the derived hash changes,
 // which would insert every reference-less transaction a second time.
 Deno.test("derived references match the Node sync byte for byte", async () => {
   const rows = await buildRows([tx({ entry_reference: null }), tx({ entry_reference: null })], "acc", "user");

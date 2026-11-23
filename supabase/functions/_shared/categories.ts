@@ -1,4 +1,4 @@
-// Deno port of categories.js: the built-in spending categories and what each one means.
+// The built-in spending categories and what each one means.
 export const CATEGORIES = [
   "Shopping", "Entertainment", "Groceries", "Dine Out", "Services", "Housing",
   "Transports", "Experiences", "Income", "Health", "Transfer", "Taxes", "Others",

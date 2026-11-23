@@ -1,6 +1,6 @@
 // Supabase Edge Function: notify
 //
-// The launchd/Docker notifications, moved into Supabase. Body { "job": "worth-it" } sends the
+// Push notifications. Body { "job": "worth-it" } sends the
 // "Worth it?" prompts (every 30 minutes); { "job": "consent" } the bank-access reminders (daily).
 // Push keys come from the VAPID_* secrets; without them nothing is sent. Callers send a project
 // secret key on the apikey header, like sync-bank.

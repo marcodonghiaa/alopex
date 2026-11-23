@@ -50,5 +50,12 @@
         }
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/integrations/docker",
+      "destination": "/integrations",
+      "permanent": true
+    }
   ]
 }

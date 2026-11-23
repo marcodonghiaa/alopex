@@ -4,7 +4,7 @@ This is a solo-maintained project — PRs and issues are welcome, response time 
 
 ## Before opening a PR
 
-1. Run the sync scripts locally against your own Supabase project (see the [Setup](README.md#setup) section) — there's no CI test suite yet, manual verification is the current bar.
+1. Run `npm test` (set `RLS_TEST_DATABASE_URL` to a throwaway Postgres to include the database tests) and, for Edge Function changes, `deno test` as in `.github/workflows/test.yml`. CI runs both. Test files run one at a time: the database tests share one Postgres server, and its roles (and their settings) are server-wide, so two files applying migrations at once collide.
 2. For schema changes, add a new file under `supabase/migrations/`, never edit an existing one.
 3. Keep PRs scoped to one change — easier to review, easier to revert if something breaks.
 

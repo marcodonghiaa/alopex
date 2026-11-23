@@ -19,7 +19,7 @@ Facts to cite (checked 2026-11-09):
 - Money: net worth in EUR, USD or GBP, with daily history.
 - Categories: the user's rules first; optional Google Gemini (only with the user's own key) sorts the rest.
 - Also: spending by category with transfers and refunds excluded, subscription detection, Splitwise shared costs, CSV import, push reminders, installable phone app.
-- Hosting: the user's own Supabase and Vercel accounts, on free plans. The installer needs no GitHub account. To update, run `npx create-alopex` again in the same folder. Docker (`docker compose up`) runs the sync and dashboard on a home server, still with a Supabase project.
+- Hosting: the user's own Supabase and Vercel accounts, on free plans. The installer needs no GitHub account. To update, run `npx create-alopex` again in the same folder.
 - Safety: Alopex cannot move money or make payments. Sync logs hold counts, never names or amounts.
 - Not included: banks outside Europe, real-time balances, budgets, savings goals, forecasts.
 - Alopex is a tracking tool, not financial advice.
@@ -40,7 +40,6 @@ Facts to cite (checked 2026-11-09):
 - [Supabase](https://alopex.finance/integrations/supabase): Your own database; the sync runs inside it every 6 hours
 - [Vercel](https://alopex.finance/integrations/vercel): The dashboard on your own Vercel account, deployed by the installer
 - [CSV and PDF import](https://alopex.finance/integrations/csv-import): Past net worth, bank statements and trades
-- [Docker](https://alopex.finance/integrations/docker): Run the sync and dashboard on your own server
 
 ## Roadmap
 - [Roadmap](https://alopex.finance/roadmap): What is in development and next; each item is a GitHub issue you can vote on

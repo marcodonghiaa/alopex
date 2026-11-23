@@ -1,4 +1,4 @@
-// Deno port of gemini-classify.js: sends a batch of transactions to Gemini and expects back a
+// Sends a batch of transactions to Gemini and expects back a
 // JSON array of {entry_reference, <resultKey>} constrained to resultEnum.
 // creditor_name and remittance_info are written by whoever sends or receives a payment.
 export const UNTRUSTED_TEXT_NOTE =

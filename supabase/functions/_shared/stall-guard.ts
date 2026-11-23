@@ -1,4 +1,4 @@
-// Deno port of stall-guard.js. Same batch back twice in a row means nothing got written for that
+// Same batch back twice in a row means nothing got written for that
 // user (bad AI answer, failed update). Mark them stuck so the run moves on to other users instead
 // of looping, re-billing the LLM, or stopping everyone's work.
 export function createStallGuard() {

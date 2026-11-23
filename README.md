@@ -58,26 +58,23 @@ A newly linked bank doesn't wait for the next run: its first sync starts right a
 
 `notify` sends "worth it?" prompts hourly and the bank-access reminder daily. Everything covers every user; only the Coinbase sync is single-user (your own API key).
 
-The Node scripts in this repo (`sync-transactions.js`, `classify-flow.js`, ...) are the older Docker, cron or launchd path. They do less than the Edge Functions: no flow rules, own-account or transfer pairing, merchant keys or subscription radar. New installs should use `npx create-alopex`.
-
 Bank linking and the dashboard's other server-side actions (account deletion, holdings, statements, rules) run as Supabase Edge Functions, see [`supabase/functions/README.md`](supabase/functions/README.md).
 
-**Built to keep running:** every outbound call has a 60 s timeout, each scheduled script a 10 minute limit, sync cursors are written atomically (and kept on a volume in Docker), and one user's failing rows can't block anyone else's classification.
+**Built to keep running:** every outbound call has a timeout, each post-sync step runs on its own so one failing step doesn't stop the others, and one user's failing rows can't block anyone else's classification.
 
 ## 🚀 Getting started
 
 Want to look first? Try the [live demo](https://app.alopex.finance/demo): fake data, no sign-up.
 
-Your own copy takes about **30 minutes**, and no computer has to stay on afterwards. Most of the time goes into Enable Banking's signup. The one command needs Node 20+ on your computer; the Codespaces path installs nothing.
+Your own copy takes about **30 minutes**, and no computer has to stay on afterwards. Most of the time goes into Enable Banking's signup. The one command needs Node 20+ on your computer.
 
 ### 1. Create the accounts (about 15 minutes)
 
 | Account | What it's for | Cost |
 |---|---|---|
-| [GitHub](https://github.com/signup) | Codespaces path only: runs the setup (not needed for `npx create-alopex`) | free |
 | [Supabase](https://supabase.com/dashboard) | your database and login | free tier is enough |
 | [Enable Banking](https://enablebanking.com) | the PSD2 connection to your banks | free for your own accounts |
-| [Vercel](https://vercel.com/signup) (sign in with GitHub) | puts the dashboard online over HTTPS | free Hobby plan |
+| [Vercel](https://vercel.com/signup) | puts the dashboard online over HTTPS | free Hobby plan |
 | [Gemini API key](https://aistudio.google.com/apikey) | AI categories and subscription detection | free tier; optional, recommended. Each new transaction (name, description, amount), each Splitwise expense description and any statement PDF you import go to Google; on the free tier Google may use them to improve its models, a paid-tier key opts out |
 
 In Enable Banking, sign up only; setup tells you when to create the app and gives the exact redirect URL.
@@ -91,34 +88,6 @@ npx create-alopex
 ```
 
 It downloads both apps into `./alopex`, signs you in to Supabase and Vercel in your browser, creates the project, tables, Edge Functions and your login, turns on the scheduled sync inside Supabase (pg_cron: no computer, fork or GitHub Actions needed), walks you through Enable Banking and puts the dashboard online. To update, run `npx create-alopex@latest` from the same place or inside the install. See [installer/README.md](installer/README.md).
-
-**Or the guided script in Codespaces:**
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/marcodonghiaa/alopex?quickstart=1)
-
-This opens a terminal in your browser.
-
-Free: 60 hours a month on a personal account, no card needed. First open takes 2-3 minutes. Codespaces has Node 22, the Supabase CLI and gh ready.
-
-Run:
-
-```bash
-./setup.sh
-```
-
-Choose **1, GitHub Actions**. Setup forks this repo to your account, creates or links your Supabase project, applies the schema, deploys the functions, creates your login (the app has no sign-up screen), switches off public sign-ups, stores your keys as secrets of your fork and turns the sync on. When it asks for the `.pem`, drag it from your Downloads onto the file list on the left.
-
-At the end it prints three values for the next step (also saved in `dashboard-values.txt`) and waits for you to open the dashboard and sign in once. Keep the Codespace open.
-
-### 3. Put the dashboard online (about 5 minutes)
-
-Used `npx create-alopex`? Skip this step: it already put the dashboard online.
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmarcodonghiaa%2Falopex-web&project-name=alopex&repository-name=alopex-web&env=VITE_SUPABASE_URL%2CVITE_SUPABASE_PUBLISHABLE_KEY%2CVITE_VAPID_PUBLIC_KEY&envDescription=Printed+by+setup.sh%2C+also+in+dashboard-values.txt&envLink=https%3A%2F%2Fgithub.com%2Fmarcodonghiaa%2Falopex%23-getting-started)
-
-Click **GitHub** first, then **Install Vercel** (All repositories is fine). Paste the three values setup printed and deploy, then open the address under **Domains** on the project page (not a deployment URL) and sign in. Your dashboard tells your database its own address on that first sign-in, so there is nothing to copy back: setup sees it, prints `Done! Open <your address>, sign in as <email>` and bank linking sends you back there. Closed the terminal first? Nothing is lost, the sign-in alone finishes it.
-
-Then delete the Codespace, since it holds your keys: [github.com/codespaces](https://github.com/codespaces), the `...` menu, Delete. GitHub warns about unsaved changes: that's expected, delete anyway. Everything you set up stays in Supabase, GitHub and Vercel.
 
 ### 4. Link a bank and add your investments
 
@@ -138,24 +107,12 @@ Shares of expenses someone else paid come in by themselves. Expenses you paid an
 
 Privacy: the key is stored in Supabase Vault in your own project, never in a table column, and only the `sync-splitwise` function reads it; Alopex only reads from Splitwise, never writes. **Disconnect** deletes the key (and, if you choose, the expenses the sync added; your CSV imports stay); deleting your account deletes both. Splitwise's [API terms](https://dev.splitwise.com/) allow it for your own account and **not for commercial use**: don't offer Splitwise sync as part of a paid service without Splitwise's permission.
 
-Codespaces path: run `./setup.sh` again any time: it keeps what's in `.env`, asks only for what's missing, and applies new migrations and functions. Forgot your password? `./setup.sh --reset-password`.
-
-<details>
-<summary><b>On your own computer or server instead (Docker)</b></summary>
-
-Needs [Docker](https://www.docker.com/products/docker-desktop), the [Supabase CLI](https://supabase.com/docs/guides/cli) and [Node 22](https://nodejs.org). The sync runs only while that machine is on.
+Run `npx create-alopex@latest` again any time: it keeps what's in `.env`, asks only for what's missing, and applies new migrations and functions. Forgot your password? **Forgot password?** on the sign-in page emails you a reset link. Supabase's built-in mailer is rate-limited and may not deliver, so you can also set a new one from your install's `backend` folder (Node 20+):
 
 ```bash
-git clone https://github.com/marcodonghiaa/alopex.git
-git clone https://github.com/marcodonghiaa/alopex-web.git
-cd alopex
-./setup.sh          # choose 2, Docker
-docker compose up -d --build
+read -r -p "Email: " SETUP_EMAIL; read -r -s -p "New password: " SETUP_PASSWORD; echo
+SETUP_EMAIL="$SETUP_EMAIL" SETUP_PASSWORD="$SETUP_PASSWORD" node --env-file=.env first-user.js --reset
 ```
-
-Open http://localhost:3000 (only this computer; set `WEB_BIND=0.0.0.0` in `.env` to reach it from your phone on the same network). With Docker, a newly linked bank's last 90 days of transactions arrive within about 5 minutes. Check your configuration any time with `node env-check.js`.
-
-</details>
 
 <details>
 <summary><b>Manual setup</b></summary>
@@ -163,38 +120,19 @@ Open http://localhost:3000 (only this computer; set `WEB_BIND=0.0.0.0` in `.env`
 1. Create a Supabase project, then `supabase link --project-ref <ref>` and `supabase db push --linked`.
 2. In Enable Banking, create a Production application with redirect URL `https://<ref>.supabase.co/functions/v1/bank-consent-callback` (must match exactly). Activate it by linking one of your own accounts in their panel.
 3. Deploy the functions and set `ENABLE_BANKING_APP_ID` and `ENABLE_BANKING_PRIVATE_KEY` as Edge Function secrets. (`FRONTEND_URL` is optional: the dashboard registers its own address when you sign in.)
-4. In the dashboard, **Authentication -> Users -> Add user** (tick auto-confirm) to create your login, and put its id in `.env` as `USER_ID`.
+4. In the dashboard, **Authentication -> Users -> Add user** (tick auto-confirm) to create your login.
 5. **Authentication -> Sign In / Providers -> User Signups**: turn off *Allow new users to sign up*. Supabase leaves it on, which lets anyone who finds your project URL create an account.
-6. `npm install`, then `cp .env.example .env` and fill it in.
+6. Deploy the dashboard ([alopex-web](https://github.com/marcodonghiaa/alopex-web)) with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 
 </details>
 
 ## 🛠️ Everyday commands
 
-| Task | Command |
+| Task | How |
 |---|---|
-| Run a full sync by hand | `bash run-daily-sync.sh` |
-| Send "worth it?" prompts now | `bash run-notify.sh` |
-| Re-apply changed category rules | `node categorize.js --reapply-rules` |
-| Check your `.env` | `node env-check.js` |
+| Update to the latest version | `npx create-alopex@latest` in your install |
+| Re-apply changed category rules | **Apply to past transactions** on the Rules page |
 | Run the tests | `npm test` |
-
-`--reapply-rules` recategorizes rows the AI or an earlier rule set. Categories you set by hand are never touched (tracked in `transactions.category_source`; categories that predate the column count as hand-set).
-
-## ⏰ Scheduling
-
-With `npx create-alopex` there is nothing to schedule: pg_cron in your Supabase project runs the sync. The options below are for the older setups.
-
-**On GitHub, no computer needed:** in your fork, add the secrets `APP_ID`, `PRIVATE_KEY` (the whole `.pem`), `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `USER_ID` and, if you use them, `GEMINI_API_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `COINBASE_API_KEY_NAME`, `COINBASE_API_PRIVATE_KEY` (Settings -> Secrets and variables -> Actions). Then add the variable `SYNC_ON_GITHUB` = `true` and enable Actions on the fork. [`.github/workflows/sync.yml`](.github/workflows/sync.yml) then syncs every 6 hours, sends "worth it?" prompts hourly and the bank-access reminder daily; run any of them by hand from the Actions tab. Your fork is public, so its list of runs is public too: the sync logs only counts, never names or amounts, and setup keeps logs for 1 day. GitHub can start scheduled runs 10-30 minutes late.
-
-
-Docker runs everything on its own schedule (`scheduler.js`). Without Docker, use cron or launchd:
-
-```cron
-0 */6 * * *    cd /path/to/alopex && bash run-daily-sync.sh
-*/30 * * * *   cd /path/to/alopex && bash run-notify.sh
-0 9 * * *      cd /path/to/alopex && node consent-notice.js
-```
 
 ## 🗄️ Data model
 
@@ -211,8 +149,8 @@ The dashboard reads `security_invoker` views such as `v_net_worth_daily`, `v_tra
 
 ## 🔒 Security
 
-- `.env`, `*.pem` and `last-sync.json*` are gitignored. The Enable Banking key authenticates your app, so treat it like a password.
-- The dashboard only uses the publishable key. The service-role key stays in the sync scripts and Edge Functions.
+- `.env` and `*.pem` are gitignored. The Enable Banking key authenticates your app, so treat it like a password.
+- The dashboard only uses the publishable key. The secret key stays in the Edge Functions and your local `.env`.
 - A Postgres trigger blocks users from editing bank-sourced columns on `transactions`. Only category, type, flow, split and worth-it fields are writable.
 - Two-step sign-in (authenticator app, set up in Settings) is enforced by the database: once a user has an authenticator, a session without the code gets nothing from the API. See UPGRADING.md for recovery.
 - The bank-linking `state` is a single-use token, not a user id, and error text is never reflected into the redirect.

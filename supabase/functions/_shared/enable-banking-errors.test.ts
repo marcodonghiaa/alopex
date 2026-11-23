@@ -20,7 +20,7 @@ Deno.test("ebErrorMessage falls back to the generic copy", () => {
 });
 
 Deno.test("key and no-accounts copy", () => {
-  assertEquals(EB_KEY_INVALID, "The Enable Banking key is invalid: run ./setup.sh again with the .pem.");
+  assertEquals(EB_KEY_INVALID, "The Enable Banking key is invalid: run npx create-alopex@latest again with the .pem.");
   assertEquals(
     EB_NO_ACCOUNTS,
     "Enable Banking didn't share any accounts. Link this bank once on enablebanking.com → API applications → your app → Link accounts, then try again.",

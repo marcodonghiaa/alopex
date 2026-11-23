@@ -2,12 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 
-// Forks of a public repo are public, and so are their GitHub Actions logs: a script may print
-// counts, positions, status codes, error codes/names and fixed text, never personal data.
-// A line-based backstop, not a proof: a renamed variable slips past it.
-
-// Only run by setup.sh, or by hand for the CSV imports, in the user's own terminal: never in a scheduled (public) run.
-const EXCLUDED = ['env-file.js', 'first-user.js', 'net-worth-history.js', 'spend-history.js'];
+// Logs may hold counts, positions, status codes, error codes/names and fixed text, never personal
+// data. A line-based backstop, not a proof: a renamed variable slips past it.
 
 const CONSOLE_CALL = /console\.(log|error|warn|info)\(.*/;
 // Stripped before the checks: the allowed forms that would otherwise look like a leak.
@@ -20,7 +16,7 @@ const LEAKS = [
   /^console\.\w+\((err|error)\)/,
 ];
 
-// The Deno port of the sync, run by pg_cron, plus the functions that touch bank links, holdings
+// The bank sync, run by pg_cron, plus the functions that touch bank links, holdings
 // and statements: counts and codes only, same rules. Their logs are the project's private Supabase
 // logs, but an error message can still quote a database row or a bank's reply, so none is logged.
 const ERROR_TAG_ONLY_PATHS = [
@@ -54,11 +50,6 @@ function leakyLines(file) {
   });
   return offenders;
 }
-
-test('no script logs personal data, raw responses or error messages', () => {
-  const scripts = fs.readdirSync('.').filter((f) => f.endsWith('.js') && !f.endsWith('.test.js') && !EXCLUDED.includes(f));
-  assert.deepStrictEqual(scripts.flatMap(leakyLines), []);
-});
 
 test('the Edge Function sync paths log no personal data, raw responses or error messages', () => {
   assert.deepStrictEqual(ERROR_TAG_ONLY_PATHS.flatMap(leakyLines), []);

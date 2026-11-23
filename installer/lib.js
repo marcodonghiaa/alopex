@@ -8,6 +8,12 @@ function refFromUrl(url) {
   return String(url || '').match(/^https:\/\/([a-z0-9]+)\.supabase\.co\/?$/)?.[1] || '';
 }
 
+// The saved login lives in the project it was made in: on another project it is forgotten, so the
+// login step creates it there (also when that run stops before the login step and is started again).
+function projectEnv(previousRef, ref, url) {
+  return previousRef === ref ? { SUPABASE_URL: url } : { SUPABASE_URL: url, USER_ID: '', LOGIN_EMAIL: '' };
+}
+
 // `supabase projects api-keys --output json`: match by prefix, not by position or field name.
 function pickKeys(keys) {
   const find = (prefix) => keys.find((k) => k.api_key?.startsWith(prefix))?.api_key || '';
@@ -186,4 +192,4 @@ const intro = (app, updating) =>
     ? `Updating ${app}: keeps your settings, applies what's new (a few minutes).`
     : `${app} setup: about 30 minutes the first time, most of it on Enable Banking's site.`;
 
-module.exports = { orgsAfterCreate, loginProblem, banner, intro, projectProblem, doneLine, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, pickKeys, vaultSql, authConfigToml, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };
+module.exports = { orgsAfterCreate, loginProblem, banner, intro, projectProblem, doneLine, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, projectEnv, pickKeys, vaultSql, authConfigToml, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };

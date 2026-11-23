@@ -1,11 +1,10 @@
 // Supabase Edge Function: sync-bank
 //
-// P2 spike: the Node sync-networth + sync-transactions, for ONE account per call, so a
+// Balance and transactions for ONE account per call, so a
 // slow bank can't push the whole run past the 150 s wall clock. Body: { "account_uid": "..." }.
 // Only our own backend may call it, with a project secret key on the apikey header (pg_cron
 // fans out one call per account): every call spends Enable Banking requests, and banks allow
 // ~4 unattended calls a day per account. verify_jwt is off: secret keys are not JWTs.
-// Never run it beside the launchd sync for the same reason.
 
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { signEnableBankingJwt } from "../_shared/enable-banking.ts";

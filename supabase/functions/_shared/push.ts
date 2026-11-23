@@ -1,4 +1,4 @@
-// Deno port of push.js: Web Push shared by the notifications. The send function comes in from
+// Web Push shared by the notifications. The send function comes in from
 // the caller (web-push in notify/index.ts), so this stays testable without npm.
 import { errorTag } from "./log-safe.ts";
 

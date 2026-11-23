@@ -1,4 +1,4 @@
-// Deno port of rules.js: deterministic user-authored rules take priority over the AI.
+// Deterministic user-authored rules take priority over the AI.
 import type { RowUpdate } from "./batch-update.ts";
 
 export const REAPPLY_SOURCES = ["ai", "rule"]; // never 'manual' or 'legacy': hand edits are not ours

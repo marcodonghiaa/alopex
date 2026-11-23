@@ -1,4 +1,4 @@
-// Deno port of classify-type.js: each transaction is a "Subscription" or "One-time". Your type
+// Each transaction is a "Subscription" or "One-time". Your type
 // rules first, then bank transfers (always One-time, no AI call), then the AI. Without an AI (no
 // key, or it fails) the rules and transfers still apply; the rest waits.
 import { applyGroupedUpdates, type Db } from "./batch-update.ts";

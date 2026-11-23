@@ -33,7 +33,7 @@ const MAX_RESULTS = 8;
 
 export const isIsin = (value: string): boolean => /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(value);
 
-// Same labels the price sync stores in portfolio_holdings.asset_type (yahoo-quote.js).
+// Same labels the price sync stores in portfolio_holdings.asset_type
 const ASSET_TYPE: Record<string, string> = { EQUITY: "Stock", ETF: "ETF", MUTUALFUND: "Fund", BOND: "Bond" };
 
 type Json = Record<string, unknown>;

@@ -1,6 +1,6 @@
-// Deno port of transaction-rows.js: Enable Banking transactions -> rows of public.transactions.
-// The derived entry_reference must stay byte-identical to the Node one (same key, SHA-1),
-// or the switch from the Node sync would insert every reference-less transaction twice.
+// Enable Banking transactions -> rows of public.transactions.
+// The derived entry_reference must stay byte-identical to what is already stored (same key, SHA-1,
+// as the old Node sync made it), or every stored reference-less transaction would be inserted twice.
 
 import { normalizeMerchant } from "./merchant-key.ts";
 

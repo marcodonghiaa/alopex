@@ -1,4 +1,4 @@
-// Deno port of user-batch.js. The jobs run with the service role and send bank-provided text to
+// The jobs run with the service role and send bank-provided text to
 // an LLM. Mixing users in one batch lets text one user receives (a payer controls the payment
 // reference) influence how other users' rows are labelled, so each batch is scoped to one user.
 import type { Db } from "./batch-update.ts";

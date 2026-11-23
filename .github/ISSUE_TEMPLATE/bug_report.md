@@ -8,7 +8,7 @@ labels: bug
 
 **What you expected**
 
-**Which script/step** (e.g. `setup.sh`, `sync-transactions.js`, an Edge Function):
+**Which step** (e.g. `npx create-alopex`, the bank sync, an Edge Function):
 
 **Logs** (redact any real account data, tokens, or keys):
 
@@ -19,4 +19,4 @@ paste here
 **Environment**
 - OS:
 - Node version:
-- Self-hosted via: Docker / launchd / cron
+- Installed with: `npx create-alopex` / by hand

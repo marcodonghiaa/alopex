@@ -1,6 +1,6 @@
 const { fetchWithTimeout } = require('./http');
 
-// The app has no sign-up screen, so setup.sh creates the one login here through the Auth
+// The app has no sign-up screen, so the installer creates the one login here through the Auth
 // admin API (secret key). Re-running setup finds the user that already has this email
 // instead of failing; its password is left as it is.
 async function ensureUser({ url, secretKey, email, password }, doFetch = fetchWithTimeout) {
@@ -27,8 +27,8 @@ async function findUserByEmail({ url, headers, email }, doFetch) {
   return ((await listed.json()).users || []).find((u) => u.email?.toLowerCase() === email.toLowerCase());
 }
 
-// `setup.sh --reset-password`: the app has no "forgot password" screen, so a forgotten
-// password is reset here with the secret key, no email needed.
+// A forgotten password, reset with the secret key and no email (Supabase's built-in mailer may
+// never deliver "Forgot password?"): `node --env-file=.env first-user.js --reset` in backend/.
 async function resetPassword({ url, secretKey, email, password }, doFetch = fetchWithTimeout) {
   const headers = { apikey: secretKey, Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' };
   const user = await findUserByEmail({ url, headers, email }, doFetch);
@@ -51,8 +51,8 @@ module.exports = { ensureUser, resetPassword };
 if (require.main === module) {
   const run = process.argv.includes('--reset') ? resetPassword : ensureUser;
   run({
-    url: process.env.SETUP_URL,
-    secretKey: process.env.SETUP_SECRET_KEY,
+    url: process.env.SETUP_URL || process.env.SUPABASE_URL,
+    secretKey: process.env.SETUP_SECRET_KEY || process.env.SUPABASE_SECRET_KEY,
     email: process.env.SETUP_EMAIL,
     password: process.env.SETUP_PASSWORD,
   }).then(

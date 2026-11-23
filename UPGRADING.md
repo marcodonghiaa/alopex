@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Rejecting a transfer pair keeps a currency exchange or top-up a transfer
+- **Migration:** `20261229000000_reject_pair_keeps_bank_transfer`. Apply it with `supabase db push --linked`. No function change; update the dashboard for the demo to match.
+- A suggested transfer pair can have a currency exchange or wallet top-up on one side, which the bank already marks as a transfer. Rejecting the pair turned that side into spending or income for good. Now only the other side counts again; the exchange or top-up stays a transfer. Rows rejected before this update stay as they are: set such a row's category to Transfer to move it back.
+- **Roll back:** run `supabase/rollbacks/20261229000000_reject_pair_keeps_bank_transfer.down.sql`, then `supabase migration repair --status reverted 20261229000000 --linked`.
+
 ### Renaming or deleting a category keeps how each row was categorized
 - **Migration:** `20261228000000_category_move_keeps_source`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - Renaming or deleting a category marked every moved transaction as picked by hand. The next sync then copied that category onto other charges from the same merchants, and your rules stopped applying to the moved rows. A move now keeps each row as it was (AI, rule or yours). Rows moved before this update stay marked as picked by hand.

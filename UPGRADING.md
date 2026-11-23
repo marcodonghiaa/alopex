@@ -10,6 +10,12 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Rename one transaction without renaming the others
+- **Migration:** `20261226000000_rename_one_or_by_price`. Apply it with `supabase db push --linked`, then redeploy the dashboard. No function change.
+- Renaming a transaction now asks: all from this merchant (as before) or only this one. Only this one changes just that row, and future rows keep their name.
+- Apple, PayPal and Google bill unrelated things under one bank name (iCloud and Apple Music are both "Apple.com"). Renaming one of those now renames only charges of about the same price (within 10%), past and future, so two Apple subscriptions keep two names. A name you gave one of them before this update stays on all of them until you rename each one.
+- **Roll back:** run `supabase/rollbacks/20261226000000_rename_one_or_by_price.down.sql`, then `supabase migration repair --status reverted 20261226000000 --linked`. Names set per price are lost; names already on transactions stay.
+
 ### One bad holding no longer stops prices for everyone
 - **Migration:** `20261225000000_holding_quantity_checks`. Apply it with `supabase db push --linked`, then `supabase functions deploy sync-prices`.
 - A holding whose quantity was not a real number (NaN, infinite or too big to value, which only a hand-made API call could save) made the daily price sync fail for every user. The sync now skips such a holding, and new holdings must have a finite quantity of zero or more. Holdings already stored are not checked or changed; one with such a quantity gets no new price until you fix or delete it.

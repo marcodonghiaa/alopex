@@ -31,13 +31,41 @@ Deno.test("worth-it window: created 3-24 h ago, booked within 7 days (UTC), one 
 
 Deno.test("refunded, deleted and transfer rows are not prompted", async () => {
   const { db } = recorder([
-    { entry_reference: "ok", flow_type: "spend", deleted_at: null },
-    { entry_reference: "new", flow_type: null, deleted_at: null },
+    { entry_reference: "ok", amount: 20, flow_type: "spend", deleted_at: null },
+    { entry_reference: "new", amount: 20, flow_type: null, deleted_at: null },
     { entry_reference: "refunded", flow_type: "refunded", deleted_at: null },
     { entry_reference: "deleted", flow_type: "spend", deleted_at: "2026-10-27T10:00:00Z" },
     { entry_reference: "transfer", flow_type: "transfer", deleted_at: null },
   ]);
   assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["ok", "new"]);
+});
+
+// protects=Worth it? weighs only my share; fails_when=a charge paid for others (or mostly) is prompted, or the push shows the whole charge
+Deno.test("a split charge is prompted on my share only", async () => {
+  const { db } = recorder([
+    { entry_reference: "mine", amount: 40, personal_amount: null, flow_type: "spend", deleted_at: null },
+    { entry_reference: "half", amount: 40, personal_amount: 20, flow_type: "spend", deleted_at: null },
+    { entry_reference: "small", amount: 40, personal_amount: 10, flow_type: "spend", deleted_at: null },
+    { entry_reference: "others", amount: 40, personal_amount: 0, flow_type: "spend", deleted_at: null },
+  ]);
+  assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["mine", "half"]);
+  const body = buildPayload([{ entry_reference: "half", creditor_name: "Pizza", amount: 40, personal_amount: 20, currency: "EUR", category: "Dine Out" }]).body;
+  assertEquals(body, "€20.00 at Pizza — Dine Out");
+  // Polish 1 #10: a code Intl doesn't know keeps the plain form.
+  const odd = buildPayload([{ entry_reference: "x", creditor_name: "Shop", amount: 12.5, personal_amount: null, currency: "XX1", category: "Shopping" }]).body;
+  assertEquals(odd, "12.5 XX1 at Shop — Shopping");
+  // Polish 5 #6: the app formats in en-GB by default, where dollars read "US$".
+  const usd = buildPayload([{ entry_reference: "u", creditor_name: "Shop", amount: 50, personal_amount: null, currency: "USD", category: "Shopping" }]).body;
+  assertEquals(usd, "US$50.00 at Shop — Shopping");
+});
+
+// Polish 1 #11: the €15 line itself, and numeric values arriving as strings.
+Deno.test("a share of exactly the minimum is prompted, also when values come as strings", async () => {
+  const { db } = recorder([
+    { entry_reference: "edge", amount: "40.00", personal_amount: "15.00", flow_type: "spend", deleted_at: null },
+    { entry_reference: "under", amount: "40.00", personal_amount: "14.99", flow_type: "spend", deleted_at: null },
+  ]);
+  assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["edge"]);
 });
 
 Deno.test("every user with a push subscription is prompted, each once", async () => {
@@ -140,10 +168,10 @@ Deno.test("runConsent reminds only users with a subscription, and counts deliver
 // ("Amazon Mark* E46na7fw3") reaches the lock screen, or the user's own name for it is ignored
 Deno.test("the push shows the clean merchant name, or the name the user gave it", () => {
   const tx = (creditor_name: string | null, custom_name: string | null = null) => ({ entry_reference: "r1", creditor_name, custom_name, amount: 43.03, currency: "USD", category: "Shopping" });
-  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3")]).body, "43.03 USD at Amazon — Shopping");
-  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3", "Birthday gift")]).body, "43.03 USD at Birthday gift — Shopping");
-  assertEquals(buildPayload([tx(null)]).body, "43.03 USD at a merchant — Shopping");
-  assertEquals(buildPayload([tx("   ", "  ")]).body, "43.03 USD at a merchant — Shopping");
+  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3")]).body, "US$43.03 at Amazon — Shopping");
+  assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3", "Birthday gift")]).body, "US$43.03 at Birthday gift — Shopping");
+  assertEquals(buildPayload([tx(null)]).body, "US$43.03 at a merchant — Shopping");
+  assertEquals(buildPayload([tx("   ", "  ")]).body, "US$43.03 at a merchant — Shopping");
   assertEquals(
     buildPayload([tx("Tst*zuckers Bagels & S"), tx("PAYPAL *SPOTIFY"), tx(""), tx("X")]).body,
     "4 purchases today: Zuckers Bagels, SPOTIFY, a merchant +1 more",

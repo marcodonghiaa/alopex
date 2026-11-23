@@ -13,7 +13,7 @@ async function fetchEligibleTransactions(supabase, userId, now) {
   const bookingFloor = new Date(now.getTime() - MAX_BOOKING_AGE_DAYS * 86400 * 1000).toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('transactions')
-    .select('entry_reference, account_uid, creditor_name, custom_name, amount, currency, category, flow_type, deleted_at')
+    .select('entry_reference, account_uid, creditor_name, custom_name, amount, personal_amount, currency, category, flow_type, deleted_at')
     .eq('user_id', userId)
     .eq('credit_debit_indicator', 'DBIT')
     .in('category', DISCRETIONARY_CATEGORIES)
@@ -24,9 +24,13 @@ async function fetchEligibleTransactions(supabase, userId, now) {
     .gte('created_at', new Date(now.getTime() - MAX_AGE_HOURS * 3600 * 1000).toISOString())
     .or(`booking_date.gte.${bookingFloor},booking_date.is.null`);
   if (error) throw error;
-  // A refunded, deleted or transfer row isn't a purchase to ask about.
-  return data.filter((t) => !t.deleted_at && t.flow_type !== 'refunded' && t.flow_type !== 'transfer');
+  // A refunded, deleted or transfer row isn't a purchase to ask about; nor is one where my share
+  // of a split is under the minimum (e.g. paid entirely for others).
+  return data.filter((t) => !t.deleted_at && t.flow_type !== 'refunded' && t.flow_type !== 'transfer' && myShare(t) >= MIN_AMOUNT);
 }
+
+// My part of a charge: the split share if one is set, else all of it (the DB keeps 0 <= share <= amount).
+const myShare = (t) => Number(t.personal_amount ?? t.amount);
 
 // One transaction: the specific deep-link prompt. Several at once (e.g. an hour
 // where multiple purchases all crossed the 3h line together, or an old backlog
@@ -35,12 +39,21 @@ async function fetchEligibleTransactions(supabase, userId, now) {
 // The name the app shows: the user's own name for it, else the bank's without codes.
 const merchant = (t) => (t.custom_name && t.custom_name.trim()) || cleanMerchantName(t.creditor_name)?.trim() || 'a merchant';
 
+// "€20.00" and "US$50.00", like the app's default (en-GB) format; a code Intl doesn't know keeps the plain "20 XX1".
+const money = (n, currency) => {
+  try {
+    return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(n);
+  } catch {
+    return `${n} ${currency}`;
+  }
+};
+
 function buildPayload(transactions) {
   if (transactions.length === 1) {
     const tx = transactions[0];
     return {
       title: 'Worth it?',
-      body: `${tx.amount} ${tx.currency} at ${merchant(tx)} — ${tx.category}`,
+      body: `${money(myShare(tx), tx.currency)} at ${merchant(tx)} — ${tx.category}`,
       url: `/transactions?highlight=${encodeURIComponent(tx.entry_reference)}`,
     };
   }

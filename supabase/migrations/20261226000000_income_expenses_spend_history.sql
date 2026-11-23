@@ -5,6 +5,8 @@
 -- Income and Transactions showed no spending for imported months. Expenses are now the sum of
 -- v_spend_by_category_monthly (bank spend, Splitwise shares, and imported totals for months
 -- without bank spend), so both views always agree. Income and the columns are unchanged.
+-- This view now depends on v_spend_by_category_monthly: a migration that changes that view's
+-- columns must drop and recreate this one too.
 
 create or replace view public.v_income_vs_expenses_monthly with (security_invoker = true) as
  select m.user_id, m.month, sum(m.income_eur) as income_eur, sum(m.expenses_eur) as expenses_eur

@@ -153,6 +153,7 @@ async function main() {
 
   step('Supabase project');
   let ref = lib.refFromUrl(saved.SUPABASE_URL);
+  const previousRef = ref;
   let dbPassword = '';
   if (ref && !(await yes(`Keep using project ${ref} from your last run?`, true))) ref = '';
   if (!ref && (await yes('Use a Supabase project you already have? (New here? Press Enter)', false))) {
@@ -210,7 +211,7 @@ async function main() {
   console.log('Tables ready.');
 
   step('Your login');
-  if (saved.USER_ID && saved.LOGIN_EMAIL) {
+  if (lib.loginKept(saved, previousRef, ref)) {
     console.log(`Already set up for ${saved.LOGIN_EMAIL}. Forgot the password? In ${backend}: ./setup.sh --reset-password`);
   } else {
     console.log('The app has no sign-up screen: your login is created here. Save the password in your password manager.');

@@ -10,6 +10,16 @@ test('refFromUrl reads the project ref, rejects anything else', () => {
   assert.equal(lib.refFromUrl(undefined), '');
 });
 
+// H006: re-running against another project must create the login there, or closing sign-ups locks the owner out.
+test('loginKept: skip creating the login only when it was made on this same project', () => {
+  const saved = { USER_ID: 'u1', LOGIN_EMAIL: 'me@example.com' };
+  assert.equal(lib.loginKept(saved, 'abc', 'abc'), true);
+  assert.equal(lib.loginKept(saved, 'abc', 'xyz'), false);
+  assert.equal(lib.loginKept(saved, '', 'xyz'), false);
+  assert.equal(lib.loginKept({ USER_ID: 'u1' }, 'abc', 'abc'), false);
+  assert.equal(lib.loginKept({}, 'abc', 'abc'), false);
+});
+
 test('pickKeys matches by prefix, not position', () => {
   const keys = [{ api_key: 'eyJlegacy' }, { api_key: 'sb_secret_x' }, { api_key: 'sb_publishable_y' }];
   assert.deepEqual(lib.pickKeys(keys), { publishable: 'sb_publishable_y', secret: 'sb_secret_x' });

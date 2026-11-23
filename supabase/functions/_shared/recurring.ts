@@ -100,14 +100,18 @@ function clusters(group: Charge[], aggregator: boolean): Charge[][] {
 export function detectStreams(charges: Charge[], today: string, keep: ReadonlySet<string> = new Set()): DetectedStream[] {
   const groups = new Map<string, Charge[]>();
   for (const c of charges) {
+    // A type you set yourself is final both ways: Subscription by hand counts even when the bank calls it a
+    // transfer (paying a person for a shared plan); One-time by hand never counts (below).
+    const mine = c.transaction_type_source === "manual";
     if (
       c.credit_debit_indicator !== "DBIT" || c.flow_type !== "spend" || c.deleted_at !== null ||
       c.merchant_key === null || EXCLUDED_CATEGORIES.has(c.category ?? "") ||
-      isTransferCode(c.bank_transaction_code) || c.booking_date > today || Number(c.amount) === 0 ||
+      (isTransferCode(c.bank_transaction_code) && !(mine && c.transaction_type === "Subscription")) ||
+      c.booking_date > today || Number(c.amount) === 0 ||
       // Too big to store (see MAX_*): no real subscription has a 1000-character key or a 1e12 charge.
       chars(c.merchant_key) > MAX_MERCHANT_KEY || !sane(c.amount) || !sane(c.amount_eur) ||
       // One-time you set yourself is final: neither the tag nor the rhythm (R3) brings it back.
-      (c.transaction_type === "One-time" && c.transaction_type_source === "manual")
+      (c.transaction_type === "One-time" && mine)
     ) continue;
     // R1: currency is not part of the key, so a currency switch stays one stream.
     const key = `${c.merchant_key}|${c.account_uid}`;

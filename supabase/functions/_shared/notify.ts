@@ -45,10 +45,10 @@ const myShare = (t: Row): number => Number(t.personal_amount ?? t.amount);
 // The name the app shows: the user's own name for it, else the bank's without codes ("Amazon Mark* E46na7fw3" -> "Amazon").
 const merchant = (t: Row): string => t.custom_name?.trim() || cleanMerchantName(t.creditor_name)?.trim() || "a merchant";
 
-// "€20.00", like the app; a code Intl doesn't know keeps the plain "20 XX1".
+// "€20.00" and "US$50.00", like the app's default (en-GB) format; a code Intl doesn't know keeps the plain "20 XX1".
 const money = (n: number, currency: string): string => {
   try {
-    return new Intl.NumberFormat("en", { style: "currency", currency }).format(n);
+    return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(n);
   } catch {
     return `${n} ${currency}`;
   }

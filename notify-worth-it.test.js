@@ -109,16 +109,19 @@ test('a split charge is prompted on my share only', async () => {
   // Polish 1 #10: a code Intl doesn't know keeps the plain form.
   const odd = buildPayload([{ entry_reference: 'x', creditor_name: 'Shop', amount: 12.5, personal_amount: null, currency: 'XX1', category: 'Shopping' }]).body;
   assert.strictEqual(odd, '12.5 XX1 at Shop — Shopping');
+  // Polish 5 #6: the app formats in en-GB by default, where dollars read "US$".
+  const usd = buildPayload([{ entry_reference: 'u', creditor_name: 'Shop', amount: 50, personal_amount: null, currency: 'USD', category: 'Shopping' }]).body;
+  assert.strictEqual(usd, 'US$50.00 at Shop — Shopping');
 });
 
 // protects=the push names the shop like the app does; fails_when=the bank's raw text with codes
 // ("Amazon Mark* E46na7fw3") reaches the lock screen, or the user's own name for it is ignored
 test('the push shows the clean merchant name, or the name the user gave it', () => {
   const tx = (creditor_name, custom_name = null) => ({ entry_reference: 'r1', creditor_name, custom_name, amount: 43.03, currency: 'USD', category: 'Shopping' });
-  assert.strictEqual(buildPayload([tx('Amazon Mark* E46na7fw3')]).body, '$43.03 at Amazon — Shopping');
-  assert.strictEqual(buildPayload([tx('Amazon Mark* E46na7fw3', 'Birthday gift')]).body, '$43.03 at Birthday gift — Shopping');
-  assert.strictEqual(buildPayload([tx(null)]).body, '$43.03 at a merchant — Shopping');
-  assert.strictEqual(buildPayload([tx('   ', '  ')]).body, '$43.03 at a merchant — Shopping');
+  assert.strictEqual(buildPayload([tx('Amazon Mark* E46na7fw3')]).body, 'US$43.03 at Amazon — Shopping');
+  assert.strictEqual(buildPayload([tx('Amazon Mark* E46na7fw3', 'Birthday gift')]).body, 'US$43.03 at Birthday gift — Shopping');
+  assert.strictEqual(buildPayload([tx(null)]).body, 'US$43.03 at a merchant — Shopping');
+  assert.strictEqual(buildPayload([tx('   ', '  ')]).body, 'US$43.03 at a merchant — Shopping');
   assert.strictEqual(
     buildPayload([tx('Tst*zuckers Bagels & S'), tx('PAYPAL *SPOTIFY'), tx(''), tx('X')]).body,
     '4 purchases today: Zuckers Bagels, SPOTIFY, a merchant +1 more',

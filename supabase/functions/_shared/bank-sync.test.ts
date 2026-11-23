@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { type Deps, recordSyncError, syncAccountBalance, syncAccountTransactions, syncErrorPatch, syncStatus } from "./bank-sync.ts";
+import { type Deps, recordSyncError, signOrRecord, syncAccountBalance, syncAccountTransactions, syncErrorPatch, syncStatus } from "./bank-sync.ts";
 import { memoryDb } from "./memory-db.test-helper.ts";
 
 const EB = "https://api.enablebanking.com/accounts";
@@ -498,3 +498,17 @@ async function quietly<T>(fn: () => Promise<T>): Promise<T> {
     console.error = original;
   }
 }
+
+// H039: a missing or broken Enable Banking key used to throw before any sync_error was saved,
+// so the account just went stale with no message on the dashboard.
+Deno.test("signOrRecord: a key that can't sign is recorded on the account as KEY_INVALID", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null, sync_error_at: null }] });
+  const token = await quietly(() => signOrRecord(db, account({ sync_error: null }), () => Promise.reject(new Error("bad pem")), "t"));
+  assertEquals(token, null);
+  assertEquals(db.tables.accounts[0], { uid: "pk", sync_error: "KEY_INVALID", sync_error_at: "t" });
+});
+Deno.test("signOrRecord: a good key returns the token and leaves the account alone", async () => {
+  const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null, sync_error_at: null }] });
+  assertEquals(await signOrRecord(db, account({ sync_error: null }), () => Promise.resolve("jwt"), "t"), "jwt");
+  assertEquals(db.tables.accounts[0].sync_error, null);
+});

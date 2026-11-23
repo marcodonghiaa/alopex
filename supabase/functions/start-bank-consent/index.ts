@@ -11,12 +11,12 @@
 // never leaves the browser at all ("Failed to send a request").
 
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
-import { EB_KEY_INVALID, ebErrorMessage, signEnableBankingJwt } from "../_shared/enable-banking.ts";
+import { EB_KEY_INVALID, signEnableBankingJwt } from "../_shared/enable-banking.ts";
 import { serveWithCors } from "../_shared/origins.ts";
 import { isBankName, isCountryCode, MAX_OPEN_CONSENTS } from "../_shared/validate.ts";
 import { CONSENT_WINDOW_MS } from "../_shared/consent-claim.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
-import { consentEnd } from "../_shared/bank-info.ts";
+import { consentEnd, requestConsentUrl } from "../_shared/bank-info.ts";
 
 Deno.serve(serveWithCors(async (req, json, origin) => {
   if (req.method !== "POST") {
@@ -82,29 +82,14 @@ Deno.serve(serveWithCors(async (req, json, origin) => {
   // Banks cap the consent (maximum_consent_validity); asking past it can fail the link.
   const validUntil = await consentEnd(token, body.country, body.bankName, Date.now());
 
-  try {
-    const res = await fetch("https://api.enablebanking.com/auth", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        access: { valid_until: validUntil },
-        aspsp: { name: body.bankName, country: body.country },
-        state: pending.id,
-        redirect_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/bank-consent-callback`,
-        psu_type: "personal",
-      }),
-    });
-    if (!res.ok) {
-      console.error("Enable Banking error:", res.status);
-      return json({ error: ebErrorMessage(res.status) }, 502);
-    }
-    const data = await res.json();
-    if (!data.url) {
-      console.error("Enable Banking error: no consent url");
-      return json({ error: "Enable Banking error, please try again" }, 502);
-    }
-    return json({ url: data.url });
-  } catch {
-    return json({ error: "Something went wrong, please try again" }, 500);
-  }
+  const result = await requestConsentUrl({
+    token,
+    bankName: body.bankName,
+    country: body.country,
+    validUntil,
+    state: pending.id,
+    redirectUrl: `${Deno.env.get("SUPABASE_URL")}/functions/v1/bank-consent-callback`,
+    discard: () => supabase.from("pending_bank_consents").delete().eq("id", pending.id),
+  });
+  return "url" in result ? json({ url: result.url }) : json({ error: result.error }, result.status);
 }));

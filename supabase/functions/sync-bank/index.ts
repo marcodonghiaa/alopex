@@ -14,6 +14,7 @@ import {
   ACCOUNT_COLUMNS,
   errorTag,
   recordSyncError,
+  signOrRecord,
   type SyncAccount,
   syncAccountBalance,
   syncAccountTransactions,
@@ -63,7 +64,8 @@ Deno.serve(async (req) => {
     fetch: (url: string | URL | Request, init: RequestInit = {}) => fetch(url, { ...init, signal: deadline }),
     supabase,
   };
-  const token = await signEnableBankingJwt();
+  const token = await signOrRecord(supabase, account, signEnableBankingJwt, new Date().toISOString());
+  if (!token) return fail(500, "Enable Banking key invalid");
   const today = new Date().toISOString().slice(0, 10);
 
   // Balance first: it is the call that marks a consent the bank closed early (EXPIRED_SESSION).

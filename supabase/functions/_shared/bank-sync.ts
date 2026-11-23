@@ -47,6 +47,24 @@ export async function recordSyncError(
   return syncError;
 }
 
+// sync-bank's Enable Banking token. A missing or malformed key used to throw before any
+// sync_error was saved, so the account went stale with no message (H039): record it instead.
+export async function signOrRecord(
+  // deno-lint-ignore no-explicit-any
+  supabase: { from(table: string): any },
+  account: SyncAccount,
+  sign: () => Promise<string>,
+  nowIso: string,
+): Promise<string | null> {
+  try {
+    return await sign();
+  } catch (err) {
+    console.error(`Enable Banking key could not sign: ${errorTag(err)}`);
+    await recordSyncError(supabase, account, "KEY_INVALID", null, nowIso);
+    return null;
+  }
+}
+
 // sync-bank's reply status, which pg_net keeps in net._http_response: 429 when the bank's daily
 // limit for unattended fetches (often 4) is reached, which the next run retries, 502 otherwise.
 export function syncStatus(cursor: string | null, error: string | null): number {

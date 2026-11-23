@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### A ruled Transfer you change back counts as spending again
+- **Function:** `post-sync` changed. Run `supabase functions deploy post-sync`. No migration.
+- A row that a rule or a learned category made a Transfer stayed out of spending even after its category was changed to something else. The next sync now counts it by its direction again (spend or income), unless a flow rule still matches. Only rows from the last 90 days are re-checked.
+- **Roll back:** redeploy the previous `post-sync` (`git checkout <previous tag> -- supabase/functions && supabase functions deploy post-sync`).
+
 ### Older foreign-currency Splitwise shares count in spending
 - **Migration:** `20261230000000_fx_backfill_splitwise`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - A Splitwise share in another currency (USD, GBP, CHF and so on) from before your oldest stored exchange rate had no euro amount, so it was missing from Spending, Cash flow and Budgets. The next post-sync now fetches the past rates those shares need, as it already did for bank transactions.

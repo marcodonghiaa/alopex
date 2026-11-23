@@ -121,7 +121,7 @@ async function relearnAiRows(db: Db): Promise<number> {
   for (let from = 0;; from += PAGE) {
     const { data, error } = await db
       .from("transactions")
-      .select("user_id, account_uid, entry_reference, creditor_name, category, category_source")
+      .select("user_id, account_uid, entry_reference, creditor_name, credit_debit_indicator, category, category_source")
       .eq("category_source", "ai")
       .gte("booking_date", since)
       .is("deleted_at", null)
@@ -155,7 +155,7 @@ async function relearnAiRows(db: Db): Promise<number> {
 function applyRulesOnly(db: Db, rules: Rule[], timeLeft: () => boolean): Promise<number> {
   return walkNullRows(db, {
     timeLeft,
-    select: "user_id, account_uid, entry_reference, creditor_name, remittance_info",
+    select: "user_id, account_uid, entry_reference, creditor_name, credit_debit_indicator, remittance_info",
     nullColumn: "category",
     handlePage: async (rows) => {
       const { matched, unmatched } = applyRules(rows, rules);

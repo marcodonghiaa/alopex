@@ -12,7 +12,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
 import { errorTag } from "../_shared/log-safe.ts";
-import { geminiRequest, parseGeminiRows, parseStatementRequest } from "../_shared/statement-pdf.ts";
+import { geminiRequest, geminiRefusal, parseGeminiRows, parseStatementRequest } from "../_shared/statement-pdf.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
 
 const TIMEOUT_MS = 90_000;
@@ -62,5 +62,8 @@ Deno.serve(serveWithCors(async (req, json) => {
     console.error(`Gemini error ${res.status}`);
     return json({ error: `The AI couldn't read this PDF (error ${res.status})` }, 502);
   }
-  return json({ rows: parseGeminiRows(await res.json()) });
+  const answer = await res.json();
+  const refused = geminiRefusal(answer);
+  if (refused) return json({ error: refused }, 422);
+  return json({ rows: parseGeminiRows(answer) });
 }));

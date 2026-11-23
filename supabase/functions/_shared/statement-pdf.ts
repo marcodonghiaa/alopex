@@ -62,6 +62,19 @@ const isDay = (s: string) => {
   return d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
 };
 
+/**
+ * Why Gemini's answer can't be trusted to hold every row, as a message for the user, or null when
+ * it finished normally. A cut-off or blocked answer used to read as "No transactions found" (H065).
+ */
+export function geminiRefusal(response: unknown): string | null {
+  const r = response as { candidates?: Array<{ finishReason?: string }>; promptFeedback?: { blockReason?: string } };
+  if (r?.promptFeedback?.blockReason) return "The AI refused to read this PDF. Try a CSV export from your bank instead.";
+  const reason = r?.candidates?.[0]?.finishReason;
+  if (!reason || reason === "STOP") return null;
+  if (reason === "MAX_TOKENS") return "The statement is too long for one read: try fewer pages or one month at a time.";
+  return "The AI stopped before reading the whole PDF. Try fewer pages, or a CSV export from your bank.";
+}
+
 /** The rows in Gemini's answer that are well formed; anything else is dropped. */
 export function parseGeminiRows(response: unknown): StatementRow[] {
   const text = (response as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })

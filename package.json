@@ -4,7 +4,7 @@
   "description": "Alopex backend: self-hosted net worth tracker for European banks. Supabase migrations, Edge Functions and the Enable Banking sync.",
   "main": "index.js",
   "scripts": {
-    "test": "node --test *.test.js installer/*.test.js"
+    "test": "node --test --test-concurrency=1 *.test.js installer/*.test.js"
   },
   "keywords": [],
   "author": "",

@@ -126,6 +126,31 @@ Deno.test("classifyFlows re-resolves recent default rows when something stronger
   ]);
 });
 
+// protects=a row ruled or learned as Transfer counts as spend again once you change its category
+// (H009); fails_when=it stays transfer/rule, or a row a flow rule or Transfer category still holds changes
+Deno.test("classifyFlows re-resolves recent rule transfers whose Transfer category is gone", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const ruled = (ref: string, over = {}) =>
+    row({ entry_reference: ref, creditor_name: "Shop", flow_type: "transfer", flow_source: "rule", booking_date: today, deleted_at: null, ...over });
+  const db = memoryDb({
+    category_rules: [rule({ match_text: "savings" })],
+    transactions: [
+      ruled("recategorized", { category: "Shopping", category_source: "manual" }),
+      ruled("still-transfer", { category: "Transfer", category_source: "rule" }),
+      ruled("flow-rule", { creditor_name: "Me Savings", category: "Shopping" }),
+      ruled("now-bank", { category: "Shopping", bank_transaction_code: "TOPUP" }),
+    ],
+  });
+  const result = await classifyFlows(db);
+  assertEquals(result.reresolved, 2);
+  assertEquals(db.tables.transactions.map((r) => [r.entry_reference, r.flow_type, r.flow_source]), [
+    ["recategorized", "spend", "default"],
+    ["still-transfer", "transfer", "rule"],
+    ["flow-rule", "transfer", "rule"],
+    ["now-bank", "transfer", "bank"],
+  ]);
+});
+
 // Test rows for the refund tests: a charge d days ago and a credit c days ago, same merchant/amount.
 const day = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10);
 type Tx = Record<string, unknown>;

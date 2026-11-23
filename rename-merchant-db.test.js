@@ -1,13 +1,13 @@
 // rename_merchant "only this one" and Apple/PayPal/Google aliases by price
-// (20261226000000_rename_one_or_by_price) on a real Postgres with every migration before it.
+// (20261227000000_rename_one_or_by_price) on a real Postgres with every migration before it.
 // Needs psql and RLS_TEST_DATABASE_URL (a superuser URL to a throwaway server); skipped without it.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 
-const MIGRATION = 'supabase/migrations/20261226000000_rename_one_or_by_price.sql';
-const ROLLBACK = 'supabase/rollbacks/20261226000000_rename_one_or_by_price.down.sql';
+const MIGRATION = 'supabase/migrations/20261227000000_rename_one_or_by_price.sql';
+const ROLLBACK = 'supabase/rollbacks/20261227000000_rename_one_or_by_price.down.sql';
 const url = process.env.RLS_TEST_DATABASE_URL;
 const skip = url ? false : 'set RLS_TEST_DATABASE_URL to run';
 const A = 'aaaaaaaa-0000-0000-0000-000000000001';

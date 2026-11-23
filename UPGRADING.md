@@ -11,10 +11,15 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 ## Unreleased
 
 ### Rename one transaction without renaming the others
-- **Migration:** `20261226000000_rename_one_or_by_price`. Apply it with `supabase db push --linked`, then redeploy the dashboard. No function change.
+- **Migration:** `20261227000000_rename_one_or_by_price`. Apply it with `supabase db push --linked`, then redeploy the dashboard. No function change.
 - Renaming a transaction now asks: all from this merchant (as before) or only this one. Only this one changes just that row, and future rows keep their name.
 - Apple, PayPal and Google bill unrelated things under one bank name (iCloud and Apple Music are both "Apple.com"). Renaming one of those now renames only charges of about the same price (within 10%), past and future, so two Apple subscriptions keep two names. A name you gave one of them before this update stays on all of them until you rename each one.
-- **Roll back:** run `supabase/rollbacks/20261226000000_rename_one_or_by_price.down.sql`, then `supabase migration repair --status reverted 20261226000000 --linked`. Names set per price are lost; names already on transactions stay.
+- **Roll back:** run `supabase/rollbacks/20261227000000_rename_one_or_by_price.down.sql`, then `supabase migration repair --status reverted 20261227000000 --linked`. Names set per price are lost; names already on transactions stay.
+
+### Imported spending counts on Cash flow and Reports
+- **Migration:** `20261226000000_income_expenses_spend_history`. Apply it with `supabase db push --linked`, then update the dashboard (without it, Cash flow's diagram over imported months has more spending by category than in total).
+- Past monthly spending you imported by CSV showed on Spending and Budgets but not on Cash flow, Reports (income minus spending), Income or the Transactions in/out totals, which showed no spending for those months. Those totals now count it the same way Spending does: only for a month with no bank spending. Imported months have no income, so they show as months where you spent more than you earned.
+- **Roll back:** run `supabase/rollbacks/20261226000000_income_expenses_spend_history.down.sql`, then `supabase migration repair --status reverted 20261226000000 --linked`.
 
 ### One bad holding no longer stops prices for everyone
 - **Migration:** `20261225000000_holding_quantity_checks`. Apply it with `supabase db push --linked`, then `supabase functions deploy sync-prices`.

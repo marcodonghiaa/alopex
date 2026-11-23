@@ -9,6 +9,7 @@ import { hasSecretKey, parseSecretKeys } from "../_shared/secret-key.ts";
 import { retryRejectedToken } from "../_shared/postgrest-retry.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { runDetection } from "../_shared/detect-recurring-job.ts";
+import { romeToday } from "../_shared/today.ts";
 
 const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
 const supabase = createClient(
@@ -24,7 +25,7 @@ Deno.serve(async (req) => {
   const started = Date.now();
   if (!hasSecretKey(req, SECRET_KEYS)) return Response.json({ error: "secret key required" }, { status: 401 });
   try {
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date());
+    const today = romeToday();
     const result = {
       ...await runDetection(supabase, (fn, args) => supabase.rpc(fn, args), today, () => Date.now() - started < BUDGET_MS),
       ms: Date.now() - started,

@@ -17,6 +17,7 @@ export type Charge = {
   credit_debit_indicator: string;
   deleted_at: string | null;
   transaction_type?: string | null;
+  transaction_type_source?: string | null; // 'manual' when you set the type yourself
 };
 
 export type Cadence = "weekly" | "monthly" | "quarterly" | "yearly";
@@ -51,6 +52,11 @@ const CADENCES: [Cadence, number, number][] = [["weekly", 7, 2], ["monthly", 30,
 const DAY = 86_400_000;
 // R2: the AI "Subscription" tag without a rhythm proposes a stream only if charged within this many days.
 const TAG_RECENT_DAYS = 400;
+// upsert_detected_streams' bounds, in characters (code points, like Postgres char_length).
+const MAX_NAME = 500, MAX_CATEGORY = 100, MAX_MERCHANT_KEY = 1000, MAX_AMOUNT = 1e12;
+const chars = (s: string) => [...s].length;
+const cut = (s: string | null, n: number) => s === null || chars(s) <= n ? s : [...s].slice(0, n).join("");
+const sane = (x: number | null) => x === null || Math.abs(Number(x)) < MAX_AMOUNT; // false for NaN too
 
 const toDays = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / DAY;
 const fromDays = (n: number) => new Date(n * DAY).toISOString().slice(0, 10);
@@ -90,13 +96,18 @@ function clusters(group: Charge[], aggregator: boolean): Charge[][] {
   return out;
 }
 
-export function detectStreams(charges: Charge[], today: string): DetectedStream[] {
+// keep: stream_keys the user confirmed. Those skip the age cut below, so an old one-off stays listed (as Stopped).
+export function detectStreams(charges: Charge[], today: string, keep: ReadonlySet<string> = new Set()): DetectedStream[] {
   const groups = new Map<string, Charge[]>();
   for (const c of charges) {
     if (
       c.credit_debit_indicator !== "DBIT" || c.flow_type !== "spend" || c.deleted_at !== null ||
       c.merchant_key === null || EXCLUDED_CATEGORIES.has(c.category ?? "") ||
-      isTransferCode(c.bank_transaction_code) || c.booking_date > today || Number(c.amount) === 0
+      isTransferCode(c.bank_transaction_code) || c.booking_date > today || Number(c.amount) === 0 ||
+      // Too big to store (see MAX_*): no real subscription has a 1000-character key or a 1e12 charge.
+      chars(c.merchant_key) > MAX_MERCHANT_KEY || !sane(c.amount) || !sane(c.amount_eur) ||
+      // One-time you set yourself is final: neither the tag nor the rhythm (R3) brings it back.
+      (c.transaction_type === "One-time" && c.transaction_type_source === "manual")
     ) continue;
     // R1: currency is not part of the key, so a currency switch stays one stream.
     const key = `${c.merchant_key}|${c.account_uid}`;
@@ -121,10 +132,12 @@ export function detectStreams(charges: Charge[], today: string): DetectedStream[
       const days = [...new Set(sorted.map((c) => toDays(c.booking_date)))];
       const picked = days.length >= 2 ? pickCadence(days.slice(1).map((d, i) => d - days[i])) : null;
       const everyday = RHYTHM_ONLY_DENY.has(newest.category ?? "");
+      // R4/R5: the aggregator anchor (cluster minimum) stays put when the price rises.
+      const streamKey = aggregator ? `${groupKey}|${Math.min(...stream.map((c) => c.amount)).toFixed(2)}` : groupKey;
       let status: "suggested" | "active";
       if (tagged) {
         // A rhythm makes it active (an everyday category caps it at suggested); no rhythm: suggested while recent.
-        if (!picked && toDays(today) - toDays(newest.booking_date) > TAG_RECENT_DAYS) continue;
+        if (!picked && !keep.has(streamKey) && toDays(today) - toDays(newest.booking_date) > TAG_RECENT_DAYS) continue;
         status = picked && !everyday ? "active" : "suggested";
       } else {
         // R3: rhythm alone completes the list, never auto-active; 3+ distinct dates.
@@ -133,13 +146,12 @@ export function detectStreams(charges: Charge[], today: string): DetectedStream[
       }
       const [cadence, period] = picked ?? [null, null];
       out.push({
-        // R4/R5: the aggregator anchor (cluster minimum) stays put when the price rises.
-        stream_key: aggregator ? `${groupKey}|${Math.min(...stream.map((c) => c.amount)).toFixed(2)}` : groupKey,
+        stream_key: streamKey,
         merchant_key: newest.merchant_key!,
         account_uid: newest.account_uid,
         currency: newest.currency,
-        display_name: newest.custom_name || newest.creditor_name,
-        category: newest.category,
+        display_name: cut(newest.custom_name || newest.creditor_name, MAX_NAME),
+        category: cut(newest.category, MAX_CATEGORY),
         cadence,
         // R4: the current price, not an average.
         typical_amount: newest.amount,

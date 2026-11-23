@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { runDetection } from "./detect-recurring-job.ts";
+import { detectUser, runDetection } from "./detect-recurring-job.ts";
 import { memoryDb } from "./memory-db.test-helper.ts";
 
 const NAME = "Zorblax Streaming";
@@ -135,4 +135,113 @@ Deno.test("logs no merchant names", async () => {
   }
   assertEquals(logs.length, 1);
   assertEquals(logs.join("").includes("Zorblax"), false);
+});
+
+// protects=a transaction edit shows on Subscriptions right away; fails_when=refreshing one user runs every user
+Deno.test("detectUser runs only the given user and returns its stream count", async () => {
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(memoryDb(build(["u1", "u2"])), rpc, "u2", "2026-10-20"), 1);
+  assertEquals(calls.map((c) => c.p_user), ["u2"]);
+});
+
+// protects=a renamed charge renames its subscription; fails_when=display_name ignores custom_name
+Deno.test("detectUser picks up a rename of the newest charge", async () => {
+  const { calls, rpc } = recorder();
+  const tables = build(["u1"]);
+  tables.transactions[3].custom_name = "My Plan";
+  await detectUser(memoryDb(tables), rpc, "u1", "2026-10-20");
+  assertEquals(calls[0].p_rows[0].display_name, "My Plan");
+});
+
+Deno.test("detectUser throws when the rpc fails, so the caller can answer with an error", async () => {
+  let threw = false;
+  try {
+    await detectUser(memoryDb(build(["u1"])), recorder("u1").rpc, "u1", "2026-10-20");
+  } catch {
+    threw = true;
+  }
+  assertEquals(threw, true);
+});
+
+Deno.test("detectUser keeps the user's confirmed streams past the 400-day cut", async () => {
+  const { calls, rpc } = recorder();
+  const tables = build(["u1"]);
+  tables.transactions = [tx("u1", "o1", "2025-01-10", { transaction_type: "Subscription" })];
+  tables.v_transactions_eur = [eur("u1", "o1", -20)];
+  await detectUser(memoryDb(tables), rpc, "u1", "2026-10-20");
+  assertEquals(calls[0].p_rows, []);
+  tables.recurring_streams = [
+    { user_id: "u1", stream_key: "zorblax|a-u1", user_status: "confirmed" },
+    { user_id: "u2", stream_key: "other", user_status: "confirmed" },
+  ];
+  await detectUser(memoryDb(tables), rpc, "u1", "2026-10-20");
+  assertEquals(calls[1].p_rows.map((r) => r.stream_key), ["zorblax|a-u1"]);
+});
+
+Deno.test("detectUser throws, saving nothing, when your confirmed streams can't be read", async () => {
+  const db = memoryDb(build(["u1"]));
+  const broken = { from: (t: string) => t === "recurring_streams" ? { select: () => ({ eq: () => ({ eq: () => Promise.resolve({ data: null, error: { code: "42P01" } }) }) }) } : db.from(t) };
+  const { calls, rpc } = recorder();
+  let threw = false;
+  try {
+    await detectUser(broken, rpc, "u1", "2026-10-20");
+  } catch {
+    threw = true;
+  }
+  assertEquals([threw, calls], [true, []]);
+});
+
+// Thread decision 2026-11-22: the job reads who set the type, so hand-set One-time is honoured.
+Deno.test("detectUser skips charges you marked One-time by hand", async () => {
+  const { calls, rpc } = recorder();
+  const tables = build(["u1"]);
+  for (const t of tables.transactions) Object.assign(t, { transaction_type: "One-time", transaction_type_source: "manual" });
+  const db = memoryDb(tables);
+  const selects: string[] = [];
+  const spy = { from: (t: string) => {
+    // deno-lint-ignore no-explicit-any
+    const q = db.from(t) as any;
+    return t === "transactions" ? { ...q, select: (cols: string) => (selects.push(cols), q.select(cols)) } : q;
+  } };
+  await detectUser(spy, rpc, "u1", "2026-10-20");
+  assertEquals(calls[0].p_rows, []);
+  // The real database returns only the columns asked for: the marker must be one of them.
+  assertEquals(selects.every((c) => c.split(",").map((x) => x.trim()).includes("transaction_type_source")), true);
+  assertEquals(selects.length > 0, true);
+});
+
+// S1b (re-audit): upsert_detected_streams refuses more than 2000 rows, and 2001 single charges tagged
+// Subscription make 2001 streams, so the whole refresh failed. detectUser sends at most 2000: the ones you
+// confirmed first (dropping one would mark it gone), then the most recently charged.
+const many = (n: number) => {
+  const day = (i: number) => new Date(Date.UTC(2026, 9, 20) - Math.floor(i / 10) * 86_400_000).toISOString().slice(0, 10);
+  return memoryDb({
+    accounts: [{ user_id: "u1" }],
+    transactions: Array.from({ length: n }, (_, i) =>
+      tx("u1", `r${i}`, day(i), { merchant_key: `m${i}`, transaction_type: "Subscription" })),
+    v_transactions_eur: [],
+  });
+};
+const sentKeys = (c: { p_rows: Record<string, unknown>[] }) => new Set(c.p_rows.map((r) => String(r.stream_key).split("|")[0]));
+
+Deno.test("S1b: 2000 streams are all sent", async () => {
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(many(2000), rpc, "u1", "2026-10-20"), 2000);
+  assertEquals(calls[0].p_rows.length, 2000);
+});
+
+Deno.test("S1b: of 2001 streams the 2000 most recently charged are sent", async () => {
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(many(2001), rpc, "u1", "2026-10-20"), 2000);
+  const keys = sentKeys(calls[0]);
+  assertEquals([keys.size, keys.has("m2000"), keys.has("m0")], [2000, false, true]); // m2000 is the oldest
+});
+
+Deno.test("S1b: a stream you confirmed is sent even when it is the oldest", async () => {
+  const db = many(2001);
+  db.tables.recurring_streams = [{ user_id: "u1", stream_key: "m2000|a-u1", user_status: "confirmed" }];
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(db, rpc, "u1", "2026-10-20"), 2000);
+  const keys = sentKeys(calls[0]);
+  assertEquals([keys.size, keys.has("m2000")], [2000, true]);
 });

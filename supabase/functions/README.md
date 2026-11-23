@@ -35,6 +35,11 @@ and commit the updated lock.
   `{ "retired": <deleted rule> }` (after a delete) instead plans only the rows that rule filed
   and no remaining rule matches, back to uncategorized for the next sync.
   `verify_jwt: true`.
+- **refresh-recurring** — the Subscriptions page calls it when it opens: runs the
+  detect-recurring detection for the caller only, so a renamed transaction, one marked One-time,
+  recategorized or deleted shows there at once instead of after the next 6-hour run. The JWT
+  identifies the user; reads and the save use the service key scoped to that user.
+  `verify_jwt: true`.
 - **parse-statement** — reads the transactions out of a bank statement PDF with Gemini
   for the dashboard's import (`{ pdf: <base64> }` → `{ rows }`). The PDF is never stored and
   nothing is written: the dashboard adds the rows you confirm. Needs `GEMINI_API_KEY`;

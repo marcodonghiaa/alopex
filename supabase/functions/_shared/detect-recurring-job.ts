@@ -7,6 +7,7 @@ import { errorTag } from "./log-safe.ts";
 import { type Charge, detectStreams } from "./recurring.ts";
 
 const PAGE_SIZE = 1000; // PostgREST caps a response at 1000 rows
+const MAX_STREAMS = 2000; // upsert_detected_streams refuses more
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
@@ -29,7 +30,7 @@ async function userCharges(db: Db, user: string): Promise<Charge[]> {
   const spend = (t: string, cols: string) =>
     db.from(t).select(cols).eq("user_id", user).eq("credit_debit_indicator", "DBIT").eq("flow_type", "spend");
   const txs = await pages(
-    () => spend("transactions", "account_uid, entry_reference, merchant_key, currency, amount, booking_date, category, custom_name, creditor_name, bank_transaction_code, flow_type, credit_debit_indicator, deleted_at, transaction_type").is("deleted_at", null).not("merchant_key", "is", null),
+    () => spend("transactions", "account_uid, entry_reference, merchant_key, currency, amount, booking_date, category, custom_name, creditor_name, bank_transaction_code, flow_type, credit_debit_indicator, deleted_at, transaction_type, transaction_type_source").is("deleted_at", null).not("merchant_key", "is", null),
     order,
   );
   const eur = new Map<string, number>();
@@ -40,6 +41,24 @@ async function userCharges(db: Db, user: string): Promise<Charge[]> {
     ...t,
     amount_eur: eur.get(`${t.account_uid}|${entry_reference}`) ?? null,
   })) as Charge[];
+}
+
+/** Detects and stores one user's streams; returns how many. Throws on a read or save failure. */
+export async function detectUser(db: Db, rpc: Rpc, user: string, today: string): Promise<number> {
+  const { data: confirmed, error: readError } = await db.from("recurring_streams").select("stream_key")
+    .eq("user_id", user).eq("user_status", "confirmed");
+  if (readError) throw readError;
+  const keep = new Set((confirmed as Row[]).map((r) => r.stream_key as string));
+  const found = detectStreams(await userCharges(db, user), today, keep);
+  // Over the RPC's cap, keep the ones you confirmed (a dropped one would be marked gone), then the most
+  // recently charged (an old one is the least likely to still be billing you).
+  const rows = [...new Map(found.map((s) => [s.stream_key, s])).values()]
+    .sort((a, b) => +keep.has(b.stream_key) - +keep.has(a.stream_key) || b.last_charged.localeCompare(a.last_charged))
+    .slice(0, MAX_STREAMS);
+  // Always called, even with no rows: the RPC also clears this user's streams no longer found.
+  const { error } = await rpc("upsert_detected_streams", { p_user: user, p_rows: rows });
+  if (error) throw error;
+  return rows.length;
 }
 
 export async function runDetection(
@@ -62,13 +81,8 @@ export async function runDetection(
       break;
     }
     try {
-      const found = detectStreams(await userCharges(db, user), today);
-      const rows = [...new Map(found.map((s) => [s.stream_key, s])).values()];
-      // Always called, even with no rows: the RPC also removes this user's stale detector-only rows.
-      const { error } = await rpc("upsert_detected_streams", { p_user: user, p_rows: rows });
-      if (error) throw error;
+      streams += await detectUser(db, rpc, user, today);
       users++;
-      streams += rows.length;
     } catch (err) {
       failed++;
       console.error(`detect-recurring: a user failed: ${errorTag(err)}`);

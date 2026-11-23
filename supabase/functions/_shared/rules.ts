@@ -92,8 +92,8 @@ export function planRuleReapply(rows: Row[], rules: Rule[]): RowUpdate[] {
     const rule = usable.find((r) => matchRule(row, r));
     if (!rule || rule.set_category === row.category) continue;
     if (row.category === TRANSFER || rule.set_category === TRANSFER) continue;
-    // Like the sync, a rule that also sets a type sets it here. Type-only rules stay out: a
-    // type has no "set by hand" marker, so re-applying one could undo your own edits.
+    // Like the sync, a rule that also sets a type sets it here (a type you set by hand is kept by
+    // trg_keep_manual_transaction_type). Type-only rules stay out of re-apply.
     const update: Record<string, unknown> = { category: rule.set_category, category_source: "rule" };
     if (rule.set_transaction_type) update.transaction_type = rule.set_transaction_type;
     items.push({

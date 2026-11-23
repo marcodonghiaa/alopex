@@ -129,3 +129,53 @@ Deno.test("an everyday category is never proposed by rhythm alone and never auto
     assertEquals(detectStreams(tagged, "2026-11-08").map((r) => r.detected_status), ["suggested"], category);
   }
 });
+
+// Polish 1 #13: a confirmed stream with no rhythm (one tagged charge) used to stay listed (under
+// Stopped) when its charge got old; the 400-day cut must not turn it 'gone'.
+Deno.test("a stream you confirmed is kept past the 400-day cut; an undecided one is not", () => {
+  const old = [charge({ booking_date: "2025-10-01", transaction_type: "Subscription", category: "Services" })];
+  const today = "2026-11-20"; // 415 days later
+  assertEquals(detectStreams(old, today), []);
+  const kept = detectStreams(old, today, new Set(["streamflix|acc-1"]));
+  assertEquals(kept.map((s) => [s.stream_key, s.detected_status, s.last_charged]), [["streamflix|acc-1", "suggested", "2025-10-01"]]);
+});
+
+// Thread decision (Marco, 2026-11-22): One-time you set by hand is never rebuilt into a
+// subscription, by the AI tag or by the rhythm. The AI's own One-time keeps rule R3 working.
+Deno.test("charges you marked One-time by hand never make a stream; the AI's One-time still can", () => {
+  const dates = ["2026-08-05", "2026-09-05", "2026-10-05", "2026-11-05"];
+  const ai = dates.map((d) => charge({ booking_date: d, category: "Services", transaction_type: "One-time" }));
+  assertEquals(detectStreams(ai, "2026-11-08").map((s) => s.detected_status), ["suggested"]);
+  const mine = ai.map((c) => ({ ...c, transaction_type_source: "manual" }));
+  assertEquals(detectStreams(mine, "2026-11-08"), []);
+});
+
+Deno.test("one charge you marked One-time drops out; the stream is built from the rest", () => {
+  const dates = ["2026-07-05", "2026-08-05", "2026-09-05", "2026-10-05"];
+  // The rest typed One-time by the AI: rule R3 builds the stream from the rhythm of every untagged charge.
+  const subs = dates.map((d) => charge({ booking_date: d, category: "Services", transaction_type: "One-time" }));
+  const extra = charge({ booking_date: "2026-11-05", category: "Services", transaction_type: "One-time", transaction_type_source: "manual" });
+  const [s] = detectStreams([...subs, extra], "2026-11-08");
+  assertEquals([s.charge_count, s.last_charged, s.typical_amount], [4, "2026-10-05", 1]);
+});
+
+// S1 (polish 2): upsert_detected_streams refuses names over 500, categories over 100, merchant keys over
+// 1000 characters and amounts not under 1e12. Detection never sends one: names and categories are cut,
+// a charge with an oversized key or amount is skipped. Characters, not UTF-16 units: an emoji counts once.
+Deno.test("detectStreams output stays inside upsert_detected_streams' bounds", () => {
+  const dates = ["2026-08-05", "2026-09-05", "2026-10-05"];
+  const chars = (n: number) => "é".repeat(n - 1) + "😀";
+  const len = (s: string | null) => [...(s ?? "")].length;
+  const sub = (x: Partial<Charge>) => dates.map((d) => charge({ booking_date: d, transaction_type: "Subscription" }, x));
+  const [long] = detectStreams(sub({ creditor_name: chars(600), category: chars(150) }), "2026-11-08");
+  assertEquals([len(long.display_name), len(long.category)], [500, 100]);
+  assertEquals(long.display_name, chars(600).slice(0, 499) + "é"); // the cut never splits the emoji's pair
+  const [atLimit] = detectStreams(sub({ creditor_name: chars(500), category: chars(100) }), "2026-11-08");
+  assertEquals([atLimit.display_name, atLimit.category], [chars(500), chars(100)]);
+  assertEquals(detectStreams(sub({ merchant_key: chars(1001) }), "2026-11-08"), []);
+  assertEquals(detectStreams(sub({ merchant_key: chars(1000) }), "2026-11-08").length, 1);
+  for (const amount of [1e12, -1e15, NaN, Infinity]) {
+    assertEquals(detectStreams(sub({ amount, amount_eur: 1 }), "2026-11-08"), [], `amount ${amount}`);
+    assertEquals(detectStreams(sub({ amount: 1, amount_eur: amount }), "2026-11-08"), [], `amount_eur ${amount}`);
+  }
+});

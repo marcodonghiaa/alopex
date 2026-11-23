@@ -83,6 +83,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     // Which session each account reads from, so a renewal can close the one it replaced.
     const sessionPatch = relinkPatch(sessionId);
     let stored: StoredAccount[] = storedRows ?? [];
+    const raced = new Set<string>(); // inserted by a concurrent callback, which syncs it itself
 
     for (const a of accounts) {
       const iban = a.account_id?.iban ?? null;
@@ -123,6 +124,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
         const racedRow: StoredAccount = raced;
         stored = [...stored, racedRow];
         uid = racedRow.uid;
+        raced.add(uid);
       }
 
       // The type only fills a gap: a type the user corrected stays.
@@ -168,7 +170,8 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
       params: linkedParams(savedRows.length, bank.bank_name, savedRows.map((r) => r.currency)),
       // H038: renewed accounts too, while the bank still allows a long read right after consent.
       // sync-bank reads each balance first, so no separate balance call is spent here.
-      syncUids: savedRows.map((r) => r.uid),
+      // Once each: two shared accounts can match one stored account, and one sync is enough.
+      syncUids: [...new Set(savedRows.map((r) => r.uid))].filter((uid) => !raced.has(uid)),
     };
   } catch (err) {
     return fail(err);

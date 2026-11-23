@@ -16,7 +16,7 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 - What changes:
   - A failed bank-link start no longer counts toward the 5 links in progress.
   - A broken Enable Banking key now shows on the account instead of the sync going quiet.
-  - A renewed bank syncs right away.
+  - A renewed bank syncs right away. That spends one more bank call than before, so a renewal late in a day the cron already used up can show a rate-limit note until the next sync.
   - Rows without a booking date use the value date.
   - The common Coinbase coins are priced.
   - Price sync reads every holding (no 1000-row cap) and asks CoinGecko in batches. New holdings must have a sensible symbol and CoinGecko id; rows already stored are not checked.

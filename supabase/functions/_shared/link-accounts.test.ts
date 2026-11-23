@@ -100,3 +100,18 @@ Deno.test("linkAccounts: renewed and new accounts are all synced right away, wit
   assertEquals("syncUids" in result! ? [...result.syncUids].sort() : result, ["acc1", "eb-usd"]);
   assertEquals(eb.calls.some((c) => c.includes("/balances")), false, eb.calls.join("\n"));
 });
+
+// Review of H038: two shared accounts that match one stored account must not start two
+// concurrent syncs of it (each costs the bank's few daily calls).
+Deno.test("linkAccounts: an account matched twice in one consent is synced once", async () => {
+  const db = memoryDb(stored());
+  const twin = (uid: string) => ({ uid, currency: "EUR", account_id: { iban: IBAN } });
+  const eb = fakeEb({ session_id: "new", accounts: [twin("eb-a"), twin("eb-b")], access: { valid_until: "2027-05-01T00:00:00Z" } });
+  let result;
+  try {
+    result = await linkAccounts(db, "u", "code");
+  } finally {
+    eb.restore();
+  }
+  assertEquals("syncUids" in result! ? result.syncUids : result, ["acc1"]);
+});

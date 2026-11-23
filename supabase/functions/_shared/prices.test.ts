@@ -91,3 +91,40 @@ Deno.test("stops pricing holdings once the time is up", async () => {
   );
   assertEquals(rows.map((r) => r.isin), ["A"]);
 });
+
+// H004: Postgres numeric holds NaN and Infinity, and JSON turns 1e400 into Infinity. One such
+// holding gave a null value, and the one upsert for every user failed, so nobody got prices.
+Deno.test("a holding with a NaN, infinite or huge quantity is skipped, the others are priced", async () => {
+  const { rows } = await quiet(() =>
+    priceHoldings(
+      [
+        holding({ user_id: "bad1", shares: Number.NaN }),
+        holding({ user_id: "bad2", shares: "Infinity" as unknown as number }),
+        holding({ user_id: "bad3", shares: 1e400 }),
+        holding({ user_id: "bad4", shares: 1e308 }),
+        holding({ user_id: "good" }),
+      ],
+      async () => ({ price: 100, currency: "EUR", assetType: "" }),
+      async () => 1,
+      "2026-11-06",
+    )
+  );
+  assertEquals(rows.map((r) => [r.user_id, r.value_eur]), [["good", 200]]);
+});
+
+Deno.test("crypto rows: a holding with a NaN or infinite amount is skipped, the others kept", async () => {
+  const rows = await quiet(async () =>
+    cryptoRows(
+      [
+        { user_id: "bad1", asset_symbol: "BTC", amount: Number.NaN, source: "Manual", coingecko_id: "bitcoin" },
+        { user_id: "bad2", asset_symbol: "BTC", amount: "Infinity" as unknown as number, source: "Manual", coingecko_id: "bitcoin" },
+        { user_id: "bad3", asset_symbol: "BTC", amount: 1e400, source: "Manual", coingecko_id: "bitcoin" },
+        { user_id: "good", asset_symbol: "BTC", amount: 1, source: "Manual", coingecko_id: "bitcoin" },
+      ],
+      { bitcoin: { usd: 100 } },
+      0.5,
+      "2026-11-06",
+    )
+  );
+  assertEquals(rows.map((r) => [r.user_id, r.value_eur]), [["good", 50]]);
+});

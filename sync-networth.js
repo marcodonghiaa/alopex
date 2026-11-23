@@ -2,7 +2,7 @@ const { checkSessionExpiry } = require('./session-check');
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { getAccounts, getAllUserIds, ebAccountId, idsPatchFromDetails, accountType, EB_REJECTED_STATUSES } = require('./accounts');
+const { getAccounts, getAllUserIds, ebAccountId, idsPatchFromDetails, accountType, pickBalance, EB_REJECTED_STATUSES } = require('./accounts');
 const { getToken } = require('./eb-token');
 const { fetchWithTimeout } = require('./http');
 const { errorTag } = require('./log-safe');
@@ -74,7 +74,7 @@ async function syncAccountBalance({ fetch, supabase }, token, account, userId, t
   await fillMissingIds(fetch, supabase, token, account);
   try {
     const data = await getEb(fetch, token, `${ebAccountId(account)}/balances`);
-    const balance = data.balances?.[0];
+    const balance = pickBalance(data.balances);
     if (!balance) {
       console.log('No balance returned.');
       return { row: null, rejected: null };

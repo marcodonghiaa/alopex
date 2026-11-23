@@ -24,12 +24,15 @@ function fakeFetch(responses) {
   return { fetch, urls };
 }
 
-// Records .from(t).upsert(rows, opts); accounts.select(...) answers with ownAccounts.
-function fakeSupabase(error = null, ownAccounts = { data: [], error: null }) {
+// Records .from(t).upsert(rows, opts); accounts.select(...) answers with ownAccounts, and
+// transactions.select(...) with the stored rows.
+function fakeSupabase(error = null, ownAccounts = { data: [], error: null }, stored = []) {
   const upserts = [];
   const accounts = { select: () => accounts, eq: () => accounts, not: async () => ownAccounts };
+  const lookup = { select: () => lookup, eq: () => lookup, in: async () => ({ data: stored, error: null }) };
   const supabase = {
     from: (table) => (table === 'accounts' ? accounts : {
+      ...lookup,
       upsert: async (rows, opts) => {
         upserts.push({ table, rows, opts });
         return { error };
@@ -54,6 +57,17 @@ test('calls EB with eb_account_uid; rows and cursor use uid', async () => {
   assert.ok(upserts[0].rows.every((row) => row.account_uid === 'pk'));
   assert.deepStrictEqual(lastSync, { pk: '2026-10-27' });
   assert.deepStrictEqual(result, { upserted: 1, rejected: null });
+});
+
+// H014/H016: a bank reusing an entry_reference overwrote the stored transaction with the new one.
+test('a reused entry_reference is saved beside the stored row, not over it', async () => {
+  const old = { ...TX, booking_date: '2026-08-01', transaction_amount: { amount: '-9.00', currency: 'EUR' } };
+  const { fetch } = fakeFetch({ '/transactions?': { body: { transactions: [TX] } } });
+  const { supabase, upserts } = fakeSupabase(null, undefined, [{ entry_reference: 'r1', raw: old }]);
+
+  await syncAccountTransactions({ fetch, supabase }, 't', { uid: 'pk', eb_account_uid: 'eb' }, 'user', { pk: '2026-10-20' }, '2026-10-27');
+
+  assert.deepStrictEqual(upserts[0].rows.map((r) => r.entry_reference), ['r1#d55b3e31c767']);
 });
 
 test('date_from uses the uid cursor', async () => {

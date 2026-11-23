@@ -87,6 +87,12 @@ export async function priceHoldings(
     try {
       const { price, currency, assetType } = await quoteOf(holding.yahoo_symbol);
       const valueNative = price * holding.shares;
+      const valueEur = valueNative * (await getRate(currency));
+      // A NaN, infinite or huge quantity would fail the one save for every user.
+      if (!Number.isFinite(valueEur)) {
+        console.error(`Holding ${i + 1}/${holdings.length} has an unusable quantity, skipped.`);
+        continue;
+      }
       rows.push({
         user_id: holding.user_id,
         isin: holding.isin,
@@ -94,7 +100,7 @@ export async function priceHoldings(
         price,
         currency,
         value_native: valueNative,
-        value_eur: valueNative * (await getRate(currency)),
+        value_eur: valueEur,
       });
       const newType = assetType && nextAssetType(holding.asset_type, assetType);
       if (newType && newType !== holding.asset_type) typeUpdates.push({ user_id: holding.user_id, isin: holding.isin, asset_type: newType });
@@ -150,6 +156,11 @@ export function cryptoRows(holdings: CoinHolding[], prices: Record<string, { usd
       continue;
     }
     const valueUsd = priceUsd * h.amount;
+    // A NaN, infinite or huge amount would fail the one save for every user.
+    if (!Number.isFinite(valueUsd * usdToEur)) {
+      console.error(`Holding ${i + 1}/${holdings.length} has an unusable amount, skipped.`);
+      continue;
+    }
     rows.push({
       user_id: h.user_id,
       asset_symbol: h.asset_symbol,

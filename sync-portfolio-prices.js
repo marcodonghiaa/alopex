@@ -52,6 +52,12 @@ async function priceHoldings(holdings, getQuote, getRate, today) {
     try {
       const { price, currency, assetType } = await quoteOf(holding.yahoo_symbol);
       const valueNative = price * holding.shares;
+      const valueEur = valueNative * (await getRate(currency));
+      // A NaN, infinite or huge quantity would fail the one save for every user.
+      if (!Number.isFinite(valueEur)) {
+        console.error(`Holding ${i + 1}/${holdings.length} has an unusable quantity, skipped.`);
+        continue;
+      }
       rows.push({
         user_id: holding.user_id,
         isin: holding.isin,
@@ -59,7 +65,7 @@ async function priceHoldings(holdings, getQuote, getRate, today) {
         price,
         currency,
         value_native: valueNative,
-        value_eur: valueNative * (await getRate(currency)),
+        value_eur: valueEur,
       });
       const newType = assetType && nextAssetType(holding.asset_type, assetType);
       if (newType && newType !== holding.asset_type) {

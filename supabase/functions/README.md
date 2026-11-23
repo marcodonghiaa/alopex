@@ -27,7 +27,9 @@ and commit the updated lock.
 - **add-holding** — searches Yahoo Finance (stocks, ETFs, funds) or CoinGecko
   (crypto) by name, ticker or ISIN, and adds the chosen holding with today's
   price so it shows at once. Writes the holding as the user (RLS), the price
-  with the service role. `verify_jwt: true`.
+  with the service role. A stock you already hold under another key (added by ticker, now by
+  ISIN, or the reverse) answers 409 `{ error: "already_held", key }` instead of a second holding.
+  `verify_jwt: true`.
 - **reapply-rules** — the Rules page's "Apply to past transactions": `{ "apply": false }`
   previews how many transactions your rules would re-categorize (with a few examples),
   `{ "apply": true }` does it. The JWT identifies the user; reads and writes use the service key

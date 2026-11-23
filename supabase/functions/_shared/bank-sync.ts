@@ -1,9 +1,9 @@
 // Deno port of sync-transactions.js + sync-networth.js for ONE account, used by sync-bank.
 // Kept free of Deno.env so the tests run with fakes: fetch and supabase come in as deps.
 
-import { buildRows, type EbTransaction, normalizeIban } from "./transaction-rows.ts";
+import { buildRows, type EbTransaction, lookupKeys, normalizeIban, storedContent, type StoredRefs } from "./transaction-rows.ts";
 import { errorTag } from "./log-safe.ts";
-import { accountType } from "./account-match.ts";
+import { accountType, pickBalance } from "./account-match.ts";
 
 // deno-lint-ignore no-explicit-any
 type Db = { from(table: string): any };
@@ -128,6 +128,26 @@ async function fetchOwnIbans(supabase: Db, userId: string): Promise<Set<string> 
   return new Set((data ?? []).map((a: { iban: string | null }) => normalizeIban(a.iban)).filter(Boolean));
 }
 
+// The rows already saved under the keys this batch could take, so a bank that reuses an
+// entry_reference keeps both transactions (transaction-rows.ts). 50 keys a request (URL limits),
+// 4 requests at a time, so a first sync of thousands of rows stays quick.
+async function fetchStoredRefs(supabase: Db, accountUid: string, transactions: EbTransaction[]): Promise<StoredRefs> {
+  const keys = await lookupKeys(transactions);
+  const chunks = [];
+  for (let i = 0; i < keys.length; i += 50) chunks.push(keys.slice(i, i + 50));
+  const stored: StoredRefs = new Map();
+  for (let i = 0; i < chunks.length; i += 4) {
+    const answers = await Promise.all(chunks.slice(i, i + 4).map((chunk) =>
+      supabase.from("transactions").select("entry_reference, raw").eq("account_uid", accountUid).in("entry_reference", chunk)
+    ));
+    for (const { data, error } of answers) {
+      if (error) throw error;
+      for (const r of data ?? []) stored.set(r.entry_reference, storedContent(r.raw));
+    }
+  }
+  return stored;
+}
+
 // Rows and the cursor stay under the PK (uid). Never throws for EB failures: rejected carries
 // the status when EB refuses the id. cursor = the new last_synced, null when it must not move.
 export async function syncAccountTransactions(
@@ -175,7 +195,8 @@ export async function syncAccountTransactions(
     let rows;
     try {
       const ownIbans = await fetchOwnIbans(supabase, account.user_id);
-      rows = await buildRows(transactions, account.uid, account.user_id, ownIbans);
+      const stored = await fetchStoredRefs(supabase, account.uid, transactions);
+      rows = await buildRows(transactions, account.uid, account.user_id, ownIbans, stored, dateFrom);
       if (rows.length > 0) {
         const { error } = await supabase.from("transactions").upsert(rows, { onConflict: "account_uid,entry_reference" });
         if (error) throw error;
@@ -243,7 +264,7 @@ export async function syncAccountBalance(deps: Deps, token: string, account: Syn
   await fillMissingIds(deps, token, account);
   try {
     const data = await getEb(deps.fetch, token, `${ebAccountId(account)}/balances`);
-    const balance = data.balances?.[0];
+    const balance = pickBalance(data.balances);
     if (!balance) {
       console.log("No balance returned.");
       return { row: null, rejected: null, renewed: false, ebFailed: false, error: null };

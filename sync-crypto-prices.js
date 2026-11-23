@@ -47,6 +47,11 @@ function cryptoRows(holdings, prices, usdToEur, today) {
       continue;
     }
     const valueUsd = priceUsd * holding.amount;
+    // A NaN, infinite or huge amount would fail the one save for every user.
+    if (!Number.isFinite(valueUsd * usdToEur)) {
+      console.error(`Holding ${i + 1}/${holdings.length} has an unusable amount, skipped.`);
+      continue;
+    }
     rows.push({
       user_id: holding.user_id,
       asset_symbol: holding.asset_symbol,

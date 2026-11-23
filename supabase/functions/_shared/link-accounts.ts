@@ -4,7 +4,7 @@
 
 import { EB_NO_ACCOUNTS, signEnableBankingJwt } from "./enable-banking.ts";
 import { errorTag } from "./log-safe.ts";
-import { accountType, matchAccount, matchPatch, type StoredAccount } from "./account-match.ts";
+import { accountType, matchAccount, matchPatch, pickBalance, type StoredAccount } from "./account-match.ts";
 import { bankLogo, type BankInfo, fetchAspsps } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
@@ -171,7 +171,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
         );
         if (!balRes.ok) continue;
         const balData = await balRes.json();
-        const balance = balData.balances?.[0];
+        const balance = pickBalance(balData.balances);
         if (!balance) continue;
         await supabase.from("net_worth_snapshots").upsert(
           {

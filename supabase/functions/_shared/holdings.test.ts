@@ -1,5 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import {
+  AlreadyHeld,
+  refuseHeldElsewhere,
   HoldingError,
   isIsin,
   parseCoinGeckoPrice,
@@ -125,4 +127,40 @@ Deno.test("an add request needs a valid id, name and a positive quantity", () =>
   const coin = { action: "add", kind: "crypto", id: "bitcoin", symbol: "BTC", name: "Bitcoin", quantity: 0.25 } as const;
   assertEquals(parseHoldingRequest(coin), { ...coin, isin: undefined, broker: undefined });
   assertEquals(typeof parseHoldingRequest({ ...coin, id: "Bitcoin!" }), "string");
+});
+
+// H017: a stock added by name or ticker is keyed by its Yahoo symbol; adding it again by ISIN (a
+// broker import) made a second holding, priced and counted in net worth twice.
+// A tiny portfolio_holdings: select/eq/neq/limit filter these rows, like PostgREST would.
+const holdingsDb = (rows: Array<Record<string, string>>) => ({
+  from: (table: string) => {
+    assertEquals(table, "portfolio_holdings");
+    let found = rows;
+    const q = {
+      select: () => q,
+      eq: (c: string, v: string) => ((found = found.filter((r) => r[c] === v)), q),
+      neq: (c: string, v: string) => ((found = found.filter((r) => r[c] !== v)), q),
+      limit: async (n: number) => ({ data: found.slice(0, n), error: null }),
+    };
+    return q;
+  },
+});
+const HELD = [{ user_id: "u1", isin: "VWCE.DE", yahoo_symbol: "VWCE.DE" }, { user_id: "u2", isin: "IE00BK5BQT80", yahoo_symbol: "VWCE.DE" }];
+const refusal = (db: ReturnType<typeof holdingsDb>, user: string, key: string) =>
+  refuseHeldElsewhere(db, user, "VWCE.DE", key).then(() => null, (e) => e);
+
+Deno.test("adding by ISIN a stock you hold by ticker is refused with the key you hold it under", async () => {
+  const err = await refusal(holdingsDb(HELD), "u1", "IE00BK5BQT80");
+  assertEquals([err instanceof AlreadyHeld, (err as AlreadyHeld).key], [true, "VWCE.DE"]);
+});
+
+// Re-adding under the same key is left to the insert's unique key (its friendlier message).
+Deno.test("re-adding under the same key, or a symbol only someone else holds, is not refused here", async () => {
+  assertEquals(await refusal(holdingsDb(HELD), "u1", "VWCE.DE"), null);
+  assertEquals(await refusal(holdingsDb(HELD), "u3", "IE00BK5BQT80"), null);
+});
+
+Deno.test("a failed read is passed on", async () => {
+  const db = { from: () => { const q = { select: () => q, eq: () => q, neq: () => q, limit: async () => ({ data: null, error: { code: "XX000" } }) }; return q; } };
+  assertEquals(await refuseHeldElsewhere(db, "u1", "VWCE.DE", "X").catch((e) => e), { code: "XX000" });
 });

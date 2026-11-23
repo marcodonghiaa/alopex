@@ -15,6 +15,7 @@ import { errorTag } from "../_shared/log-safe.ts";
 import { fetchRateToEur } from "../_shared/fx-rates.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
 import {
+  AlreadyHeld,
   HoldingError,
   type HoldingRequest,
   parseCoinGeckoPrice,
@@ -22,6 +23,7 @@ import {
   parseHoldingRequest,
   parseYahooChart,
   parseYahooSearch,
+  refuseHeldElsewhere,
   upstreamMessage,
 } from "../_shared/holdings.ts";
 
@@ -85,14 +87,16 @@ async function search(kind: "stock" | "crypto", query: string) {
 // with the service role (users can't write prices). Returns whether the price was stored.
 // deno-lint-ignore no-explicit-any
 async function addStock(userClient: any, userId: string, req: AddRequest): Promise<boolean> {
+  // portfolio_holdings is keyed by ISIN; a holding found by name or ticker has no ISIN, so the
+  // Yahoo symbol stands in (still unique per user).
+  const key = req.isin ?? req.id;
+  // Already held under another key (by ticker, now by ISIN, or the reverse): one holding, not two.
+  await refuseHeldElsewhere(userClient, userId, req.id, key);
   const quote = parseYahooChart(
     await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(req.id)}?interval=1d&range=1d`),
     req.id,
   );
   const rate = await rateToEur(quote.currency);
-  // portfolio_holdings is keyed by ISIN; a holding found by name or ticker has no ISIN, so the
-  // Yahoo symbol stands in (still unique per user).
-  const key = req.isin ?? req.id;
   const { error } = await userClient.from("portfolio_holdings").insert({
     user_id: userId,
     isin: key,
@@ -194,6 +198,7 @@ Deno.serve(serveWithCors(async (req, json) => {
     const priced = await add(userClient, userData.user.id, parsed);
     return json({ added: true, priced });
   } catch (err) {
+    if (err instanceof AlreadyHeld) return json({ error: "already_held", key: err.key }, 409);
     if ((err as { code?: string }).code === DUPLICATE_KEY) {
       return json({ error: "Already in your holdings: change its quantity instead" }, 409);
     }

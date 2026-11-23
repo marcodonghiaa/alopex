@@ -86,3 +86,67 @@ test('own_counterparty: only set when your own IBANs are known', () => {
   const fromOwn = tx({ credit_debit_indicator: 'CRDT', debtor_account: { iban: 'de89370400440532013000' } });
   assert.strictEqual(buildRows([fromOwn], 'acc', 'user', own)[0].own_counterparty, true); // credit reads the payer
 });
+
+// H014/H016: some banks reuse one entry_reference. Both transactions are kept, each once, with
+// keys that never change across syncs (the same keys as the Deno port).
+const { lookupKeys, storedContent } = require('./transaction-rows');
+function syncInto(table, batch, dateFrom = null) {
+  const stored = new Map();
+  for (const key of lookupKeys(batch)) if (table.has(key)) stored.set(key, storedContent(table.get(key).raw));
+  for (const row of buildRows(batch, 'acc', 'user', undefined, stored, dateFrom)) table.set(row.entry_reference, row);
+}
+const amounts = (table) => [...table.values()].map((r) => r.amount).sort();
+
+test('a reused entry_reference keeps both transactions, each once, across syncs', () => {
+  const a = tx({ booking_date: '2026-09-01', transaction_amount: { amount: '10.00', currency: 'EUR' } });
+  const b = tx({ booking_date: '2026-11-10', transaction_amount: { amount: '40.00', currency: 'EUR' } });
+  for (const syncs of [[[a, b], [b], [b, a]], [[b, a], [a], [a, b]], [[a], [b], [a, b], [b]]]) {
+    const table = new Map();
+    for (const batch of syncs) syncInto(table, batch);
+    assert.deepStrictEqual(amounts(table), [10, 40], JSON.stringify([...table.keys()]));
+  }
+});
+
+test('a stored bare reference keeps its key; a later reuse gets its own stable key', () => {
+  const a = tx({ booking_date: '2026-09-01', transaction_amount: { amount: '10.00', currency: 'EUR' } });
+  const b = tx({ booking_date: '2026-11-10', transaction_amount: { amount: '40.00', currency: 'EUR' } });
+  const table = new Map();
+  syncInto(table, [a]);
+  syncInto(table, [b]);
+  syncInto(table, [b]);
+  assert.strictEqual(table.get('r1').amount, 10);
+  assert.deepStrictEqual([...table.keys()], ['r1', 'r1#c217b97efb0f']);
+});
+
+test('the bank changing a stored row updates it, not a second row', () => {
+  const table = new Map();
+  syncInto(table, [tx({ transaction_amount: { amount: '10.00', currency: 'EUR' } })]);
+  syncInto(table, [tx({ transaction_amount: { amount: '12.00', currency: 'EUR' } })]);
+  assert.deepStrictEqual([...table.entries()].map(([k, r]) => [k, r.amount]), [['r1', 12]]);
+});
+
+test('a stored row with no bank payload keeps the bare reference', () => {
+  const rows = buildRows([tx({ booking_date: '2026-11-10' })], 'acc', 'user', undefined, new Map([['r1', storedContent(null)]]));
+  assert.deepStrictEqual(rows.map((r) => r.entry_reference), ['r1']);
+});
+
+// Review of H014: "older than the window" is the window the sync asked for (date_from), not the
+// oldest row the bank happened to send. A row the bank moved forward inside the window is updated.
+test('a stored row whose date the bank moved forward inside the window is updated, not stored twice', () => {
+  const table = new Map();
+  syncInto(table, [tx({ booking_date: '2026-11-14', transaction_amount: { amount: '10.00', currency: 'EUR' } })]);
+  syncInto(table, [
+    tx({ booking_date: '2026-11-15', transaction_amount: { amount: '10.00', currency: 'EUR' } }),
+    tx({ booking_date: '2026-11-20', transaction_amount: { amount: '40.00', currency: 'EUR' } }),
+  ], '2026-11-13');
+  assert.deepStrictEqual(amounts(table), [10, 40]);
+  assert.strictEqual(table.get('r1').booking_date, '2026-11-15');
+});
+
+test('a reuse whose stored row is older than the window still gets its own key', () => {
+  const table = new Map();
+  syncInto(table, [tx({ booking_date: '2026-09-01', transaction_amount: { amount: '10.00', currency: 'EUR' } })]);
+  syncInto(table, [tx({ booking_date: '2026-11-20', transaction_amount: { amount: '40.00', currency: 'EUR' } })], '2026-11-13');
+  assert.deepStrictEqual(amounts(table), [10, 40]);
+  assert.strictEqual(table.get('r1').amount, 10);
+});

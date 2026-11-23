@@ -38,6 +38,30 @@ const ASSET_TYPE: Record<string, string> = { EQUITY: "Stock", ETF: "ETF", MUTUAL
 
 type Json = Record<string, unknown>;
 
+// Throws AlreadyHeld when the user holds this Yahoo symbol under a key other than `key`. A stock
+// added by name or ticker is keyed by its symbol, one added by ISIN by the ISIN: the same security
+// added both ways was held, priced and counted in net worth twice. The same key is left to the
+// insert's unique key.
+export async function refuseHeldElsewhere(
+  // deno-lint-ignore no-explicit-any
+  db: { from(table: string): any },
+  userId: string,
+  yahooSymbol: string,
+  key: string,
+): Promise<void> {
+  const { data, error } = await db.from("portfolio_holdings").select("isin")
+    .eq("user_id", userId).eq("yahoo_symbol", yahooSymbol).neq("isin", key).limit(1);
+  if (error) throw error;
+  if (data?.[0]) throw new AlreadyHeld(data[0].isin);
+}
+
+// You hold this security already, under `key` (add-holding answers 409 already_held).
+export class AlreadyHeld extends Error {
+  constructor(readonly key: string) {
+    super("already_held");
+  }
+}
+
 // A failure whose message says what went wrong: shown to the user as is, and never holds an upstream body.
 export class HoldingError extends Error {}
 

@@ -159,6 +159,16 @@ Deno.test("one charge you marked One-time drops out; the stream is built from th
   assertEquals([s.charge_count, s.last_charged, s.typical_amount], [4, "2026-10-05", 1]);
 });
 
+// A bank transfer you renamed and marked Subscription by hand (e.g. paying a friend for a shared plan) is a
+// subscription: your type beats the transfer code. The AI's Subscription tag on a transfer still does not.
+Deno.test("a transfer you marked Subscription by hand makes a stream named as you renamed it", () => {
+  const transfer = { bank_transaction_code: "TRANSFER", creditor_name: "A PERSON", custom_name: "Music plan", transaction_type: "Subscription" };
+  const ai = charge(transfer, { booking_date: "2026-09-04", amount: 21 });
+  assertEquals(detectStreams([ai], "2026-11-23"), []);
+  const [s] = detectStreams([{ ...ai, transaction_type_source: "manual" }], "2026-11-23");
+  assertObjectMatch(s, { display_name: "Music plan", detected_status: "suggested", last_charged: "2026-09-04", typical_amount: 21 });
+});
+
 // S1 (polish 2): upsert_detected_streams refuses names over 500, categories over 100, merchant keys over
 // 1000 characters and amounts not under 1e12. Detection never sends one: names and categories are cut,
 // a charge with an oversized key or amount is skipped. Characters, not UTF-16 units: an emoji counts once.

@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
     if (job === "consent") {
       const result = await runConsent(supabase, send);
       console.log(`notify consent: ${JSON.stringify(result)}`);
-      return Response.json(result);
+      return Response.json(result, { status: result.failedUsers > 0 ? 500 : 200 });
     }
     return Response.json({ error: 'job must be "worth-it" or "consent"' }, { status: 400 });
   } catch (err) {

@@ -156,9 +156,16 @@ export async function runConsent(db: Db, send: SendPush | null, today = new Date
   const { data, error } = await db.from("accounts").select("user_id, label, bank_name, consent_valid_until").not("consent_valid_until", "is", null);
   if (error) throw error;
   let sent = 0;
+  let failedUsers = 0;
   for (const { user_id, banks } of consentNotices(data, today)) {
-    const subscriptions = await fetchSubscriptions(db, user_id);
-    if (subscriptions.length > 0 && await sendToAllSubscriptions(db, subscriptions, buildConsentPayload(banks), send)) sent++;
+    // One user's failure must not cost everyone else their reminder: the day is not retried (H063).
+    try {
+      const subscriptions = await fetchSubscriptions(db, user_id);
+      if (subscriptions.length > 0 && await sendToAllSubscriptions(db, subscriptions, buildConsentPayload(banks), send)) sent++;
+    } catch (err) {
+      failedUsers++;
+      console.error(`Bank reminder failed for a user: ${errorTag(err)}`);
+    }
   }
-  return { reminded: sent };
+  return { reminded: sent, failedUsers };
 }

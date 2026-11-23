@@ -160,7 +160,7 @@ Deno.test("runConsent reminds only users with a subscription, and counts deliver
     },
   };
   const sent: string[] = [];
-  assertEquals(await runConsent(db, async (_s, payload) => void sent.push(JSON.parse(payload).body), TODAY), { reminded: 1 });
+  assertEquals(await runConsent(db, async (_s, payload) => void sent.push(JSON.parse(payload).body), TODAY), { reminded: 1, failedUsers: 0 });
   assert(sent[0].startsWith("Revolut stops syncing in 7 days"));
 });
 
@@ -178,4 +178,23 @@ Deno.test("the push shows the clean merchant name, or the name the user gave it"
     buildPayload([tx("Tst*zuckers Bagels & S"), tx("PAYPAL *SPOTIFY"), tx(""), tx("X")]).body,
     "4 purchases today: Zuckers Bagels, SPOTIFY, a merchant +1 more",
   );
+});
+
+// H063: one user's failed subscription read stopped the whole run, and the reminder day is missed for good.
+Deno.test("runConsent: one user's failure doesn't stop the reminders for the others", async () => {
+  const db = {
+    from: (table: string) => {
+      if (table === "accounts") return { select: () => ({ not: async () => ({ data: [acc("u1", "Revolut EUR", "2026-10-30T00:00:00Z"), acc("u2", "Wise EUR", "2026-10-30T00:00:00Z")], error: null }) }) };
+      return { select: () => ({ eq: async (_: string, id: string) => (id === "u1" ? { data: null, error: { code: "57014" } } : { data: [{ id: "s", endpoint: "e", p256dh: "k", auth: "a" }], error: null }) }) };
+    },
+  };
+  const sent: string[] = [];
+  const log = console.error;
+  console.error = () => {};
+  try {
+    assertEquals(await runConsent(db, async (_s, payload) => void sent.push(JSON.parse(payload).body), TODAY), { reminded: 1, failedUsers: 1 });
+  } finally {
+    console.error = log;
+  }
+  assert(sent[0].startsWith("Wise stops syncing in 7 days"));
 });

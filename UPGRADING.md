@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Renaming or deleting a category keeps how each row was categorized
+- **Migration:** `20261228000000_category_move_keeps_source`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- Renaming or deleting a category marked every moved transaction as picked by hand. The next sync then copied that category onto other charges from the same merchants, and your rules stopped applying to the moved rows. A move now keeps each row as it was (AI, rule or yours). Rows moved before this update stay marked as picked by hand.
+- **Roll back:** run `supabase/rollbacks/20261228000000_category_move_keeps_source.down.sql`, then `supabase migration repair --status reverted 20261228000000 --linked`.
+
 ### Rename one transaction without renaming the others
 - **Migration:** `20261227000000_rename_one_or_by_price`. Apply it with `supabase db push --linked`, then redeploy the dashboard. No function change.
 - Renaming a transaction now asks: all from this merchant (as before) or only this one. Only this one changes just that row, and future rows keep their name.

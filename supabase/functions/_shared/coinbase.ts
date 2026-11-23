@@ -1,4 +1,4 @@
-// Deno port of sync-crypto-coinbase.js + coinbase-holdings.js: the owner's Coinbase balances
+// The owner's Coinbase balances
 // become crypto_holdings rows (source 'Coinbase'), priced afterwards by the crypto step.
 // Optional: without the key name and private key there is nothing to sync.
 // deno-lint-ignore no-explicit-any

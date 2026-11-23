@@ -1,4 +1,4 @@
-// Deno port of splitwise-categories.js + categorize-splitwise.js: Splitwise shares without a
+// Splitwise shares without a
 // category get one from the AI. A choice made in the import screen (including "Others") is never
 // overwritten: every update is guarded on category being null. Without an AI key nothing happens.
 import type { Db } from "./batch-update.ts";

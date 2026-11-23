@@ -1,7 +1,6 @@
 // Supabase Edge Function: sync-prices
 //
-// The launchd pipeline's fx-sync, sync-portfolio-prices, sync-crypto-coinbase and
-// sync-crypto-prices, moved into Supabase: today's exchange rates, a price snapshot for every
+// Today's exchange rates, a price snapshot for every
 // stock/ETF, the owner's Coinbase balances (optional), then a price snapshot for every coin.
 // No bank calls. Rates go first because both price steps convert with them; one step failing
 // doesn't stop the others. Callers send a project secret key on the apikey header.

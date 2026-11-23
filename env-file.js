@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-// setup.sh re-runs on an existing install: it reads the values already in .env and merges
+// The installer re-runs on an existing install: it reads the values already in .env and merges
 // the new ones in, so keys it doesn't manage (Coinbase, GEMINI_MODEL, comments) survive.
 function mergeEnv(text, updates) {
   const pending = new Map(Object.entries(updates));
@@ -18,8 +18,7 @@ function mergeEnv(text, updates) {
 
 const readText = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
 
-// Minimal KEY=VALUE reader (surrounding quotes stripped). setup.sh runs before `npm install`,
-// so this can't depend on dotenv.
+// Minimal KEY=VALUE reader (surrounding quotes stripped), so the installer needs no dotenv.
 function parseEnv(text) {
   const out = {};
   for (const line of text.split('\n')) {

@@ -1,4 +1,4 @@
-// Deno port of categorize.js (its --reapply-rules is the reapply-rules function here). For each new
+// For each new
 // row: your rules first, then the category you set by hand for the same merchant, then the AI;
 // afterwards AI rows take your later hand-set choice for their merchant. Without an AI (no key,
 // or it fails) your rules and past choices still apply.

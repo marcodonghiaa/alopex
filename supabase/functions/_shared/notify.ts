@@ -1,4 +1,4 @@
-// Deno port of notify-worth-it.js and consent-notice.js, run by the notify Edge Function.
+// "Worth it?" prompts and bank-access reminders, run by the notify Edge Function.
 import { errorTag } from "./log-safe.ts";
 import { capitaliseName, cleanMerchantName } from "./merchant-name.ts";
 import { fetchSubscriptions, type SendPush, sendToAllSubscriptions } from "./push.ts";

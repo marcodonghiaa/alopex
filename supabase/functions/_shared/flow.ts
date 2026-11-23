@@ -1,4 +1,4 @@
-// Deno port of classify-flow.js: each transaction's flow_type is 'spend', 'income' or 'transfer',
+// Each transaction's flow_type is 'spend', 'income' or 'transfer',
 // and flow_source says who decided it. Deterministic, no AI. For a row without a flow, first wins:
 // your rule (category_rules.set_flow_type), the Transfer category from your rules or past choices
 // (category_source 'rule'), a counterparty that is one of your own accounts, the bank's code

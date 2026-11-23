@@ -38,7 +38,7 @@ async function main({ getToken: sign = getToken, fetch: doFetch = fetchWithTimeo
   return checkApplication(doFetch, token);
 }
 
-// setup.sh loops on 1 (fixed in EB's panel, same values) and stops on 2 (needs a new APP_ID or .pem).
+// The installer loops on 1 (fixed in EB's panel, same values) and stops on 2 (needs a new APP_ID or .pem).
 const exitCode = ({ ok, retry }) => (ok ? 0 : retry ? 1 : 2);
 
 module.exports = { checkApplication, main, exitCode };

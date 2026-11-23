@@ -1,4 +1,4 @@
-// Deno port of sync-transactions.js + sync-networth.js for ONE account, used by sync-bank.
+// Bank sync for ONE account (balance and transactions), used by sync-bank.
 // Kept free of Deno.env so the tests run with fakes: fetch and supabase come in as deps.
 
 import { buildRows, type EbTransaction, lookupKeys, normalizeIban, storedContent, type StoredRefs } from "./transaction-rows.ts";

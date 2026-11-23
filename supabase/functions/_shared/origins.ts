@@ -1,6 +1,6 @@
 // Which browser origins the dashboard-facing Edge Functions answer, and where the bank redirect lands.
 // The dashboard registers its own address on the owner's sign-in (register_dashboard_origin(), table
-// dashboard_origins). A FRONTEND_URL secret, set by older setups or `setup.sh --dashboard-url`, is still
+// dashboard_origins). A FRONTEND_URL secret, set by older setups, is still
 // accepted as an extra origin. A failed lookup falls back to that secret alone: never open, never a crash.
 
 type OriginLoader = () => Promise<string[]>;

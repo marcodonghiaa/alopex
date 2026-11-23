@@ -1,15 +1,14 @@
 // Supabase Edge Function: post-sync
 //
-// What the launchd pipeline runs after the bank sync, moved into Supabase: merchant keys and
+// What runs after the bank sync: merchant keys and
 // alias dedupe for rows the sync didn't key (merchant-key-backfill.ts), categories for new
-// rows (your rules, your past choices, then Gemini; port of categorize.js), then flow_type
+// rows (your rules, your past choices, then Gemini), then flow_type
 // (spend / income / transfer, see flow.ts for the order), suggested transfer pairs between your own
-// accounts (transfer-pairs.ts) and refund pairs (classify-flow.js). Categories go first: a row
+// accounts (transfer-pairs.ts) and refund pairs. Categories go first: a row
 // that takes Transfer from your past choices also becomes a transfer. Then transaction types
-// (classify-type.js) and Splitwise shares (categorize-splitwise.js), then broker bank rows matched to
+// and Splitwise shares, then broker bank rows matched to
 // your broker CSV (match_broker_rows). No bank calls, and every update only fills empty values (or moves AI
-// rows to your choice, spend/income to refunded), so it is safe to run beside the launchd sync;
-// the only cost is that both may send the same new rows to Gemini once.
+// rows to your choice, spend/income to refunded).
 // Callers send a project secret key on the apikey header, like sync-bank.
 
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";

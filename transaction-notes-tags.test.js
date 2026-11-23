@@ -1,36 +1,20 @@
-// Notes and tags (20261208120000_transaction_notes_tags). The row-builder test always runs; the
-// database tests need psql and RLS_TEST_DATABASE_URL (a superuser URL to a throwaway server, e.g.
+// Notes and tags (20261208120000_transaction_notes_tags). The database tests need psql and RLS_TEST_DATABASE_URL (a superuser URL to a throwaway server, e.g.
 // postgres://postgres@localhost:5432/postgres) and are skipped without it. A fresh database is
 // created and dropped for each run.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
-const { buildRows } = require('./transaction-rows');
 
 const MIGRATION = 'supabase/migrations/20261208120000_transaction_notes_tags.sql';
 
-// A sample bank transaction as Enable Banking sends it.
-const ebTx = (over = {}) => ({
-  entry_reference: 'ref-1',
-  transaction_amount: { amount: '12.50', currency: 'EUR' },
-  credit_debit_indicator: 'DBIT',
-  creditor: { name: 'Coffee Bar' },
-  remittance_information: ['card'],
-  booking_date: '2026-11-02',
-  value_date: '2026-11-02',
-  status: 'BOOK',
-  ...over,
-});
-
-// protects=a sync re-run never overwrites the user's note or tags: PostgREST's upsert only sets
-// the columns its rows carry; fails_when=the bank row builder starts sending note or tags
-test('bank sync rows never carry note or tags', () => {
-  for (const ownIbans of [undefined, new Set()]) {
-    const [row] = buildRows([ebTx()], 'acc', 'user', ownIbans);
-    assert.ok(!('note' in row), 'note');
-    assert.ok(!('tags' in row), 'tags');
-  }
+// A row as the bank sync upserts it (supabase/functions/_shared/transaction-rows.ts builds it; its
+// Deno test proves the builder never adds note or tags).
+const syncRow = (account, user) => ({
+  entry_reference: 'ref-1', account_uid: account, amount: 13.25, currency: 'EUR', credit_debit_indicator: 'DBIT',
+  creditor_name: 'Coffee Bar', debtor_name: null, remittance_info: 'card', booking_date: '2026-11-02',
+  value_date: '2026-11-02', bank_transaction_code: null, own_counterparty: null,
+  raw: { entry_reference: 'ref-1', transaction_amount: { amount: '13.25', currency: 'EUR' } }, user_id: user,
 });
 
 const url = process.env.RLS_TEST_DATABASE_URL;
@@ -196,7 +180,7 @@ test('notes and tags on a real Postgres', { skip }, async (t) => {
   // The proof behind "a sync re-run must not overwrite them": the same upsert PostgREST runs for
   // the bank sync (insert the builder's columns, on conflict update those columns only).
   await t.test('a sync re-run keeps the note and tags', () => {
-    const [row] = buildRows([ebTx({ transaction_amount: { amount: '13.25', currency: 'EUR' } })], ACC_A, A, new Set());
+    const row = syncRow(ACC_A, A);
     const cols = Object.keys(row);
     const upsert = `insert into public.transactions (${cols.join(', ')}) values (${cols.map((c) => lit(row[c])).join(', ')})
       on conflict (account_uid, entry_reference) do update set ${cols.map((c) => `${c} = excluded.${c}`).join(', ')}`;

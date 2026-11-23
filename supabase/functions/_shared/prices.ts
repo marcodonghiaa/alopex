@@ -1,4 +1,4 @@
-// Deno port of fx-sync.js, sync-portfolio-prices.js and sync-crypto-prices.js, run by sync-prices.
+// Exchange rates, then stock/ETF and coin prices, run by sync-prices.
 // No bank calls: Frankfurter (rates), Yahoo (stock/ETF prices) and CoinGecko (coin prices).
 import { fxRows } from "./fx-rates.ts";
 import { parseYahooChart } from "./holdings.ts";

@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { cleanMerchantName } from "./merchant-name.ts";
 import cases from "./merchant-name.cases.json" with { type: "json" };
 
-// Same cases as alopex-web's copy and the Node copy (merchant-name.js): the three must agree.
+// Same cases as alopex-web's copy: the two must agree.
 Deno.test("cleans raw bank merchant text", () => {
   for (const [raw, clean] of cases.clean) assertEquals(cleanMerchantName(raw), clean, raw);
 });

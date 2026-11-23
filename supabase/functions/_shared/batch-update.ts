@@ -1,4 +1,4 @@
-// Deno port of batch-update.js, shared by the post-sync steps.
+// Batched row updates, shared by the post-sync steps.
 import { errorTag } from "./log-safe.ts";
 
 // deno-lint-ignore no-explicit-any

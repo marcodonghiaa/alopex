@@ -1,4 +1,4 @@
-// Same row shape as toRows in fx-sync.js (rate_to_eur = 1 / units per EUR, plus an EUR row).
+// One row per currency (rate_to_eur = 1 / units per EUR, plus an EUR row).
 export function fxRows(date: string, rates: Record<string, number>) {
   const rows = [{ date, currency: "EUR", rate_to_eur: 1 }];
   for (const [currency, unitsPerEur] of Object.entries(rates)) {

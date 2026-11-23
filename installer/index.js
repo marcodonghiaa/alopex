@@ -212,7 +212,7 @@ async function main() {
 
   step('Your login');
   if (lib.loginKept(saved, previousRef, ref)) {
-    console.log(`Already set up for ${saved.LOGIN_EMAIL}. Forgot the password? In ${backend}: ./setup.sh --reset-password`);
+    console.log(`Already set up for ${saved.LOGIN_EMAIL}. Forgot the password? Use Forgot password? on the sign-in page.`);
   } else {
     console.log('The app has no sign-up screen: your login is created here. Save the password in your password manager.');
     let email = '';

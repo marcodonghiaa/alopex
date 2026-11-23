@@ -1,4 +1,4 @@
-// Deno port of categorize-prompt.js. debtor_name is the payer: on an incoming credit,
+// debtor_name is the payer: on an incoming credit,
 // creditor_name is usually empty or the account holder, so without the payer the model only
 // sees the note. categories: this user's list (built-in minus hidden, plus their own).
 import { CATEGORIES, guideFor } from "./categories.ts";

@@ -1,9 +1,16 @@
 -- With supabase-shim.sql, enough of Supabase to apply every migration in order on plain Postgres
 -- (no pg_net or pg_cron: tests strip those two `create extension` lines and use the stubs below).
 -- Lets a test run on the real schema, with its triggers and views, instead of a hand-made copy.
+-- Roles are cluster-wide and test files run in parallel: the loser of a create race ignores the error.
 do $$ begin
-  if not exists (select from pg_roles where rolname = 'authenticator') then create role authenticator noinherit login; end if;
-  if not exists (select from pg_roles where rolname = 'supabase_admin') then create role supabase_admin; end if;
+  begin
+    if not exists (select from pg_roles where rolname = 'authenticator') then create role authenticator noinherit login; end if;
+  exception when duplicate_object or unique_violation then null;
+  end;
+  begin
+    if not exists (select from pg_roles where rolname = 'supabase_admin') then create role supabase_admin; end if;
+  exception when duplicate_object or unique_violation then null;
+  end;
 end $$;
 alter table auth.users add column created_at timestamptz default now(), add column email text;
 create function auth.role() returns text language sql stable as $$

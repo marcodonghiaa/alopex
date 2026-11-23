@@ -10,6 +10,26 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### A ruled Transfer you change back counts as spending again
+- **Function:** `post-sync` changed. Run `supabase functions deploy post-sync`. No migration.
+- A row that a rule or a learned category made a Transfer stayed out of spending even after its category was changed to something else. The next sync now counts it by its direction again (spend or income), unless a flow rule still matches. Only rows from the last 90 days are re-checked.
+- **Roll back:** redeploy the previous `post-sync` (`git checkout <previous tag> -- supabase/functions && supabase functions deploy post-sync`).
+
+### Older foreign-currency Splitwise shares count in spending
+- **Migration:** `20261230000000_fx_backfill_splitwise`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- A Splitwise share in another currency (USD, GBP, CHF and so on) from before your oldest stored exchange rate had no euro amount, so it was missing from Spending, Cash flow and Budgets. The next post-sync now fetches the past rates those shares need, as it already did for bank transactions.
+- **Roll back:** run `supabase/rollbacks/20261230000000_fx_backfill_splitwise.down.sql`, then `supabase migration repair --status reverted 20261230000000 --linked`. Rates already fetched stay.
+
+### Rejecting a transfer pair keeps a currency exchange or top-up a transfer
+- **Migration:** `20261229000000_reject_pair_keeps_bank_transfer`. Apply it with `supabase db push --linked`. No function change; update the dashboard for the demo to match.
+- A suggested transfer pair can have a currency exchange or wallet top-up on one side, which the bank already marks as a transfer. Rejecting the pair turned that side into spending or income for good. Now only the other side counts again; the exchange or top-up stays a transfer. Rows rejected before this update stay as they are: set such a row's category to Transfer to move it back.
+- **Roll back:** run `supabase/rollbacks/20261229000000_reject_pair_keeps_bank_transfer.down.sql`, then `supabase migration repair --status reverted 20261229000000 --linked`.
+
+### Renaming or deleting a category keeps how each row was categorized
+- **Migration:** `20261228000000_category_move_keeps_source`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- Renaming or deleting a category marked every moved transaction as picked by hand. The next sync then copied that category onto other charges from the same merchants, and your rules stopped applying to the moved rows. A move now keeps each row as it was (AI, rule or yours). Rows moved before this update stay marked as picked by hand.
+- **Roll back:** run `supabase/rollbacks/20261228000000_category_move_keeps_source.down.sql`, then `supabase migration repair --status reverted 20261228000000 --linked`.
+
 ### Rename one transaction without renaming the others
 - **Migration:** `20261227000000_rename_one_or_by_price`. Apply it with `supabase db push --linked`, then redeploy the dashboard. No function change.
 - Renaming a transaction now asks: all from this merchant (as before) or only this one. Only this one changes just that row, and future rows keep their name.

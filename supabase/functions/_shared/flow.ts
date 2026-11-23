@@ -5,7 +5,8 @@
 // (EXCHANGE: currency conversion, TOPUP: funding a wallet from your own account; every other code,
 // TRANSFER included, is used for P2P payments to friends), then the direction.
 // Recent 'default' rows are looked at again: a rule or category that came later (or the Node
-// sync filling the flow first) still applies. Rows you decided ('user', 'legacy') are never read.
+// sync filling the flow first) still applies. So are recent rule transfers, once no rule or
+// Transfer category holds them any more. Rows you decided ('user', 'legacy') are never read.
 // Then refunds are paired.
 import { applyGroupedUpdates, type Db } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
@@ -83,36 +84,41 @@ export async function classifyAll<T extends { account_uid: string; entry_referen
   return { total, stuck };
 }
 
-// Recent rows that took the direction by default, but where something stronger now applies.
+// Recent rows that took the direction by default, but where something stronger now applies; and
+// rule transfers whose reason is gone (you changed the Transfer category back, or the rule went).
+const RERESOLVE = [["default", ["spend", "income"]], ["rule", ["transfer"]]] as const;
 async function reresolveDefaults(db: Db, rules: FlowRule[], timeLeft: () => boolean): Promise<number> {
   if (!timeLeft()) return 0;
   const since = new Date(Date.now() - RERESOLVE_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const rows: FlowRow[] = [];
+  const rows: (FlowRow & { flow_type: string; flow_source: string })[] = [];
   // ponytail: 90 days of one person's default rows, a few pages; read first, then update.
-  for (let from = 0;; from += PAGE_SIZE) {
-    const { data, error } = await db
-      .from("transactions")
-      .select(FLOW_COLUMNS)
-      .eq("flow_source", "default")
-      .in("flow_type", ["spend", "income"])
-      .is("deleted_at", null)
-      .gte("booking_date", since)
-      .order("account_uid")
-      .order("entry_reference")
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    rows.push(...data);
-    if (data.length < PAGE_SIZE) break;
+  for (const [source, types] of RERESOLVE) {
+    for (let from = 0;; from += PAGE_SIZE) {
+      const { data, error } = await db
+        .from("transactions")
+        .select(`${FLOW_COLUMNS}, flow_type, flow_source`)
+        .eq("flow_source", source)
+        .in("flow_type", types)
+        .is("deleted_at", null)
+        .gte("booking_date", since)
+        .order("account_uid")
+        .order("entry_reference")
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < PAGE_SIZE) break;
+    }
   }
   const items = rows
     .map((row) => ({ row, update: resolveFlow(row, rules) }))
-    .filter(({ update }) => update.flow_source !== "default")
+    .filter(({ row, update }) => update.flow_source !== row.flow_source || update.flow_type !== row.flow_type)
     .map(({ row, update }) => ({
       account_uid: row.account_uid,
       entry_reference: row.entry_reference,
       update,
       guardColumn: "flow_source",
-      guardIn: ["default"],
+      guardIn: [row.flow_source],
+      alsoIn: ["flow_type", [row.flow_type]] as [string, string[]],
     }));
   await applyGroupedUpdates(db, items);
   return items.length;

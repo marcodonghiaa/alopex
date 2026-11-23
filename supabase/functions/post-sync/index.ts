@@ -6,7 +6,8 @@
 // (spend / income / transfer, see flow.ts for the order), suggested transfer pairs between your own
 // accounts (transfer-pairs.ts) and refund pairs (classify-flow.js). Categories go first: a row
 // that takes Transfer from your past choices also becomes a transfer. Then transaction types
-// (classify-type.js) and Splitwise shares (categorize-splitwise.js). No bank calls, and every update only fills empty values (or moves AI
+// (classify-type.js) and Splitwise shares (categorize-splitwise.js), then broker bank rows matched to
+// your broker CSV (match_broker_rows). No bank calls, and every update only fills empty values (or moves AI
 // rows to your choice, spend/income to refunded), so it is safe to run beside the launchd sync;
 // the only cost is that both may send the same new rows to Gemini once.
 // Callers send a project secret key on the apikey header, like sync-bank.
@@ -51,6 +52,12 @@ const BUDGET_MS = 100000;
 // The AI steps stop earlier, so a big backlog never starves the cheap flow and refund steps.
 const AI_BUDGET_MS = 70000;
 
+async function matchBrokerRows(): Promise<number> {
+  const { data, error } = await supabase.rpc("match_broker_rows");
+  if (error) console.error(`broker matching failed: ${errorTag(error)}`);
+  return Number(data?.matched) || 0;
+}
+
 Deno.serve(async (req) => {
   const started = Date.now();
   if (!hasSecretKey(req, SECRET_KEYS)) return Response.json({ error: "secret key required" }, { status: 401 });
@@ -67,7 +74,10 @@ Deno.serve(async (req) => {
     const flows = await classifyFlows(supabase, timeLeft);
     const transferPairs = await pairTransfers(supabase, timeLeft);
     const refunds = timeLeft() ? await markRefunds(supabase) : { pairs: 0, failed: 0 };
-    const result = { fxBackfilled, ...keys, ...categories, ...types, ...splitwise, flows: flows.total, flowsReresolved: flows.reresolved, transferPairs, refunds: refunds.pairs, refundWritesFailed: refunds.failed, stuck: flows.stuck, ms: Date.now() - started };
+    // Last, so transfer pairs are already there: broker bank rows (date + amount only) get the
+    // broker CSV row they came from (20261220000000_broker_matching). Best effort.
+    const brokerMatched = await matchBrokerRows();
+    const result = { fxBackfilled, ...keys, ...categories, ...types, ...splitwise, flows: flows.total, flowsReresolved: flows.reresolved, transferPairs, refunds: refunds.pairs, brokerMatched, refundWritesFailed: refunds.failed, stuck: flows.stuck, ms: Date.now() - started };
     console.log(`post-sync: ${JSON.stringify(result)}`);
     // After a first sync, rounds follow each other until nothing is left (_shared/catch-up.ts).
     const round = Number((await req.json().catch(() => ({})))?.catch_up) || 0;

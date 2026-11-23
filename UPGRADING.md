@@ -11,10 +11,15 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 ## Unreleased
 
 ### Category icons, colours and safe delete
-- **Migration:** `20261218000000_category_look_and_move`. Apply it with `supabase db push --linked`, then redeploy the dashboard.
+- **Migration:** `20261221000000_category_look_and_move`. Apply it with `supabase db push --linked`, then redeploy the dashboard.
 - Your categories can have an icon and a colour (Settings › Categories), built-in ones too.
 - Deleting a category asks where its transactions go and moves them there, with its rules, subscriptions, Splitwise shares, budgets and imported spend history, so nothing is left on a category that no longer exists. Renaming works the same way.
-- **Roll back:** run `supabase/rollbacks/20261218000000_category_look_and_move.down.sql` and `supabase migration repair --status reverted 20261218000000 --linked`; your categories show their first letter again.
+- **Roll back:** run `supabase/rollbacks/20261221000000_category_look_and_move.down.sql` and `supabase migration repair --status reverted 20261221000000 --linked`; your categories show their first letter again.
+
+### Trade Republic bank rows matched to your CSV
+Trade Republic over Enable Banking sends only a date and an amount, so buys counted as spending and deposits as income. Import your Trade Republic CSV (Investing -> Import) and each bank row is matched to the CSV row it came from: buys, sells, deposits and withdrawals become transfers ("Buy World ETF"), dividends, interest and Saveback income, taxes go to Taxes. What you set by hand stays; undoing the import puts the rows back. Rows with no single match stay as they were.
+- **Migration:** `20261220000000_broker_matching`. Apply it with `supabase db push --linked`, then `supabase functions deploy post-sync`.
+- **Rollback:** `supabase/rollbacks/20261220000000_broker_matching.down.sql` (matched rows keep their flow and category, names go).
 
 ## v0.4.1 (21 Nov 2026)
 

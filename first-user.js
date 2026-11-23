@@ -27,4 +27,39 @@ async function findUserByEmail({ url, headers, email }, doFetch) {
   return ((await listed.json()).users || []).find((u) => u.email?.toLowerCase() === email.toLowerCase());
 }
 
-module.exports = { ensureUser };
+// A forgotten password, reset with the secret key and no email (Supabase's built-in mailer may
+// never deliver "Forgot password?"): `node --env-file=.env first-user.js --reset` in backend/.
+async function resetPassword({ url, secretKey, email, password }, doFetch = fetchWithTimeout) {
+  const headers = { apikey: secretKey, Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' };
+  const user = await findUserByEmail({ url, headers, email }, doFetch);
+  if (!user) throw new Error(`No login with the email ${email}.`);
+  const updated = await doFetch(`${url}/auth/v1/admin/users/${user.id}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ password }),
+  });
+  if (!updated.ok) {
+    const error = await updated.json().catch(() => ({}));
+    throw new Error(`Could not set the new password (HTTP ${updated.status}): ${error.msg || error.message || 'unknown error'}`);
+  }
+  return user.id;
+}
+
+module.exports = { ensureUser, resetPassword };
+
+// Credentials come in through the environment, not argv, so they never show up in `ps`.
+if (require.main === module) {
+  const run = process.argv.includes('--reset') ? resetPassword : ensureUser;
+  run({
+    url: process.env.SETUP_URL || process.env.SUPABASE_URL,
+    secretKey: process.env.SETUP_SECRET_KEY || process.env.SUPABASE_SECRET_KEY,
+    email: process.env.SETUP_EMAIL,
+    password: process.env.SETUP_PASSWORD,
+  }).then(
+    (id) => console.log(id),
+    (err) => {
+      console.error(err.message);
+      process.exit(1);
+    },
+  );
+}

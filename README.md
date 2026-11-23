@@ -107,7 +107,12 @@ Shares of expenses someone else paid come in by themselves. Expenses you paid an
 
 Privacy: the key is stored in Supabase Vault in your own project, never in a table column, and only the `sync-splitwise` function reads it; Alopex only reads from Splitwise, never writes. **Disconnect** deletes the key (and, if you choose, the expenses the sync added; your CSV imports stay); deleting your account deletes both. Splitwise's [API terms](https://dev.splitwise.com/) allow it for your own account and **not for commercial use**: don't offer Splitwise sync as part of a paid service without Splitwise's permission.
 
-Run `npx create-alopex@latest` again any time: it keeps what's in `.env`, asks only for what's missing, and applies new migrations and functions. Forgot your password? **Forgot password?** on the sign-in page emails you a reset link.
+Run `npx create-alopex@latest` again any time: it keeps what's in `.env`, asks only for what's missing, and applies new migrations and functions. Forgot your password? **Forgot password?** on the sign-in page emails you a reset link. Supabase's built-in mailer is rate-limited and may not deliver, so you can also set a new one from your install's `backend` folder (Node 20+):
+
+```bash
+read -r -p "Email: " SETUP_EMAIL; read -r -s -p "New password: " SETUP_PASSWORD; echo
+SETUP_EMAIL="$SETUP_EMAIL" SETUP_PASSWORD="$SETUP_PASSWORD" node --env-file=.env first-user.js --reset
+```
 
 <details>
 <summary><b>Manual setup</b></summary>
@@ -126,7 +131,6 @@ Run `npx create-alopex@latest` again any time: it keeps what's in `.env`, asks o
 | Task | How |
 |---|---|
 | Update to the latest version | `npx create-alopex@latest` in your install |
-| Run a sync now | **Sync now** on the dashboard |
 | Re-apply changed category rules | **Apply to past transactions** on the Rules page |
 | Run the tests | `npm test` |
 

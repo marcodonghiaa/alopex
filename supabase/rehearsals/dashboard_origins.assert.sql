@@ -1,6 +1,6 @@
 -- Local rehearsal of 20261106000000 (needs the auth schema: a Supabase local stack, or a scratch Postgres with
 -- auth.users, auth.uid() and the anon/authenticated roles). Run after applying the migration, as a superuser.
--- The origin cases mirror dashboard-origins.cases.json; frontend-url.test.js checks they stay in sync.
+-- The origin cases below are the rules register_dashboard_origin() must keep.
 begin;
 insert into auth.users (id, created_at) values
   ('00000000-0000-0000-0000-0000000000a1', now() - interval '1 day'),

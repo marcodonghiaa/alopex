@@ -190,7 +190,7 @@ async function main() {
     ref = created.id || created.ref || die('Project creation returned no id.');
   }
   const url = `https://${ref}.supabase.co`;
-  saveEnv({ SUPABASE_URL: url });
+  saveEnv(lib.projectEnv(previousRef, ref, url));
   console.log(`Using project ${ref}.`);
 
   step('Creating your tables');
@@ -211,8 +211,8 @@ async function main() {
   console.log('Tables ready.');
 
   step('Your login');
-  if (lib.loginKept(saved, previousRef, ref)) {
-    console.log(`Already set up for ${saved.LOGIN_EMAIL}. Forgot the password? Use Forgot password? on the sign-in page.`);
+  if (saved.USER_ID && saved.LOGIN_EMAIL) {
+    console.log(`Already set up for ${saved.LOGIN_EMAIL}. Forgot the password? Use "Forgot password?" on the sign-in page, or see the README.`);
   } else {
     console.log('The app has no sign-up screen: your login is created here. Save the password in your password manager.');
     let email = '';

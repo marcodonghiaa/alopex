@@ -10,14 +10,14 @@ test('refFromUrl reads the project ref, rejects anything else', () => {
   assert.equal(lib.refFromUrl(undefined), '');
 });
 
-// H006: re-running against another project must create the login there, or closing sign-ups locks the owner out.
-test('loginKept: skip creating the login only when it was made on this same project', () => {
-  const saved = { USER_ID: 'u1', LOGIN_EMAIL: 'me@example.com' };
-  assert.equal(lib.loginKept(saved, 'abc', 'abc'), true);
-  assert.equal(lib.loginKept(saved, 'abc', 'xyz'), false);
-  assert.equal(lib.loginKept(saved, '', 'xyz'), false);
-  assert.equal(lib.loginKept({ USER_ID: 'u1' }, 'abc', 'abc'), false);
-  assert.equal(lib.loginKept({}, 'abc', 'abc'), false);
+// H006: re-running against another project must create the login there, or closing sign-ups locks the
+// owner out. The old login is forgotten as soon as the new project is saved, so a run stopped before the
+// login step (the next run then sees the new project as "last run's") still creates it.
+test('projectEnv: a new project forgets the old login, the same project keeps it', () => {
+  const url = 'https://xyz.supabase.co';
+  assert.deepEqual(lib.projectEnv('abc', 'xyz', url), { SUPABASE_URL: url, USER_ID: '', LOGIN_EMAIL: '' });
+  assert.deepEqual(lib.projectEnv('', 'xyz', url), { SUPABASE_URL: url, USER_ID: '', LOGIN_EMAIL: '' });
+  assert.deepEqual(lib.projectEnv('xyz', 'xyz', url), { SUPABASE_URL: url });
 });
 
 test('pickKeys matches by prefix, not position', () => {
@@ -154,7 +154,7 @@ test('installRoot: inside an install with no folder, updates that install', () =
   // A folder of its own name wins, and so does a real install below.
   assert.equal(lib.installRoot('other', '/home/me/alopex', at('/home/me/alopex')), path.resolve('/home/me/alopex', 'other'));
   assert.equal(lib.installRoot('alopex', '/home/me', at('/home/me', '/home/me/alopex')), path.resolve('/home/me', 'alopex'));
-  // re-audit: from backend/ or dashboard/ of an install (env-check.js, .env edits), that install too.
+  // re-audit: from backend/ or dashboard/ of an install (.env edits), that install too.
   assert.equal(lib.installRoot('alopex', '/home/me/alopex/backend', at('/home/me/alopex')), '/home/me/alopex');
   assert.equal(lib.installRoot('alopex', '/home/me/alopex/dashboard/src', at('/home/me/alopex')), '/home/me/alopex');
   // re-audit round 2: another project with only a backend/.env is not an install.

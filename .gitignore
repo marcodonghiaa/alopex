@@ -1,10 +1,6 @@
 .env
 *.pem
-last-sync.json*
-sync-log-*.txt
-notify-log-*.txt
 node_modules/
 .DS_Store
 .claude/
 graphify-out/
-dashboard-values.txt

@@ -1,7 +1,7 @@
 const fs = require('fs');
 
 // The installer re-runs on an existing install: it reads the values already in .env and merges
-// the new ones in, so keys it doesn't manage (Coinbase, GEMINI_MODEL, comments) survive.
+// the new ones in, so keys it doesn't manage (GEMINI_MODEL, comments) survive.
 function mergeEnv(text, updates) {
   const pending = new Map(Object.entries(updates));
   const lines = text === '' ? [] : text.replace(/\n$/, '').split('\n');

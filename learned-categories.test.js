@@ -59,3 +59,33 @@ test('an AI row is corrected to your category; your own and rule rows never are'
   );
   assert.deepStrictEqual(plan.map((p) => [p.row.entry_reference, p.category]), [['ai-wrong', 'Housing']]);
 });
+
+// H011: one in() with hundreds of merchant names made a request URL past proxy limits, and the
+// failed read stopped the categorize step. Names go in chunks of 50, like batch-update.js.
+test('fetchLearned asks for many merchants in chunks of 50 and keeps the newest choice for each', async () => {
+  const names = Array.from({ length: 120 }, (_, i) => `M${i}`);
+  const stored = names.flatMap((n) => [
+    { creditor_name: n, category: `new-${n}`, booking_date: '2026-10-01' },
+    { creditor_name: n, category: `old-${n}`, booking_date: '2026-09-01' },
+  ]);
+  const inLists = [];
+  const db = {
+    from: () => {
+      let list = [];
+      const q = {
+        select: () => q,
+        eq: () => q,
+        in: (_c, v) => ((list = v), inLists.push(v), q),
+        not: () => q,
+        is: () => q,
+        order: () => q,
+        range: async () => ({ data: stored.filter((r) => list.includes(r.creditor_name)), error: null }),
+      };
+      return q;
+    },
+  };
+  const learned = await fetchLearned(db, 'u1', names);
+  assert.deepStrictEqual(inLists.map((l) => l.length), [50, 50, 20]);
+  assert.strictEqual(learned.size, 120);
+  assert.deepStrictEqual([learned.get('M0'), learned.get('M119')], ['new-M0', 'new-M119']);
+});

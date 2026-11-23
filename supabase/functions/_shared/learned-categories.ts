@@ -4,29 +4,34 @@
 import type { Db } from "./batch-update.ts";
 
 const PAGE = 1000;
+const CHUNK_SIZE = 50; // keeps the `in (...)` request URL well under proxy limits, as in batch-update.ts
 
 // Most recent hand-set category per merchant, for one user and the merchants in `names`.
 // ponytail: pages through every matching hand-set row with no time check; one batch's merchants.
 export async function fetchLearned(db: Db, userId: string, names: Array<string | null | undefined>) {
   const unique = [...new Set(names.filter(Boolean))];
   const learned = new Map<string, string>();
-  if (unique.length === 0) return learned;
-  for (let from = 0;; from += PAGE) {
-    const { data, error } = await db
-      .from("transactions")
-      .select("creditor_name, category, booking_date")
-      .eq("user_id", userId)
-      .eq("category_source", "manual")
-      .in("creditor_name", unique)
-      .not("category", "is", null)
-      .is("deleted_at", null)
-      .order("booking_date", { ascending: false })
-      .order("entry_reference", { ascending: false })
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    for (const r of data) if (!learned.has(r.creditor_name)) learned.set(r.creditor_name, r.category);
-    if (data.length < PAGE) return learned;
+  // Each name is in one chunk only, so newest first within a chunk is newest per name.
+  for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
+    const chunk = unique.slice(i, i + CHUNK_SIZE);
+    for (let from = 0;; from += PAGE) {
+      const { data, error } = await db
+        .from("transactions")
+        .select("creditor_name, category, booking_date")
+        .eq("user_id", userId)
+        .eq("category_source", "manual")
+        .in("creditor_name", chunk)
+        .not("category", "is", null)
+        .is("deleted_at", null)
+        .order("booking_date", { ascending: false })
+        .order("entry_reference", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      for (const r of data) if (!learned.has(r.creditor_name)) learned.set(r.creditor_name, r.category);
+      if (data.length < PAGE) break;
+    }
   }
+  return learned;
 }
 
 // Rows whose merchant has a learned category, and the rest (left for the AI).

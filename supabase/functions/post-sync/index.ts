@@ -27,6 +27,7 @@ import { nextCatchUp } from "../_shared/catch-up.ts";
 import { backfillFx } from "../_shared/fx-backfill.ts";
 import { getJson } from "../_shared/prices.ts";
 import { fillMerchantKeys } from "../_shared/merchant-key-backfill.ts";
+import { runStep } from "../_shared/run-step.ts";
 
 const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
 const supabase = createClient(
@@ -68,15 +69,17 @@ Deno.serve(async (req) => {
     // Past exchange rates first: a fresh install has none before today (e2e #8). Best effort.
     const fxBackfilled = await backfillFx(supabase, getJson).catch((err) => (console.error(`fx backfill failed: ${errorTag(err)}`), 0));
     const keys = timeLeft() ? await fillMerchantKeys(supabase, timeLeft) : { keys: 0, aliases: 0 };
-    const categories = await categorize(supabase, classify, aiTimeLeft);
-    const types = await classifyTypes(supabase, ask, aiTimeLeft);
-    const splitwise = await categorizeSplitwise(supabase, ask, aiTimeLeft);
-    const flows = await classifyFlows(supabase, timeLeft);
-    const transferPairs = await pairTransfers(supabase, timeLeft);
-    const refunds = timeLeft() ? await markRefunds(supabase) : { pairs: 0, failed: 0 };
+    // Each step on its own: one that throws is logged and makes the run a 500, the rest still run.
+    const stepsFailed: string[] = [];
+    const categories = await runStep("categorize", stepsFailed, () => categorize(supabase, classify, aiTimeLeft), { categorized: 0, relearned: 0, byRules: 0, aiFailed: false });
+    const types = await runStep("types", stepsFailed, () => classifyTypes(supabase, ask, aiTimeLeft), { typed: 0, typedByRules: 0, typeAiFailed: false });
+    const splitwise = await runStep("splitwise", stepsFailed, () => categorizeSplitwise(supabase, ask, aiTimeLeft), { splitwise: 0, splitwiseAiFailed: false });
+    const flows = await runStep("flows", stepsFailed, () => classifyFlows(supabase, timeLeft), { total: 0, stuck: false, reresolved: 0 });
+    const transferPairs = await runStep("transferPairs", stepsFailed, () => pairTransfers(supabase, timeLeft), 0);
+    const refunds = timeLeft() ? await runStep("refunds", stepsFailed, () => markRefunds(supabase), { pairs: 0, failed: 0 }) : { pairs: 0, failed: 0 };
     // Last, so transfer pairs are already there: broker bank rows (date + amount only) get the
     // broker CSV row they came from (20261220000000_broker_matching). Best effort.
-    const brokerMatched = await matchBrokerRows();
+    const brokerMatched = await runStep("brokerMatching", stepsFailed, () => matchBrokerRows(), 0);
     const result = { fxBackfilled, ...keys, ...categories, ...types, ...splitwise, flows: flows.total, flowsReresolved: flows.reresolved, transferPairs, refunds: refunds.pairs, brokerMatched, refundWritesFailed: refunds.failed, stuck: flows.stuck, ms: Date.now() - started };
     console.log(`post-sync: ${JSON.stringify(result)}`);
     // After a first sync, rounds follow each other until nothing is left (_shared/catch-up.ts).
@@ -86,7 +89,7 @@ Deno.serve(async (req) => {
       const { error } = await supabase.rpc("queue_edge_job", { job: next.job, round: next.round });
       if (error) console.error(`catch-up round ${round + 1} not queued: ${errorTag(error)}`);
     }
-    const failed = flows.stuck || refunds.failed > 0 || categories.aiFailed || types.typeAiFailed || splitwise.splitwiseAiFailed;
+    const failed = stepsFailed.length > 0 || flows.stuck || refunds.failed > 0 || categories.aiFailed || types.typeAiFailed || splitwise.splitwiseAiFailed;
     return Response.json(result, { status: failed ? 500 : 200 });
   } catch (err) {
     console.error(`post-sync failed: ${errorTag(err)}`);

@@ -170,6 +170,8 @@ Deno.test("the push shows the clean merchant name, or the name the user gave it"
   const tx = (creditor_name: string | null, custom_name: string | null = null) => ({ entry_reference: "r1", creditor_name, custom_name, amount: 43.03, currency: "USD", category: "Shopping" });
   assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3")]).body, "US$43.03 at Amazon — Shopping");
   assertEquals(buildPayload([tx("Amazon Mark* E46na7fw3", "Birthday gift")]).body, "US$43.03 at Birthday gift — Shopping");
+  assertEquals(buildPayload([tx("netflix", "birthday gift")]).body, "US$43.03 at Birthday gift — Shopping");
+  assertEquals(buildPayload([tx("netflix")]).body, "US$43.03 at Netflix — Shopping");
   assertEquals(buildPayload([tx(null)]).body, "US$43.03 at a merchant — Shopping");
   assertEquals(buildPayload([tx("   ", "  ")]).body, "US$43.03 at a merchant — Shopping");
   assertEquals(

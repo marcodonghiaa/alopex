@@ -1,6 +1,6 @@
 // Deno port of notify-worth-it.js and consent-notice.js, run by the notify Edge Function.
 import { errorTag } from "./log-safe.ts";
-import { cleanMerchantName } from "./merchant-name.ts";
+import { capitaliseName, cleanMerchantName } from "./merchant-name.ts";
 import { fetchSubscriptions, type SendPush, sendToAllSubscriptions } from "./push.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -43,7 +43,7 @@ export async function fetchEligibleTransactions(db: Db, userId: string, now: Dat
 const myShare = (t: Row): number => Number(t.personal_amount ?? t.amount);
 
 // The name the app shows: the user's own name for it, else the bank's without codes ("Amazon Mark* E46na7fw3" -> "Amazon").
-const merchant = (t: Row): string => t.custom_name?.trim() || cleanMerchantName(t.creditor_name)?.trim() || "a merchant";
+const merchant = (t: Row): string => capitaliseName(t.custom_name?.trim() ?? "") || cleanMerchantName(t.creditor_name)?.trim() || "a merchant";
 
 // "€20.00" and "US$50.00", like the app's default (en-GB) format; a code Intl doesn't know keeps the plain "20 XX1".
 const money = (n: number, currency: string): string => {

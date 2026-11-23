@@ -1,5 +1,5 @@
 const { errorTag } = require('./log-safe');
-const { cleanMerchantName } = require('./merchant-name');
+const { capitaliseName, cleanMerchantName } = require('./merchant-name');
 
 // ponytail: hardcoded allowlist, add a per-user setting if this ever needs
 // to be user-configurable instead of a personal tuning knob.
@@ -37,7 +37,7 @@ const myShare = (t) => Number(t.personal_amount ?? t.amount);
 // from a period without sync) become ONE digest push instead of a stack
 // of separate notifications for the same shopping spree.
 // The name the app shows: the user's own name for it, else the bank's without codes.
-const merchant = (t) => (t.custom_name && t.custom_name.trim()) || cleanMerchantName(t.creditor_name)?.trim() || 'a merchant';
+const merchant = (t) => capitaliseName((t.custom_name || '').trim()) || cleanMerchantName(t.creditor_name)?.trim() || 'a merchant';
 
 // "€20.00" and "US$50.00", like the app's default (en-GB) format; a code Intl doesn't know keeps the plain "20 XX1".
 const money = (n, currency) => {

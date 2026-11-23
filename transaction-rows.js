@@ -17,6 +17,50 @@ function entryReferenceFor(tx, seen) {
   return `h:${crypto.createHash('sha1').update(`${key}|${n}`).digest('hex').slice(0, 24)}`;
 }
 
+// Some banks reuse one entry_reference for different transactions (Enable Banking FAQ), and the
+// upsert on (account_uid, entry_reference) then kept only one of them. A key never changes once
+// stored, so nothing stored before is duplicated: the bank ref stays the key of the row stored under
+// it, and another transaction with that ref is keyed `ref#<hash of date, amount, currency, side>`,
+// the same on every sync. Which is which comes from the stored rows (their bank payload, raw), read
+// by the caller for lookupKeys(transactions) and passed to buildRows as `stored` (key -> content,
+// null when unknown). Same keys as supabase/functions/_shared/transaction-rows.ts.
+const contentOf = (tx) =>
+  [tx.booking_date, tx.transaction_amount?.amount, tx.transaction_amount?.currency, tx.credit_debit_indicator].join('|');
+const splitKey = (ref, content) => `${ref}#${crypto.createHash('sha1').update(content).digest('hex').slice(0, 12)}`;
+
+// What a stored row was saved from, from its raw column; null when there is no bank payload.
+const storedContent = (raw) => (raw && typeof raw === 'object' && raw.transaction_amount ? contentOf(raw) : null);
+
+// Every key a bank-ref transaction of this batch could have: read those rows before buildRows.
+function lookupKeys(transactions) {
+  const keys = new Set();
+  for (const tx of transactions) {
+    if (tx.status === 'PDNG' || !tx.entry_reference) continue;
+    keys.add(tx.entry_reference).add(splitKey(tx.entry_reference, contentOf(tx)));
+  }
+  return [...keys];
+}
+
+// The key for a transaction that has a bank ref. bareTaken: ref -> the content that got the bare
+// ref in this batch, so two rows never share it.
+function bankKey(tx, stored, inBatch, earliest, bareTaken) {
+  const ref = tx.entry_reference;
+  const content = contentOf(tx);
+  const split = splitKey(ref, content);
+  if (stored.has(split)) return split;
+  const was = stored.get(ref);
+  if (was === null || was === content) return ref;
+  if (was !== undefined) {
+    // The bare ref holds another transaction. If that one is in this batch too, or older than all
+    // of it, this is a new transaction reusing the ref. Otherwise the bank changed that row: update
+    // it, as before.
+    const wasDate = was.split('|')[0];
+    if (inBatch.get(ref).has(was) || (wasDate && wasDate < earliest)) return split;
+  }
+  if (!bareTaken.has(ref)) bareTaken.set(ref, content);
+  return bareTaken.get(ref) === content ? ref : split;
+}
+
 // The bank payload is kept for support and export, minus the counterparty's account number
 // (IBAN): nothing reads it, and it is someone else's data.
 function rawWithoutAccounts(tx) {
@@ -58,17 +102,21 @@ function mapToRow(tx, accountUid, userId, entryReference, ownIbans) {
 
 // ownIbans: the user's own accounts' IBANs, normalized (see normalizeIban); without it rows carry
 // no own_counterparty.
-function buildRows(transactions, accountUid, userId, ownIbans) {
+function buildRows(transactions, accountUid, userId, ownIbans, stored = new Map()) {
   const seen = new Map();
   const byRef = new Map(); // Map keeps one row per key, last wins
-  for (const tx of transactions) {
-    // A pending transaction has no stable id yet: stored now, it would be kept beside its
-    // booked copy (a different id) and counted twice. It is stored once the bank books it.
-    if (tx.status === 'PDNG') continue;
-    const ref = entryReferenceFor(tx, seen);
+  // A pending transaction has no stable id yet: stored now, it would be kept beside its
+  // booked copy (a different id) and counted twice. It is stored once the bank books it.
+  const booked = transactions.filter((tx) => tx.status !== 'PDNG');
+  const inBatch = new Map();
+  for (const tx of booked) if (tx.entry_reference) inBatch.set(tx.entry_reference, (inBatch.get(tx.entry_reference) ?? new Set()).add(contentOf(tx)));
+  const earliest = booked.map((tx) => tx.booking_date).filter(Boolean).sort()[0] ?? '';
+  const bareTaken = new Map();
+  for (const tx of booked) {
+    const ref = tx.entry_reference ? bankKey(tx, stored, inBatch, earliest, bareTaken) : entryReferenceFor(tx, seen);
     byRef.set(ref, mapToRow(tx, accountUid, userId, ref, ownIbans));
   }
   return [...byRef.values()];
 }
 
-module.exports = { buildRows, normalizeIban };
+module.exports = { buildRows, normalizeIban, lookupKeys, storedContent };

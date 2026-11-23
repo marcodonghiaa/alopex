@@ -4,7 +4,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { getAccounts, getAllUserIds, ebAccountId, EB_REJECTED_STATUSES } = require('./accounts');
 const { getToken } = require('./eb-token');
-const { buildRows, normalizeIban } = require('./transaction-rows');
+const { buildRows, normalizeIban, lookupKeys, storedContent } = require('./transaction-rows');
 const { fetchWithTimeout } = require('./http');
 const { errorTag } = require('./log-safe');
 const { loadCursors, saveCursors, freshUnsyncedAccounts } = require('./sync-state');
@@ -53,6 +53,20 @@ async function fetchOwnIbans(supabase, userId) {
 
 // EB is asked with the id it answers to now; rows and the cursor stay under the PK (uid).
 // Never throws for EB failures: rejected carries the status when EB refuses the id.
+// The rows already saved under the keys this batch could take, so a bank that reuses an
+// entry_reference keeps both transactions (transaction-rows.js). 50 keys a request: URL limits.
+async function fetchStoredRefs(supabase, accountUid, transactions) {
+  const keys = lookupKeys(transactions);
+  const stored = new Map();
+  for (let i = 0; i < keys.length; i += 50) {
+    const { data, error } = await supabase.from('transactions').select('entry_reference, raw')
+      .eq('account_uid', accountUid).in('entry_reference', keys.slice(i, i + 50));
+    if (error) throw error;
+    for (const r of data ?? []) stored.set(r.entry_reference, storedContent(r.raw));
+  }
+  return stored;
+}
+
 async function syncAccountTransactions({ fetch, supabase }, token, account, userId, lastSync, today) {
   // Re-fetch an overlap before the cursor: banks post transactions days after their
   // booking_date, so a cursor of "today" would skip them forever. Upsert dedupes.
@@ -64,7 +78,8 @@ async function syncAccountTransactions({ fetch, supabase }, token, account, user
   try {
     const transactions = await getAllTransactions(fetch, token, ebAccountId(account), dateFrom);
     const ownIbans = transactions.length > 0 ? await fetchOwnIbans(supabase, userId) : undefined;
-    const rows = buildRows(transactions, account.uid, userId, ownIbans);
+    const stored = transactions.length > 0 ? await fetchStoredRefs(supabase, account.uid, transactions) : new Map();
+    const rows = buildRows(transactions, account.uid, userId, ownIbans, stored);
 
     if (rows.length === 0) {
       console.log('No new transactions.');

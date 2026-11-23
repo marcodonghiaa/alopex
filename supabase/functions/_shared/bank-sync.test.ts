@@ -31,13 +31,14 @@ function fakeFetch(responses: Record<string, FakeRes>) {
 }
 
 // Records .upsert(rows, opts) and .update(patch) with its .eq / .is filter chain, once awaited.
-// select answers with `accounts` (the user's own accounts' IBANs).
-function fakeSupabase(error: unknown = null, accounts: { iban: string | null }[] = []) {
+// select answers with `accounts` (the user's own accounts' IBANs), or `stored` for transactions.
+function fakeSupabase(error: unknown = null, accounts: { iban: string | null }[] = [], stored: unknown[] = []) {
   const writes: { table: string; op: string; data: unknown; filters?: unknown[] }[] = [];
   const supabase = {
     from: (table: string) => ({
       select: () => {
-        const query = { eq: () => query, not: () => query, then: (resolve: (v: unknown) => void) => resolve({ data: accounts, error }) };
+        const data = table === "transactions" ? stored : accounts;
+        const query = { eq: () => query, in: () => query, not: () => query, then: (resolve: (v: unknown) => void) => resolve({ data, error }) };
         return query;
       },
       upsert: async (data: unknown, opts: unknown) => (writes.push({ table, op: "upsert", data, filters: [opts] }), { error }),
@@ -66,6 +67,18 @@ Deno.test("transactions: calls EB with eb_account_uid; rows and cursor use uid",
   assertEquals(writes[0].filters, [{ onConflict: "account_uid,entry_reference" }]);
   assert((writes[0].data as { account_uid: string }[]).every((row) => row.account_uid === "pk"));
   assertEquals(result, { upserted: 1, rejected: null, cursor: TODAY, error: null });
+});
+
+// H014/H016: a bank reusing an entry_reference overwrote the stored transaction with the new one.
+Deno.test("transactions: a reused entry_reference is saved beside the stored row, not over it", async () => {
+  const old = { ...TX, booking_date: "2026-08-01", transaction_amount: { amount: "-9.00", currency: "EUR" } };
+  const { fetch } = fakeFetch({ "/transactions?": { body: { transactions: [TX] } } });
+  const { supabase, writes } = fakeSupabase(null, [], [{ entry_reference: "r1", raw: old }]);
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
+
+  const rows = writes[0].data as { entry_reference: string }[];
+  assertEquals(rows.map((r) => r.entry_reference), ["r1#d55b3e31c767"]);
 });
 
 Deno.test("transactions: marks rows whose counterparty is one of the user's own accounts", async () => {

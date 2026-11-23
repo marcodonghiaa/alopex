@@ -1,5 +1,5 @@
 import { assertEquals, assertMatch, assertNotEquals } from "jsr:@std/assert@1.0.19";
-import { buildRows, type EbTransaction, normalizeIban, ownCounterparty } from "./transaction-rows.ts";
+import { buildRows, type EbTransaction, lookupKeys, normalizeIban, ownCounterparty, storedContent } from "./transaction-rows.ts";
 
 const tx = (over: EbTransaction = {}): EbTransaction => ({
   entry_reference: "r1",
@@ -113,16 +113,52 @@ Deno.test("rows never carry note or tags", async () => {
   }
 });
 
-// Polish 1 #1. Some banks reuse one entry_reference (Enable Banking FAQ). Whatever key a
-// transaction gets must not depend on what else is in the batch: the first sync sees old A and new B,
-// the next cron sync (cursor minus 7 days) sees only B. Two different keys for B stored it twice.
-Deno.test("a reused entry_reference gives the same key across syncs, so nothing is stored twice", async () => {
+// The table, keyed on (account, entry_reference). Each sync reads the stored rows its keys may
+// meet (lookupKeys), as bank-sync does, then upserts.
+type Row = Record<string, unknown>;
+async function syncInto(table: Map<unknown, Row>, batch: EbTransaction[]) {
+  const stored = new Map<string, string | null>();
+  for (const key of await lookupKeys(batch)) if (table.has(key)) stored.set(key, storedContent(table.get(key)!.raw));
+  for (const row of await buildRows(batch, "acc", "user", undefined, stored)) table.set(row.entry_reference, row);
+}
+const amounts = (table: Map<unknown, Row>) => [...table.values()].map((r) => r.amount).sort();
+
+// Polish 1 #1, H014/H016. Some banks reuse one entry_reference (Enable Banking FAQ). Both
+// transactions must be kept, and whatever key each gets must not depend on what else is in the
+// batch: the first sync sees old A and new B, the next cron sync (cursor minus 7 days) only B.
+Deno.test("a reused entry_reference keeps both transactions, each once, across syncs", async () => {
   const a = tx({ booking_date: "2026-09-01", transaction_amount: { amount: "10.00", currency: "EUR" } });
   const b = tx({ booking_date: "2026-11-10", transaction_amount: { amount: "40.00", currency: "EUR" } });
-  const stored = new Map<unknown, unknown>(); // upsert on (account, entry_reference)
-  for (const batch of [[a, b], [b], [b, a]]) {
-    for (const row of await buildRows(batch, "acc", "user")) stored.set(row.entry_reference, row.amount);
+  for (const syncs of [[[a, b], [b], [b, a]], [[b, a], [a], [a, b]], [[a], [b], [a, b], [b]]]) {
+    const table = new Map<unknown, Row>();
+    for (const batch of syncs) await syncInto(table, batch);
+    assertEquals(amounts(table), [10, 40], JSON.stringify([...table.keys()]));
   }
-  const amounts = [...stored.values()];
-  assertEquals(amounts.filter((x) => x === 40).length <= 1, true, `B stored twice: ${JSON.stringify([...stored])}`);
+});
+
+// The key a row was stored under never changes, so nothing stored before this fix is duplicated.
+Deno.test("a stored bare reference keeps its key; a later reuse gets its own stable key", async () => {
+  const a = tx({ booking_date: "2026-09-01", transaction_amount: { amount: "10.00", currency: "EUR" } });
+  const b = tx({ booking_date: "2026-11-10", transaction_amount: { amount: "40.00", currency: "EUR" } });
+  const table = new Map<unknown, Row>();
+  await syncInto(table, [a]);
+  await syncInto(table, [b]);
+  await syncInto(table, [b]);
+  assertEquals(table.get("r1")?.amount, 10);
+  assertEquals([...table.keys()], ["r1", "r1#c217b97efb0f"]);
+});
+
+// The bank correcting a row it already sent (same reference, new amount, still in the window)
+// updates that row, as before, instead of adding a second one.
+Deno.test("the bank changing a stored row updates it, not a second row", async () => {
+  const table = new Map<unknown, Row>();
+  await syncInto(table, [tx({ transaction_amount: { amount: "10.00", currency: "EUR" } })]);
+  await syncInto(table, [tx({ transaction_amount: { amount: "12.00", currency: "EUR" } })]);
+  assertEquals([...table.entries()].map(([k, r]) => [k, r.amount]), [["r1", 12]]);
+});
+
+// A stored row without the bank payload (raw) can't be compared: it keeps the bare key, as before.
+Deno.test("a stored row with no bank payload keeps the bare reference", async () => {
+  const rows = await buildRows([tx({ booking_date: "2026-11-10" })], "acc", "user", undefined, new Map([["r1", storedContent(null)]]));
+  assertEquals(rows.map((r) => r.entry_reference), ["r1"]);
 });

@@ -18,7 +18,7 @@ Needs Node 20+. No git, Docker, Homebrew or GitHub account: the Supabase and Ver
 | Your login, public sign-ups off | you type email + password |
 | Enable Banking app (PSD2) | **manual**, about 10 min on their site: no API exists for it |
 | Gemini key | optional, you paste it |
-| Scheduled sync (pg_cron in Supabase, every 6 h) | yes |
+| Scheduled sync (pg_cron in Supabase, 4 times a day) | yes |
 | Dashboard on Vercel | opens your browser to sign in, then yes |
 
 To update, run `npx create-alopex@latest` from the same place as the first time, or inside the

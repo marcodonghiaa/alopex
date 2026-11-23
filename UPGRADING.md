@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Banks sync in waking hours
+- **Migration:** `20261224000000_bank_sync_hours`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- Still 4 bank syncs a day (banks allow about 4 unattended reads a day per account), now at 05:17, 11:17, 16:17 and 21:17 UTC (06/12/17/22 CET, 07/13/18/23 CEST) instead of every 6 hours from midnight UTC, so no run is spent at night. Post-sync, prices, Splitwise and subscriptions follow each run as before.
+- **Roll back:** run `supabase/rollbacks/20261224000000_bank_sync_hours.down.sql`, then `supabase migration repair --status reverted 20261224000000 --linked`.
+
 ### Subscriptions follow your transaction edits
 - **Migrations:** `20261222000000_recurring_streams_gone` and `20261223000000_transaction_type_source`. Apply them with `supabase db push --linked`, then `supabase functions deploy` (new function `refresh-recurring`; `detect-recurring` changed), then redeploy the dashboard.
 - A transaction type you pick yourself (Subscription or One-time) is now remembered: the sync, rules and the AI no longer change it, and charges you mark One-time never make a subscription, even when they come every month. Types picked before this update aren't marked: pick One-time again on those charges.

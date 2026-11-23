@@ -85,8 +85,8 @@ and commit the updated lock.
   (web-push via npm). Same auth as `sync-bank`.
 
 - **detect-recurring** — the subscription radar: finds recurring charges for every user and stores
-  them in `recurring_streams` (`upsert_detected_streams`). No bank calls. pg_cron calls it every
-  6 hours (job `detect-recurring`). Same auth as `sync-bank`.
+  them in `recurring_streams` (`upsert_detected_streams`). No bank calls. pg_cron calls it 4 times a
+  day, after each bank sync (job `detect-recurring`). Same auth as `sync-bank`.
 - **splitwise-connect** — the dashboard's Splitwise connection. `{ "apiKey", "consent": true }`
   checks the user's personal Splitwise API key (`get_current_user`) and stores it in Supabase
   Vault (`splitwise_save_connection`; never a table column), returning `{ displayName }`; 5 tries
@@ -98,7 +98,7 @@ and commit the updated lock.
 - **sync-splitwise** — reads each connected user's Splitwise expenses and groups with their own key
   and writes them with `splitwise_sync_apply`: shares of expenses someone else paid, a review list
   for the ones you paid and settle-ups, edits, deletions and balances per currency. Changes since
-  the last run (minus a day), everything once a week. pg_cron calls it every 6 hours (job
+  the last run (minus a day), everything once a week. pg_cron calls it 4 times a day (job
   `sync-splitwise`) with a project secret key on `apikey`, like `post-sync`; the signed-in dashboard
   calls it for "Sync now" (own connection only) or with `{ "preview": true }` for a
   dry run returning `{ new, adopted, review, deleted }`, each once a minute per user (counted in

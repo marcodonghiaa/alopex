@@ -37,7 +37,7 @@ Your data lives in your own Supabase project. No SaaS, no subscription.
 ```mermaid
 flowchart LR
     Bank[(Banks<br/>Enable Banking)] --> SYNC[sync-bank]
-    CRON[pg_cron<br/>every 6 hours] --> SYNC
+    CRON[pg_cron<br/>4 times a day] --> SYNC
     SYNC --> DB[(Supabase<br/>Postgres + RLS)]
     DB --> POST[post-sync<br/>rules, Gemini, flows, refunds]
     POST --> DB
@@ -47,7 +47,7 @@ flowchart LR
     DB --> PUSH[notify<br/>Web Push]
 ```
 
-`npx create-alopex` schedules everything with pg_cron inside your Supabase project ([`20261118000000_schedule_sync.sql`](supabase/migrations/20261118000000_schedule_sync.sql)). Every **6 hours** (banks typically cap unattended access at about 4 calls a day per account), for every linked user:
+`npx create-alopex` schedules everything with pg_cron inside your Supabase project ([`20261118000000_schedule_sync.sql`](supabase/migrations/20261118000000_schedule_sync.sql), times in [`20261224000000_bank_sync_hours.sql`](supabase/migrations/20261224000000_bank_sync_hours.sql)). **4 times a day**, at 05:17, 11:17, 16:17 and 21:17 UTC (06, 12, 17, 22 CET; banks typically cap unattended access at about 4 calls a day per account, so there is no night run), for every linked user:
 
 1. `sync-bank` pulls balances and new transactions, with a 7-day overlap because banks post late, and marks payments between your own accounts.
 2. `post-sync` fills merchant keys, applies your rules and past choices, then Gemini, for categories; marks `Subscription` or `One-time`; categorizes Splitwise expenses; marks `spend`, `income` or `transfer` (your flow rules, your own accounts, the bank's code); suggests transfer pairs; then pairs each card refund with its original charge (same account, merchant, amount and currency, within 90 days) and marks both `refunded` so neither counts. A flow you set by hand, or a transfer from a rule, is never changed. Refund pairing also covers rows a rule marked "not a transfer" and rows synced before flows were tracked (`legacy`).

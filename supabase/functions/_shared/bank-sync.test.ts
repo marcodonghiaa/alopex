@@ -81,6 +81,40 @@ Deno.test("transactions: a reused entry_reference is saved beside the stored row
   assertEquals(rows.map((r) => r.entry_reference), ["r1#d55b3e31c767"]);
 });
 
+// A first sync can bring thousands of rows: the stored-key lookups run 4 at a time, not one by one.
+Deno.test("transactions: stored keys are looked up in chunks of 50, 4 requests at a time", async () => {
+  const many = Array.from({ length: 300 }, (_, i) => ({ ...TX, entry_reference: `r${i}` }));
+  const { fetch } = fakeFetch({ "/transactions?": { body: { transactions: many } } });
+  let inFlight = 0;
+  let most = 0;
+  const lookups: number[] = [];
+  const supabase = {
+    from: () => ({
+      select: () => {
+        const query = {
+          eq: () => query,
+          not: () => query,
+          in: (_c: string, keys: string[]) => {
+            lookups.push(keys.length);
+            inFlight++;
+            most = Math.max(most, inFlight);
+            return new Promise((resolve) => setTimeout(() => (inFlight--, resolve({ data: [], error: null })), 1));
+          },
+          then: (resolve: (v: unknown) => void) => resolve({ data: [], error: null }),
+        };
+        return query;
+      },
+      upsert: async () => ({ error: null }),
+    }),
+  };
+
+  const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), null, TODAY);
+
+  assertEquals(result.upserted, 300);
+  assertEquals(lookups, Array(12).fill(50));
+  assertEquals(most, 4);
+});
+
 Deno.test("transactions: marks rows whose counterparty is one of the user's own accounts", async () => {
   const toOwn = { ...TX, entry_reference: "own", creditor_account: { iban: "IT60 X054 2811 1010 0000 0123 456" } };
   const toOther = { ...TX, entry_reference: "other", creditor_account: { iban: "DE89370400440532013000" } };

@@ -129,15 +129,21 @@ async function fetchOwnIbans(supabase: Db, userId: string): Promise<Set<string> 
 }
 
 // The rows already saved under the keys this batch could take, so a bank that reuses an
-// entry_reference keeps both transactions (transaction-rows.ts). 50 keys a request: URL limits.
+// entry_reference keeps both transactions (transaction-rows.ts). 50 keys a request (URL limits),
+// 4 requests at a time, so a first sync of thousands of rows stays quick.
 async function fetchStoredRefs(supabase: Db, accountUid: string, transactions: EbTransaction[]): Promise<StoredRefs> {
   const keys = await lookupKeys(transactions);
+  const chunks = [];
+  for (let i = 0; i < keys.length; i += 50) chunks.push(keys.slice(i, i + 50));
   const stored: StoredRefs = new Map();
-  for (let i = 0; i < keys.length; i += 50) {
-    const { data, error } = await supabase.from("transactions").select("entry_reference, raw")
-      .eq("account_uid", accountUid).in("entry_reference", keys.slice(i, i + 50));
-    if (error) throw error;
-    for (const r of data ?? []) stored.set(r.entry_reference, storedContent(r.raw));
+  for (let i = 0; i < chunks.length; i += 4) {
+    const answers = await Promise.all(chunks.slice(i, i + 4).map((chunk) =>
+      supabase.from("transactions").select("entry_reference, raw").eq("account_uid", accountUid).in("entry_reference", chunk)
+    ));
+    for (const { data, error } of answers) {
+      if (error) throw error;
+      for (const r of data ?? []) stored.set(r.entry_reference, storedContent(r.raw));
+    }
   }
   return stored;
 }

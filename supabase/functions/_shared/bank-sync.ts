@@ -3,7 +3,7 @@
 
 import { buildRows, type EbTransaction, normalizeIban } from "./transaction-rows.ts";
 import { errorTag } from "./log-safe.ts";
-import { accountType } from "./account-match.ts";
+import { accountType, pickBalance } from "./account-match.ts";
 
 // deno-lint-ignore no-explicit-any
 type Db = { from(table: string): any };
@@ -243,7 +243,7 @@ export async function syncAccountBalance(deps: Deps, token: string, account: Syn
   await fillMissingIds(deps, token, account);
   try {
     const data = await getEb(deps.fetch, token, `${ebAccountId(account)}/balances`);
-    const balance = data.balances?.[0];
+    const balance = pickBalance(data.balances);
     if (!balance) {
       console.log("No balance returned.");
       return { row: null, rejected: null, renewed: false, ebFailed: false, error: null };

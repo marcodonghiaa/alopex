@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { getAccounts, getAllUserIds, ebAccountId, idsPatchFromDetails, accountType } = require('./accounts');
+const { getAccounts, getAllUserIds, ebAccountId, idsPatchFromDetails, accountType, pickBalance } = require('./accounts');
 
 test('ebAccountId uses eb_account_uid when set', () => {
   assert.strictEqual(ebAccountId({ uid: 'a', eb_account_uid: 'b' }), 'b');
@@ -118,4 +118,21 @@ test('accountType maps ISO 20022 cash account types', () => {
   assert.deepStrictEqual(['CACC', 'SVGS', 'CARD', 'LOAN', 'TRAN'].map(accountType), ['checking', 'savings', 'credit_card', 'loan', 'other']);
   assert.strictEqual(accountType(undefined), null);
   assert.strictEqual(accountType(''), null);
+});
+
+// H003: banks list several balance types in their own order; the booked one is the balance.
+const bal = (balance_type, amount) => ({ balance_type, balance_amount: { amount, currency: 'EUR' } });
+
+test('pickBalance prefers the booked balance over an available one listed first', () => {
+  assert.strictEqual(pickBalance([bal('ITAV', '1500'), bal('CLBD', '500')]).balance_type, 'CLBD');
+  assert.strictEqual(pickBalance([bal('CLAV', '1500'), bal('XPCD', '480'), bal('ITBD', '490')]).balance_type, 'ITBD');
+  assert.strictEqual(pickBalance([bal('ITAV', '1500'), bal('OPBD', '470')]).balance_type, 'OPBD');
+  assert.strictEqual(pickBalance([bal('CLAV', '1500'), bal('ITAV', '1400')]).balance_type, 'ITAV');
+});
+
+test('pickBalance falls back to the first entry when no type is known, and to undefined when empty', () => {
+  assert.strictEqual(pickBalance([bal('XXXX', '1'), bal('YYYY', '2')]).balance_amount.amount, '1');
+  assert.strictEqual(pickBalance([{ balance_amount: { amount: '3', currency: 'EUR' } }]).balance_amount.amount, '3');
+  assert.strictEqual(pickBalance([]), undefined);
+  assert.strictEqual(pickBalance(undefined), undefined);
 });

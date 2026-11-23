@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { accountType, matchAccount, matchPatch } from "./account-match.ts";
+import { accountType, matchAccount, matchPatch, pickBalance } from "./account-match.ts";
 
 const eur = { uid: "u-eur", iban: "LT01", currency: "EUR", identification_hash: "h-eur" };
 const old = { uid: "u-old", iban: "IT60", currency: "EUR", identification_hash: null };
@@ -48,4 +48,21 @@ Deno.test("accountType maps ISO 20022 cash account types", () => {
   assertEquals(accountType("TRAN"), "other");
   assertEquals(accountType(undefined), null);
   assertEquals(accountType(""), null);
+});
+
+// H003: banks list several balance types in their own order; the booked one is the balance.
+const bal = (balance_type: string, amount: string) => ({ balance_type, balance_amount: { amount, currency: "EUR" } });
+
+Deno.test("pickBalance prefers the booked balance over an available one listed first", () => {
+  assertEquals(pickBalance([bal("ITAV", "1500"), bal("CLBD", "500")])?.balance_type, "CLBD");
+  assertEquals(pickBalance([bal("CLAV", "1500"), bal("XPCD", "480"), bal("ITBD", "490")])?.balance_type, "ITBD");
+  assertEquals(pickBalance([bal("ITAV", "1500"), bal("OPBD", "470")])?.balance_type, "OPBD");
+  assertEquals(pickBalance([bal("CLAV", "1500"), bal("ITAV", "1400")])?.balance_type, "ITAV");
+});
+
+Deno.test("pickBalance falls back to the first entry when no type is known, and to undefined when empty", () => {
+  assertEquals(pickBalance([bal("XXXX", "1"), bal("YYYY", "2")])?.balance_amount.amount, "1");
+  assertEquals(pickBalance([{ balance_amount: { amount: "3", currency: "EUR" } }])?.balance_amount.amount, "3");
+  assertEquals(pickBalance([]), undefined);
+  assertEquals(pickBalance(undefined), undefined);
 });

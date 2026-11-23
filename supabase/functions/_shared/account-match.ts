@@ -21,6 +21,20 @@ export function accountType(cashAccountType: unknown): string | null {
   return CASH_ACCOUNT_TYPES[cashAccountType.toUpperCase()] ?? "other";
 }
 
+// Banks list several balances (booked, available, expected...) in their own order. The booked one is
+// the account's balance; an available one can include an overdraft or a card's unused credit line.
+const BALANCE_TYPES = ["CLBD", "ITBD", "XPCD", "OPBD", "ITAV", "CLAV"];
+
+export type EbBalance = { balance_type?: string; balance_amount: { amount: string; currency: string } };
+
+export function pickBalance(balances: EbBalance[] | undefined): EbBalance | undefined {
+  for (const type of BALANCE_TYPES) {
+    const found = balances?.find((b) => b.balance_type === type);
+    if (found) return found;
+  }
+  return balances?.[0];
+}
+
 export function matchAccount(existing: StoredAccount[], incoming: IncomingAccount): string | null {
   const { iban, currency, identification_hash: hash } = incoming;
   const byHash = hash ? existing.find((s) => s.identification_hash === hash) : undefined;

@@ -61,7 +61,20 @@ function accountType(cashAccountType) {
   return CASH_ACCOUNT_TYPES[cashAccountType.toUpperCase()] ?? 'other';
 }
 
+// Banks list several balances (booked, available, expected...) in their own order. The booked one is
+// the account's balance; an available one can include an overdraft or a card's unused credit line.
+// Same as pickBalance in supabase/functions/_shared/account-match.ts.
+const BALANCE_TYPES = ['CLBD', 'ITBD', 'XPCD', 'OPBD', 'ITAV', 'CLAV'];
+
+function pickBalance(balances) {
+  for (const type of BALANCE_TYPES) {
+    const found = balances?.find((b) => b.balance_type === type);
+    if (found) return found;
+  }
+  return balances?.[0];
+}
+
 // Statuses with which EB refuses an account id (dead or expired consent).
 const EB_REJECTED_STATUSES = new Set([401, 403, 404, 422]);
 
-module.exports = { getAccounts, getAllUserIds, ebAccountId, idsPatchFromDetails, accountType, EB_REJECTED_STATUSES };
+module.exports = { getAccounts, getAllUserIds, ebAccountId, idsPatchFromDetails, accountType, pickBalance, EB_REJECTED_STATUSES };

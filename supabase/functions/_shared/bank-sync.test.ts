@@ -158,6 +158,19 @@ Deno.test("balance: calls EB with eb_account_uid and builds the row under uid", 
   assertEquals(row, { account_uid: "pk", currency: "EUR", amount: 12.5, snapshot_date: TODAY, user_id: "user" });
   assertEquals(rejected, null);
 });
+Deno.test("balance: saves the booked balance when the bank lists the available one first", async () => {
+  const body = { balances: [
+    { balance_type: "ITAV", balance_amount: { amount: "1500.00", currency: "EUR" } },
+    { balance_type: "CLBD", balance_amount: { amount: "500.00", currency: "EUR" } },
+  ] };
+  const { fetch } = fakeFetch({ "/balances": { body } });
+  const { supabase } = fakeSupabase();
+
+  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
+
+  assertEquals(row?.amount, 500);
+});
+
 
 Deno.test("balance: fills a missing hash once, then fetches the balance", async () => {
   const { fetch, urls } = fakeFetch({

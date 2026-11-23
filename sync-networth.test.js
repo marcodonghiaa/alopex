@@ -53,6 +53,20 @@ test('calls EB with eb_account_uid and saves under uid', async () => {
   assert.strictEqual(rejected, null);
 });
 
+test('saves the booked balance when the bank lists the available one first', async () => {
+  const body = { balances: [
+    { balance_type: 'ITAV', balance_amount: { amount: '1500.00', currency: 'EUR' } },
+    { balance_type: 'CLBD', balance_amount: { amount: '500.00', currency: 'EUR' } },
+  ] };
+  const { fetch } = fakeFetch({ '/balances': { body } });
+  const { supabase } = fakeSupabase();
+  const account = { uid: 'pk', eb_account_uid: 'eb', identification_hash: 'h' };
+
+  const { row } = await syncAccountBalance({ fetch, supabase }, 't', account, 'user', '2026-10-27');
+
+  assert.strictEqual(row.amount, 500);
+});
+
 test('fills a missing hash once, then fetches the balance', async () => {
   const { fetch, urls } = fakeFetch({
     '/details': { body: { identification_hash: 'h', account_id: { iban: 'IT1' } } },

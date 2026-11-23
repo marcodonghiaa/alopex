@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### One bad holding no longer stops prices for everyone
+- **Migration:** `20261225000000_holding_quantity_checks`. Apply it with `supabase db push --linked`, then `supabase functions deploy sync-prices`.
+- A holding whose quantity was not a real number (NaN, infinite or huge, which only a hand-made API call could save) made the daily price sync fail for every user. The sync now skips such a holding, and new holdings must have a quantity of zero or more, under 1e12. Holdings already stored are not checked or changed; one with such a quantity gets no new price until you fix or delete it.
+- **Roll back:** run `supabase/rollbacks/20261225000000_holding_quantity_checks.down.sql`, then `supabase migration repair --status reverted 20261225000000 --linked`.
+
 ### Banks sync in waking hours
 - **Migration:** `20261224000000_bank_sync_hours`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - Still 4 bank syncs a day (banks allow about 4 unattended reads a day per account), now at 05:17, 11:17, 16:17 and 21:17 UTC (06/12/17/22 CET, 07/13/18/23 CEST) instead of every 6 hours from midnight UTC, so no run is spent at night. Post-sync, prices, Splitwise and subscriptions follow each run as before.

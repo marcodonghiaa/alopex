@@ -82,3 +82,38 @@ test('crypto snapshots carry each holding user', () => {
     [['a', 50], ['b', 100]],
   );
 });
+
+// H004: Postgres numeric holds NaN and Infinity, and JSON turns 1e400 into Infinity. One such
+// holding gave a null value, and the one upsert for every user failed, so nobody got prices.
+test('a holding with a NaN, infinite or huge quantity is skipped, the others are priced', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const { rows } = await priceHoldings(
+    [
+      { user_id: 'bad1', isin: 'X', yahoo_symbol: 'X', shares: NaN },
+      { user_id: 'bad2', isin: 'X', yahoo_symbol: 'X', shares: 'Infinity' },
+      { user_id: 'bad3', isin: 'X', yahoo_symbol: 'X', shares: 1e400 },
+      { user_id: 'bad4', isin: 'X', yahoo_symbol: 'X', shares: 1e308 },
+      { user_id: 'good', isin: 'X', yahoo_symbol: 'X', shares: 2 },
+    ],
+    async () => ({ price: 100, currency: 'EUR', assetType: null }),
+    async () => 1,
+    '2026-11-05',
+  );
+  assert.deepStrictEqual(rows.map((r) => [r.user_id, r.value_eur]), [['good', 200]]);
+});
+
+test('crypto: a holding with a NaN or infinite amount is skipped, the others kept', (t) => {
+  t.mock.method(console, 'error', () => {});
+  const rows = cryptoRows(
+    [
+      { user_id: 'bad1', asset_symbol: 'BTC', source: 'Manual', amount: NaN, coingecko_id: 'bitcoin' },
+      { user_id: 'bad2', asset_symbol: 'BTC', source: 'Manual', amount: 'Infinity', coingecko_id: 'bitcoin' },
+      { user_id: 'bad3', asset_symbol: 'BTC', source: 'Manual', amount: 1e400, coingecko_id: 'bitcoin' },
+      { user_id: 'good', asset_symbol: 'BTC', source: 'Manual', amount: 1, coingecko_id: 'bitcoin' },
+    ],
+    { bitcoin: { usd: 100 } },
+    0.5,
+    '2026-11-05',
+  );
+  assert.deepStrictEqual(rows.map((r) => [r.user_id, r.value_eur]), [['good', 50]]);
+});

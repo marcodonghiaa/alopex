@@ -62,6 +62,13 @@ test('claim_push_subscription', { skip }, async (t) => {
     assert.throws(() => claim(A, 'http://push.example.com/x'), /endpoint/);
   });
 
+  await t.test('oversized or non-base64url keys are refused', () => {
+    const big = 'a'.repeat(257);
+    assert.throws(() => as(A, `select public.claim_push_subscription('${EP}', '${big}', 'ok')`), /push keys/);
+    assert.throws(() => as(A, `select public.claim_push_subscription('${EP}', 'ok', 'not base64!')`), /push keys/);
+    assert.strictEqual(sql(`select user_id || ':' || p256dh from public.push_subscriptions where endpoint = '${EP}'`), `${B}:new-key`);
+  });
+
   await t.test('rolls back: the function is gone', () => {
     applySql(`supabase/rollbacks/${NAME}.down.sql`);
     assert.strictEqual(sql(`select count(*) from pg_proc where proname = 'claim_push_subscription'`), '0');

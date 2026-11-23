@@ -15,9 +15,15 @@ begin
   if p_endpoint is null or length(p_endpoint) > 2048 or p_endpoint !~ '^https://' then
     raise exception 'invalid push endpoint' using errcode = '22023';
   end if;
-  delete from public.push_subscriptions where endpoint = p_endpoint;
+  if length(p_p256dh) > 256 or length(p_auth) > 256
+     or p_p256dh !~ '^[A-Za-z0-9_-]+=*$' or p_auth !~ '^[A-Za-z0-9_-]+=*$' then
+    raise exception 'invalid push keys' using errcode = '22023';
+  end if;
+  -- One statement, so two tabs claiming at once can't hit the unique endpoint.
   insert into public.push_subscriptions (user_id, endpoint, p256dh, auth)
-  values (auth.uid(), p_endpoint, p_p256dh, p_auth);
+  values (auth.uid(), p_endpoint, p_p256dh, p_auth)
+  on conflict (endpoint) do update
+    set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth;
 end
 $$;
 

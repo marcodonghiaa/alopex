@@ -1,5 +1,5 @@
 // Holding quantity checks (20261225000000_holding_quantity_checks) on a real Postgres with every
-// migration before it: a NaN, infinite, negative or huge quantity is refused on new writes, while
+// migration before it: a NaN, infinite or negative quantity is refused on new writes, while
 // rows already stored are left alone. Needs psql and RLS_TEST_DATABASE_URL (a superuser URL to a
 // throwaway server); skipped without it. A fresh database is created and dropped for each run.
 const test = require('node:test');
@@ -51,15 +51,17 @@ test('holding quantity checks migration', { skip }, async (t) => {
     assert.strictEqual(admin(`select amount from public.crypto_holdings where asset_symbol = 'OLD'`), 'Infinity');
   });
 
-  await t.test('new NaN, infinite, negative or huge quantities are refused', () => {
-    for (const bad of [`'NaN'`, `'Infinity'`, `'-Infinity'`, '-1', '1e12', '1e400']) {
+  await t.test('new NaN, infinite or negative quantities are refused', () => {
+    for (const bad of [`'NaN'`, `'Infinity'`, `'-Infinity'`, '-1']) {
       assert.match(stock(`S${bad.replace(/\W/g, '')}`, bad), /portfolio_holdings_shares_ok/, bad);
       assert.match(coin(`C${bad.replace(/\W/g, '')}`, bad), /crypto_holdings_amount_ok/, bad);
     }
   });
 
-  await t.test('real quantities, zero included, are still accepted', () => {
-    for (const [i, ok] of ['0', '2.5', '999999999999'].entries()) {
+  // A meme coin can be held in the trillions: any finite amount is real (the price sync skips one
+  // too big to value).
+  await t.test('real quantities, zero and meme-coin sizes included, are still accepted', () => {
+    for (const [i, ok] of ['0', '2.5', '1e12', '5e15'].entries()) {
       assert.strictEqual(stock(`OK${i}`, ok), '', ok);
       assert.strictEqual(coin(`OK${i}`, ok), '', ok);
     }

@@ -12,7 +12,7 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ### One bad holding no longer stops prices for everyone
 - **Migration:** `20261225000000_holding_quantity_checks`. Apply it with `supabase db push --linked`, then `supabase functions deploy sync-prices`.
-- A holding whose quantity was not a real number (NaN, infinite or huge, which only a hand-made API call could save) made the daily price sync fail for every user. The sync now skips such a holding, and new holdings must have a quantity of zero or more, under 1e12. Holdings already stored are not checked or changed; one with such a quantity gets no new price until you fix or delete it.
+- A holding whose quantity was not a real number (NaN, infinite or too big to value, which only a hand-made API call could save) made the daily price sync fail for every user. The sync now skips such a holding, and new holdings must have a finite quantity of zero or more. Holdings already stored are not checked or changed; one with such a quantity gets no new price until you fix or delete it.
 - **Roll back:** run `supabase/rollbacks/20261225000000_holding_quantity_checks.down.sql`, then `supabase migration repair --status reverted 20261225000000 --linked`.
 
 ### Banks sync in waking hours

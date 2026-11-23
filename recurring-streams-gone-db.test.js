@@ -1,4 +1,4 @@
-// Streams the detector no longer finds (20261218000000_recurring_streams_gone), run for real against
+// Streams the detector no longer finds (20261222000000_recurring_streams_gone), run for real against
 // Postgres on the full schema: a stream you confirmed or dismissed is kept but marked 'gone' when a run
 // no longer finds it (say its charge was marked One-time), so the Subscriptions page can hide it; it
 // comes back with your choices when a run finds it again. Needs psql and RLS_TEST_DATABASE_URL (a
@@ -13,7 +13,7 @@ const skip = url ? false : 'set RLS_TEST_DATABASE_URL to run';
 const A = 'aaaaaaaa-0000-0000-0000-000000000001';
 const db = `recurring_gone_${process.pid}`;
 const dbUrl = () => url.replace(/^(postgres(?:ql)?:\/\/[^/]*\/)[^?]*/, `$1${db}`);
-const NAME = '20261218000000_recurring_streams_gone';
+const NAME = '20261222000000_recurring_streams_gone';
 const UP = `supabase/migrations/${NAME}.sql`;
 const DOWN = `supabase/rollbacks/${NAME}.down.sql`;
 const MIGRATIONS = fs.readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql')).sort();

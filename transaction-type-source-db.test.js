@@ -1,4 +1,4 @@
-// Types you set by hand (20261219000000_transaction_type_source), run for real against Postgres on
+// Types you set by hand (20261223000000_transaction_type_source), run for real against Postgres on
 // the full schema: a signed-in user's change to transaction_type marks it 'manual', and the sync,
 // rules and AI (service role) can no longer overwrite it. The subscription detector reads the
 // marker so a charge you marked One-time never rebuilds a subscription. Needs psql and
@@ -14,7 +14,7 @@ const A = 'aaaaaaaa-0000-0000-0000-000000000001';
 const ACC = 'cccccccc-0000-0000-0000-000000000001';
 const db = `type_source_${process.pid}`;
 const dbUrl = () => url.replace(/^(postgres(?:ql)?:\/\/[^/]*\/)[^?]*/, `$1${db}`);
-const NAME = '20261219000000_transaction_type_source';
+const NAME = '20261223000000_transaction_type_source';
 const UP = `supabase/migrations/${NAME}.sql`;
 const DOWN = `supabase/rollbacks/${NAME}.down.sql`;
 const MIGRATIONS = fs.readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql')).sort();

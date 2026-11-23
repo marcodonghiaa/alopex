@@ -1,4 +1,4 @@
--- Undoes 20261218000000_recurring_streams_gone: gone rows go back to 'suggested' (the old code kept them
+-- Undoes 20261222000000_recurring_streams_gone: gone rows go back to 'suggested' (the old code kept them
 -- as last detected, and a confirmed row shows as confirmed either way), the old check comes back, and
 -- upsert_detected_streams again leaves rows you decided on as they were.
 -- The per-user run clock (recurring_detection_runs) goes too.

@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Notifications follow whoever is signed in on a browser
+- **Migration:** `20261231000000_claim_push_subscription`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
+- When a second account signed in on a browser that already had notifications on, its subscription failed silently (the endpoint was taken), so the new account got nothing and the previous one kept getting its alerts. Turning notifications on now moves this browser to the signed-in account, and signing out removes this browser's subscription.
+- **Roll back:** run `supabase/rollbacks/20261231000000_claim_push_subscription.down.sql`, then `supabase migration repair --status reverted 20261231000000 --linked`, and redeploy the previous dashboard.
+
 ### The old Node sync (setup.sh, Docker, GitHub Actions, cron) is removed
 - **Who:** only installs made with `./setup.sh`, `docker compose` or the `sync.yml` workflow in a fork. `npx create-alopex` installs are not affected: their sync already runs in Supabase (pg_cron + Edge Functions).
 - That path counted moves between your own accounts as both spending and income, had no flow rules or transfer pairs, and GitHub stops a fork's scheduled workflow after 60 days without commits, so the sync went quiet.

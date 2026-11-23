@@ -120,6 +120,8 @@ test('the push shows the clean merchant name, or the name the user gave it', () 
   const tx = (creditor_name, custom_name = null) => ({ entry_reference: 'r1', creditor_name, custom_name, amount: 43.03, currency: 'USD', category: 'Shopping' });
   assert.strictEqual(buildPayload([tx('Amazon Mark* E46na7fw3')]).body, 'US$43.03 at Amazon — Shopping');
   assert.strictEqual(buildPayload([tx('Amazon Mark* E46na7fw3', 'Birthday gift')]).body, 'US$43.03 at Birthday gift — Shopping');
+  assert.strictEqual(buildPayload([tx('netflix', 'birthday gift')]).body, 'US$43.03 at Birthday gift — Shopping');
+  assert.strictEqual(buildPayload([tx('netflix')]).body, 'US$43.03 at Netflix — Shopping');
   assert.strictEqual(buildPayload([tx(null)]).body, 'US$43.03 at a merchant — Shopping');
   assert.strictEqual(buildPayload([tx('   ', '  ')]).body, 'US$43.03 at a merchant — Shopping');
   assert.strictEqual(

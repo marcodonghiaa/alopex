@@ -22,8 +22,25 @@ test('projectEnv: a new project forgets the old login, the same project keeps it
 
 test('pickKeys matches by prefix, not position', () => {
   const keys = [{ api_key: 'eyJlegacy' }, { api_key: 'sb_secret_x' }, { api_key: 'sb_publishable_y' }];
-  assert.deepEqual(lib.pickKeys(keys), { publishable: 'sb_publishable_y', secret: 'sb_secret_x' });
-  assert.deepEqual(lib.pickKeys([{ api_key: 'eyJ' }]), { publishable: '', secret: '' });
+  assert.deepEqual(lib.pickKeys(keys), { publishable: 'sb_publishable_y', secret: 'sb_secret_x', cron: 'sb_secret_x' });
+  assert.deepEqual(lib.pickKeys([{ api_key: 'eyJ' }]), { publishable: '', secret: '', cron: '' });
+});
+
+// H212: the scheduled sync's key sits in Vault and in pg_net's queue: a secret key named "cron", when
+// the owner made one, goes there instead of the main one, so it can be revoked on its own. The
+// main key stays the one .env and the functions use. fails_when=Vault gets the main key while a
+// "cron" key exists, or no key at all without one
+test('pickKeys gives the scheduled sync a secret key named cron, else the main one', () => {
+  const keys = [
+    { name: 'default', type: 'secret', api_key: 'sb_secret_main' },
+    { name: 'cron', type: 'secret', api_key: 'sb_secret_cron' },
+    { name: 'default', type: 'publishable', api_key: 'sb_publishable_y' },
+  ];
+  assert.deepEqual(lib.pickKeys(keys), { publishable: 'sb_publishable_y', secret: 'sb_secret_main', cron: 'sb_secret_cron' });
+  // Named cron but not a secret key: ignored.
+  assert.equal(lib.pickKeys([{ name: 'cron', api_key: 'sb_publishable_z' }, { api_key: 'sb_secret_main' }]).cron, 'sb_secret_main');
+  const src = require('node:fs').readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  assert.match(src, /sync_bank_secret_key: keys\.cron/);
 });
 
 test('vaultSql updates an existing secret or creates it, and escapes quotes', () => {

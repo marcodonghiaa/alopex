@@ -312,8 +312,12 @@ The APP_ID is the long id shown next to your app.`);
     supabaseMust(['secrets', 'set', '--project-ref', ref, '--env-file', file, '--yes'], sb, 'Could not save the Edge Function secrets.'));
   supabaseMust(['functions', 'deploy', '--project-ref', ref, '--use-api', '--yes'], sb, 'Could not deploy the Edge Functions.');
   // The pg_cron jobs from the migrations call the functions with these: setting them turns the sync on.
-  withTempFile(lib.vaultSql({ project_url: url, sync_bank_secret_key: keys.secret }), (file) =>
+  // A secret key named "cron" goes to Vault when there is one, so it can be revoked on its own.
+  withTempFile(lib.vaultSql({ project_url: url, sync_bank_secret_key: keys.cron }), (file) =>
     supabaseMust(['db', 'query', '--remote', '--file', file, '--yes'], sb, 'Could not turn the scheduled sync on.'));
+  if (keys.cron === keys.secret) {
+    console.log(`Optional: to give the scheduled sync its own key, add a secret key named "cron" at https://supabase.com/dashboard/project/${ref}/settings/api-keys and run again.`);
+  }
   saveEnv({ SYNC_ON: 'supabase' });
   console.log('Functions live. Your banks sync 4 times a day inside Supabase: nothing has to stay on.');
 

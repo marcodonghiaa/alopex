@@ -15,9 +15,13 @@ function projectEnv(previousRef, ref, url) {
 }
 
 // `supabase projects api-keys --output json`: match by prefix, not by position or field name.
+// cron: the key the scheduled sync stores in Vault (and so in pg_net's queue). A secret key named
+// "cron", when the owner made one, so it can be revoked without touching the main key; else the main one.
 function pickKeys(keys) {
-  const find = (prefix) => keys.find((k) => k.api_key?.startsWith(prefix))?.api_key || '';
-  return { publishable: find('sb_publishable_'), secret: find('sb_secret_') };
+  const find = (prefix, ok = () => true) => keys.find((k) => k.api_key?.startsWith(prefix) && ok(k))?.api_key || '';
+  const cron = find('sb_secret_', (k) => k.name === 'cron');
+  const secret = find('sb_secret_', (k) => k.name !== 'cron') || cron;
+  return { publishable: find('sb_publishable_'), secret, cron: cron || secret };
 }
 
 const sqlString = (value) => `'${String(value).replace(/'/g, "''")}'`;

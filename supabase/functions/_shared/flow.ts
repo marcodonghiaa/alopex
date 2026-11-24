@@ -32,7 +32,7 @@ type FlowRow = {
   category?: string | null;
   category_source?: string | null;
 };
-export type FlowRule = Rule & { set_flow_type: string };
+type FlowRule = Rule & { set_flow_type: string };
 
 const direction = (row: Pick<FlowRow, "credit_debit_indicator">) => (row.credit_debit_indicator === "DBIT" ? "spend" : "income");
 

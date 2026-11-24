@@ -4,7 +4,7 @@
 // (queue_edge_job, pg_net), so no function waits for another. Round 0 is the cron run: it queues nothing.
 export const MAX_ROUNDS = 10;
 
-export interface RoundResult {
+interface RoundResult {
   categorized: number;
   typed: number;
   splitwise: number;

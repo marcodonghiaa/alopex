@@ -3,7 +3,6 @@ import type { Db } from "../_shared/batch-update.ts";
 import type { Reply } from "../_shared/origins.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { type CallerDeps, callerOrReply } from "../_shared/caller.ts";
-export { userIdFrom } from "../_shared/caller.ts";
 import { PartialApplyError, reapplyRules } from "../_shared/reapply-rules.ts";
 import type { Rule } from "../_shared/rules.ts";
 

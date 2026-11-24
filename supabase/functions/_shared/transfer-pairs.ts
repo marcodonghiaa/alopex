@@ -10,7 +10,7 @@ import { applyGroupedUpdates, type Db, fetchByRefs, readPages } from "./batch-up
 import { daysAgo } from "./today.ts";
 import { errorTag } from "./log-safe.ts";
 
-export const PAIR_WINDOW_DAYS = 4;
+const PAIR_WINDOW_DAYS = 4;
 const LOOKBACK_DAYS = 90;
 const DAY_MS = 86_400_000;
 
@@ -24,7 +24,7 @@ export interface PairRow {
   booking_date: string;
   flow_source?: string | null;
 }
-export type Pair = { out: PairRow; in: PairRow };
+type Pair = { out: PairRow; in: PairRow };
 
 type SideRef = { account_uid: string; entry_reference: string };
 const sideKey = (r: SideRef) => `${r.account_uid}:${r.entry_reference}`;

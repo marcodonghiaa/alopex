@@ -20,9 +20,9 @@ export type Charge = {
   transaction_type_source?: string | null; // 'manual' when you set the type yourself
 };
 
-export type Cadence = "weekly" | "monthly" | "quarterly" | "yearly";
+type Cadence = "weekly" | "monthly" | "quarterly" | "yearly";
 
-export type DetectedStream = {
+type DetectedStream = {
   stream_key: string;
   merchant_key: string;
   account_uid: string | null;

@@ -8,7 +8,7 @@ import { applyRules, fetchRules, type Rule } from "./rules.ts";
 import { aiBatches, aiRefs, walkNullRows } from "./user-batch.ts";
 
 const BATCH_SIZE = 40;
-export const TYPES = ["Subscription", "One-time"];
+const TYPES = ["Subscription", "One-time"];
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;

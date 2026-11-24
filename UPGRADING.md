@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Undoing a payback puts back what it changed
+- **Migration:** `20270120000000_payback_undo_restores`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: when you undo an "Is this Anna?" answer and also unlink the payer, a link that answer had replaced (the payer was linked to someone else before) comes back instead of being deleted. A payment you had marked as income by hand is income again after the undo; one the app had classified goes back to the app, as before. A payment reference stored on a settled bill can be at most 1000 characters (a longer one, which can't be a bank reference, is cleared; the bill stays settled). Paybacks recorded before this release undo as before.
+- **Roll back:** run `supabase/rollbacks/20270120000000_payback_undo_restores.down.sql`, then `supabase migration repair --status reverted 20270120000000 --linked`.
+
 ### The bank-field guard can't be switched off by a session
 - **Migration:** `20270119000000_broker_flag_definer_only`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: nothing you can see. The guard that stops a signed-in user from rewriting bank fields, and the marks for categories and flows you set by hand, stood aside whenever the session setting `alopex.broker_match` was on. That setting now counts only inside the database's own broker matching and category move, never when a user's session sets it itself.

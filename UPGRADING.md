@@ -4,7 +4,7 @@ Pulling new code does not update your database. Migrations are not applied autom
 
 For every release: `git pull`, then `supabase db push --linked` for new migrations (keep `--linked`: since Supabase CLI v3 a plain `db push` targets a local database, not your project), then `supabase functions deploy` for changed functions.
 
-To roll a change back: run its file from `supabase/rollbacks/` in the Supabase SQL editor (or with `psql`), then `supabase migration repair --status reverted <version> --linked` (the version is the number at the start of the file name). Without the repair, a later `supabase db push --linked` still counts the migration as applied and does not bring it back.
+To roll a change back: run its file from `supabase/rollbacks/` in the Supabase SQL editor (or with `psql`), then `supabase migration repair --status reverted <version> --linked` (the version is the number at the start of the file name). Without the repair, a later `supabase db push --linked` still counts the migration as applied and does not bring it back. Migrations before `20261020000000`, and `20261027000000_merchant_aliases` and `20261028000000_net_worth_daily_bonds`, have no rollback file: they are not reversible.
 
 ## Release notes, newest first
 

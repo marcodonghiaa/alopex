@@ -250,3 +250,23 @@ Deno.test("the minimum is in euros: a small charge in another currency isn't pro
   const db = { from: (t: string) => answer(t === "fx_rates" ? [{ currency: "HUF", rate_to_eur: 0.0025, date: "2026-10-27" }] : txs) };
   assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["huf-big", "eur", "no-rate"]);
 });
+
+// H233: new VAPID keys (setup.sh with no old .env) make the push service refuse every old
+// subscription with 403, for good. The rows stayed, so the dashboard kept saying notifications
+// were on and never offered to turn them on again.
+Deno.test("a subscription refused with 403 (made with other push keys) is removed; a 5xx or 400 is kept", async () => {
+  const deleted: string[] = [];
+  const db = { from: () => ({ delete: () => ({ eq: async (_: string, id: string) => (deleted.push(id), { error: null }) }) }) };
+  const sub = (id: string): Subscription => ({ id, endpoint: `https://push.example.com/${id}`, p256dh: "k", auth: "a" });
+  const status: Record<string, number> = { other_keys: 403, busy: 503, bad: 400 };
+  const error = console.error;
+  console.error = () => {};
+  try {
+    const delivered = await sendToAllSubscriptions(db, [sub("other_keys"), sub("busy"), sub("bad")], {}, async (s) => {
+      throw Object.assign(new Error("refused"), { statusCode: status[s.id] });
+    });
+    assertEquals([delivered, deleted], [false, ["other_keys"]]);
+  } finally {
+    console.error = error;
+  }
+});

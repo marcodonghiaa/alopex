@@ -49,8 +49,10 @@ export async function sendToAllSubscriptions(db: Db, subscriptions: Subscription
       delivered = true;
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410) {
-        // subscription dead (uninstalled, permission revoked): stop trying it
+      if (status === 404 || status === 410 || status === 403) {
+        // subscription dead (uninstalled, permission revoked), or made with other push keys (403:
+        // the VAPID keys were regenerated, H233): stop trying it, so the dashboard offers to turn
+        // notifications on again. The cost of a 403 for another reason: turning them on once more.
         await db.from("push_subscriptions").delete().eq("id", sub.id);
       } else {
         console.error(`Push failed for subscription ${i + 1}/${subscriptions.length}: ${status ? `HTTP ${status}` : errorTag(err)}`);

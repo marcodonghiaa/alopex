@@ -5,9 +5,8 @@
 // session, so RLS only finds it when the caller is the user who started this link: someone who
 // completes another user's consent URL gets "Invalid or expired" and links nothing.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
-import { asUser as userClient, SECRET_KEY, userCaller } from "../_shared/clients.ts";
+import { asUser as userClient, SECRET_KEY, serviceClient, userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { linkAccounts } from "../_shared/link-accounts.ts";
 import { burnCode } from "../_shared/eb-sessions.ts";
@@ -16,10 +15,7 @@ import { startFirstSync } from "../_shared/first-sync.ts";
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
-const service = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
+const service = serviceClient();
 
 Deno.serve(serveWithCors(async (req, json) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);

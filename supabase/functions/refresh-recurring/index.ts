@@ -6,14 +6,12 @@
 // caller only. The caller's JWT only identifies them; reads and the save use the service key,
 // scoped to that user, because upsert_detected_streams is service-role only.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
-import { userCaller } from "../_shared/clients.ts";
+import { serviceClient, userCaller } from "../_shared/clients.ts";
 import { refreshHandler } from "./handler.ts";
 import { romeToday } from "../_shared/today.ts";
 
-const url = Deno.env.get("SUPABASE_URL")!;
-const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const admin = serviceClient();
 
 Deno.serve(serveWithCors(refreshHandler({
   ...userCaller,

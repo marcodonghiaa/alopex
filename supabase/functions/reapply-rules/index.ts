@@ -7,14 +7,11 @@
 // hand-set (trg_mark_manual_category). Categories you set by hand are never changed (see
 // _shared/reapply-rules.ts).
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
 import { reapplyHandler } from "./handler.ts";
-import { userCaller } from "../_shared/clients.ts";
-
-const url = Deno.env.get("SUPABASE_URL")!;
+import { serviceClient, userCaller } from "../_shared/clients.ts";
 
 Deno.serve(serveWithCors(reapplyHandler({
   ...userCaller,
-  admin: () => createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!),
+  admin: () => serviceClient(),
 })));

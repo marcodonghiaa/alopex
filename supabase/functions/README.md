@@ -124,5 +124,7 @@ Functions → Secrets). Never committed anywhere:
   (table `dashboard_origins`) when you sign in, and the functions allow those origins in CORS.
   `bank-consent-callback` sends the browser back to the origin that started the link.
 
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are
-auto-injected by Supabase into every function; nothing to set for those.
+`SUPABASE_URL` and the project's API keys are auto-injected by Supabase into every function;
+nothing to set for those. The functions use the new keys (`SUPABASE_SECRET_KEYS`,
+`SUPABASE_PUBLISHABLE_KEYS`) when present, else the legacy `SUPABASE_SERVICE_ROLE_KEY` and
+`SUPABASE_ANON_KEY` (one place: `_shared/clients.ts`).

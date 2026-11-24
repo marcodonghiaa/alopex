@@ -9,9 +9,8 @@
 //
 // Requires a signed-in user, like list-banks: otherwise this is an open proxy to Yahoo/CoinGecko.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
-import { asUser, userCaller } from "../_shared/clients.ts";
+import { asUser, serviceClient, userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { fetchRateToEur } from "../_shared/fx-rates.ts";
@@ -49,7 +48,7 @@ async function getJson(url: string): Promise<Record<string, unknown>> {
   return await res.json();
 }
 
-const admin = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const admin = () => serviceClient();
 
 // Latest stored rate, or today's from Frankfurter when fx-sync hasn't stored this currency yet.
 // Throws when there is none: a holding with no value in EUR would show as 0 and never heal.

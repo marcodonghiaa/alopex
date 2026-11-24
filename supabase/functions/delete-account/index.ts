@@ -7,21 +7,18 @@
 // Every row that belongs to the user goes with them (foreign keys cascade from auth.users,
 // migration 20261125000000). The Enable Banking key and the instance settings are untouched.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
-import { userCaller } from "../_shared/clients.ts";
+import { serviceClient, signInClient, userCaller } from "../_shared/clients.ts";
 import { closeSessions } from "../_shared/eb-sessions.ts";
 import { deleteAccountHandler } from "./handler.ts";
 
-const url = Deno.env.get("SUPABASE_URL")!;
-const service = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const service = serviceClient();
 
 Deno.serve(serveWithCors(deleteAccountHandler({
   ...userCaller,
   user: (userId) => service.auth.admin.getUserById(userId),
   signIn: (email, password) =>
-    createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { auth: { persistSession: false, autoRefreshToken: false } })
-      .auth.signInWithPassword({ email, password }),
+    signInClient().auth.signInWithPassword({ email, password }),
   rpc: (fn, args) => service.rpc(fn, args),
   sessionIds: (userId) => service.from("bank_sessions").select("session_id").eq("user_id", userId),
   deleteUser: (userId) => service.auth.admin.deleteUser(userId),

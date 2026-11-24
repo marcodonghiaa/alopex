@@ -18,10 +18,10 @@ Facts to cite (checked 2026-11-09):
 - Investments: the user adds holdings by ticker or ISIN, and prices update automatically. Crypto is priced too. Broker sync: Coinbase today (read-only key), more brokers planned.
 - Money: net worth in EUR, USD or GBP, with daily history.
 - Categories: the user's rules first; optional Google Gemini (only with the user's own key) sorts the rest.
-- Also: spending by category with transfers and refunds excluded, subscription detection, Splitwise shared costs, CSV import, push reminders, installable phone app.
-- Hosting: the user's own Supabase and Vercel accounts, on free plans. The installer needs no GitHub account. To update, run `npx create-alopex` again in the same folder.
+- Also: spending by category with transfers and refunds excluded, monthly budgets per category, subscription detection, Splitwise shared costs, CSV import, push reminders, installable phone app.
+- Hosting: the user's own Supabase and Vercel accounts, on free plans. The installer needs no GitHub account. To update, run `npx create-alopex@latest` in the same folder (`@latest` so npx doesn't reuse an older cached installer).
 - Safety: Alopex cannot move money or make payments. Sync logs hold counts, never names or amounts.
-- Not included: banks outside Europe, real-time balances, budgets, savings goals, forecasts.
+- Not included: banks outside Europe, real-time balances, savings goals, forecasts.
 - Alopex is a tracking tool, not financial advice.
 
 ## Docs

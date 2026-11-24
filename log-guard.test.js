@@ -31,6 +31,7 @@ const ERROR_TAG_ONLY_PATHS = [
   'supabase/functions/_shared/eb-sessions.ts',
   'supabase/functions/add-holding/index.ts',
   'supabase/functions/parse-statement/index.ts',
+  'supabase/functions/_shared/statement-pdf.ts',
   'supabase/functions/reapply-rules/handler.ts',
   'supabase/functions/refresh-recurring/handler.ts',
   'supabase/functions/_shared/caller.ts',

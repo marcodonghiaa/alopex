@@ -6,6 +6,7 @@ import {
   parseGeminiRows,
   parseStatementRequest,
   statementAttemptRefusal,
+  statementReply,
 } from "./statement-pdf.ts";
 
 Deno.test("a request needs a base64 PDF within the size limit", () => {
@@ -87,4 +88,17 @@ Deno.test("10 statement reads per 10 minutes per user, claimed before Gemini is 
     status: 503,
     error: "Couldn't start the PDF import right now. Try again later.",
   });
+});
+
+// H235: a 200 from Gemini whose body isn't JSON (an HTML error page, or a body cut off by the
+// timeout) threw past the handler, so the browser saw a CORS error instead of a message.
+Deno.test("Gemini's 200 answer becomes the reply: rows, a refusal, or 502 when it can't be read", async () => {
+  const ok = (body: string) => new Response(body, { status: 200 });
+  const answer = (text: string, finishReason = "STOP") => JSON.stringify({ candidates: [{ finishReason, content: { parts: [{ text }] } }] });
+  const row = { date: "2026-11-02", description: "Shop", amount: 12.5, direction: "DBIT" };
+  assertEquals(await statementReply(ok(answer(JSON.stringify([row])))), { body: { rows: [row] }, status: 200 });
+  assertEquals((await statementReply(ok(answer("[]", "MAX_TOKENS")))).status, 422);
+  assertEquals(await statementReply(ok("<html>busy</html>")), { body: { error: "The AI sent an answer that couldn't be read, try again" }, status: 502 });
+  const cut = new Response(new ReadableStream({ start: (c) => c.error(new Error("aborted")) }), { status: 200 });
+  assertEquals((await statementReply(cut)).status, 502);
 });

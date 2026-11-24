@@ -14,13 +14,7 @@ import { serveWithCors } from "../_shared/origins.ts";
 import { serviceClient, userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { errorTag } from "../_shared/log-safe.ts";
-import {
-  geminiRefusal,
-  geminiRequest,
-  parseGeminiRows,
-  parseStatementRequest,
-  statementAttemptRefusal,
-} from "../_shared/statement-pdf.ts";
+import { geminiRequest, parseStatementRequest, statementAttemptRefusal, statementReply } from "../_shared/statement-pdf.ts";
 import { DEFAULT_GEMINI_MODEL, geminiFetch } from "../_shared/gemini.ts";
 
 const TIMEOUT_MS = 90_000;
@@ -62,8 +56,6 @@ Deno.serve(serveWithCors(async (req, json) => {
     console.error(`Gemini error ${res.status}`);
     return json({ error: `The AI couldn't read this PDF (error ${res.status})` }, 502);
   }
-  const answer = await res.json();
-  const refused = geminiRefusal(answer);
-  if (refused) return json({ error: refused }, 422);
-  return json({ rows: parseGeminiRows(answer) });
+  const reply = await statementReply(res);
+  return json(reply.body, reply.status);
 }));

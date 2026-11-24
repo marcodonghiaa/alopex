@@ -115,3 +115,21 @@ export function parseGeminiRows(response: unknown): StatementRow[] {
   }
   return rows;
 }
+
+/**
+ * The reply for Gemini's 2xx answer: the rows, the refusal (422), or 502 when its body isn't JSON
+ * (an HTML error page, or a body cut off by the timeout). That used to throw past the handler, so
+ * the browser saw a CORS error instead of a message (H235).
+ */
+export async function statementReply(res: Response): Promise<{ body: object; status: number }> {
+  let answer: unknown;
+  try {
+    answer = await res.json();
+  } catch (err) {
+    console.error(`Gemini sent an unreadable answer: ${errorTag(err)}`);
+    return { body: { error: "The AI sent an answer that couldn't be read, try again" }, status: 502 };
+  }
+  const refused = geminiRefusal(answer);
+  if (refused) return { body: { error: refused }, status: 422 };
+  return { body: { rows: parseGeminiRows(answer) }, status: 200 };
+}

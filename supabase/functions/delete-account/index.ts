@@ -19,6 +19,7 @@ Deno.serve(serveWithCors(deleteAccountHandler({
   user: (userId) => service.auth.admin.getUserById(userId),
   signIn: (email, password) =>
     signInClient().auth.signInWithPassword({ email, password }),
+  signOut: (accessToken) => service.auth.admin.signOut(accessToken, "local"),
   rpc: (fn, args) => service.rpc(fn, args),
   sessionIds: (userId) => service.from("bank_sessions").select("session_id").eq("user_id", userId),
   accountSessionIds: (userId) =>

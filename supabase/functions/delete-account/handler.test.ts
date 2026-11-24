@@ -17,6 +17,7 @@ type Over = {
   accountSessions?: { data: { bank_session_id: string | null }[] | null; error: unknown };
   deleteError?: unknown;
   closeFails?: boolean;
+  signOutFails?: boolean;
 };
 
 function setup(o: Over = {}) {
@@ -38,7 +39,12 @@ function setup(o: Over = {}) {
     signIn: (email, password) => {
       steps.push(`signIn ${email} ${password}`);
       const id = "signedInAs" in o ? o.signedInAs : "u1";
-      return Promise.resolve({ data: { user: id ? { id } : null }, error: o.passwordError ?? null });
+      const session = id && !o.passwordError ? { access_token: "check-jwt" } : null;
+      return Promise.resolve({ data: { user: id ? { id } : null, session }, error: o.passwordError ?? null });
+    },
+    signOut: (accessToken) => {
+      steps.push(`signOut ${accessToken}`);
+      return o.signOutFails ? Promise.reject(new Error("auth down")) : Promise.resolve({ error: null });
     },
     rpc: (fn, args) => (steps.push(`${fn} ${args.p_user}`), Promise.resolve(o.allowed ?? { data: true, error: null })),
     sessionIds: (userId) => (steps.push(`sessions ${userId}`), Promise.resolve(o.sessions ?? { data: [{ session_id: "s1" }], error: null })),
@@ -76,6 +82,7 @@ Deno.test("password checked, then owner guard, then delete, then bank sessions c
     "mfa_satisfied",
     "email u1",
     "signIn a@b.c pw",
+    "signOut check-jwt",
     "can_delete_user u1",
     "sessions u1",
     "account sessions u1",
@@ -151,4 +158,20 @@ Deno.test("accounts' sessions unreadable: nothing is deleted", async () => {
   const s = setup({ accountSessions: { data: null, error: { code: "XX000" } } });
   assertEquals(await s.call(), { status: 500, body: SORRY });
   assertEquals(s.steps.includes("deleteUser u1"), false);
+});
+
+// H239: the password check's own session was left alive when the delete was refused or failed.
+Deno.test("the password check's session is signed out at once, whatever happens next", async () => {
+  const owner = setup({ allowed: { data: false, error: null } });
+  assertEquals((await owner.call()).status, 409);
+  assertEquals(owner.steps.includes("signOut check-jwt"), true);
+  const other = setup({ signedInAs: "u9" });
+  assertEquals((await other.call()).status, 403);
+  assertEquals(other.steps.includes("signOut check-jwt"), true);
+  // No session (wrong password): nothing to sign out.
+  const wrong = setup({ passwordError: { status: 400 } });
+  assertEquals((await wrong.call()).status, 403);
+  assertEquals(wrong.steps.some((x) => x.startsWith("signOut")), false);
+  // A failed sign-out doesn't block the delete.
+  assertEquals(await setup({ signOutFails: true }).call(), { status: 200, body: { ok: true } });
 });

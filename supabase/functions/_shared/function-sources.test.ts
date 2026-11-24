@@ -64,3 +64,8 @@ Deno.test("no function reads the legacy keys itself: clients.ts picks the secret
 Deno.test("complete-bank-consent burns the code of an expired link too", () => {
   assertEquals(/if \(claim\.burn \|\| foreign\) await burnCode\(body\.code\)/.test(completeBankConsent), true);
 });
+
+// H169: list-banks' /aspsps call is made in the function itself; it must not wait forever.
+Deno.test("list-banks gives Enable Banking a timeout", () => {
+  assertEquals(/signal: ebTimeout\(\)/.test(listBanks), true);
+});

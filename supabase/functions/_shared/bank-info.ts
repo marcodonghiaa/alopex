@@ -1,7 +1,7 @@
 // The bank (ASPSP) behind a linked account. Enable Banking's /sessions response
 // names the bank and its country but not its logo; /aspsps?country= lists logos.
 
-import { ebErrorMessage } from "./enable-banking.ts";
+import { ebErrorMessage, ebTimeout } from "./enable-banking.ts";
 
 export interface BankInfo { bank_name: string | null; bank_country: string | null; bank_logo: string | null }
 
@@ -90,6 +90,7 @@ export async function requestConsentUrl(opts: {
         redirect_url: opts.redirectUrl,
         psu_type: "personal",
       }),
+      signal: ebTimeout(),
     });
     if (!res.ok) {
       console.error("Enable Banking error:", res.status);

@@ -207,3 +207,23 @@ Deno.test("linkAccounts: a consent that shares no account closes its session", a
   assertEquals("error" in result!, true);
   assertEquals(eb.calls.includes("DELETE https://api.enablebanking.com/sessions/empty"), true, eb.calls.join("\n"));
 });
+
+// H169: the code exchange (POST /sessions) had no timeout, so a slow Enable Banking held the
+// function after the pending consent was already used up.
+Deno.test("linkAccounts: the session call to Enable Banking has a timeout", async () => {
+  const original = globalThis.fetch;
+  let signal: AbortSignal | null | undefined;
+  globalThis.fetch = ((_url: string, init?: RequestInit) => {
+    signal = init?.signal;
+    return Promise.resolve(Response.json({}, { status: 500 }));
+  }) as typeof fetch;
+  const silence = console.error;
+  console.error = () => {};
+  try {
+    await linkAccounts(memoryDb({ accounts: [] }), "u", "code");
+  } finally {
+    console.error = silence;
+    globalThis.fetch = original;
+  }
+  assertEquals(signal instanceof AbortSignal, true);
+});

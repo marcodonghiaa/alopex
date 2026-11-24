@@ -109,3 +109,14 @@ Deno.test("requestConsentUrl: a good reply keeps the row and returns the bank's 
   assertEquals(result, { url: "https://bank/consent" });
   assertEquals(discarded, 0);
 });
+
+// H169: a slow Enable Banking held the function until the platform killed it.
+Deno.test("requestConsentUrl: the /auth call has a timeout", async () => {
+  let signal: AbortSignal | null | undefined;
+  const fetchFn = ((_url: string, init: RequestInit) => {
+    signal = init.signal;
+    return Promise.resolve(Response.json({ url: "https://bank/consent" }));
+  }) as unknown as typeof fetch;
+  await requestConsentUrl({ ...CONSENT, discard: async () => {}, fetchFn });
+  assertEquals(signal instanceof AbortSignal, true);
+});

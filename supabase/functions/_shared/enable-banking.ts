@@ -8,6 +8,10 @@ export const EB_KEY_INVALID = "The Enable Banking key is invalid: run npx create
 export const EB_NO_ACCOUNTS =
   "Enable Banking didn't share any accounts. Link this bank once on enablebanking.com → API applications → your app → Link accounts, then try again.";
 
+// For an Enable Banking call a person waits on (bank link, bank picker): a slow answer fails
+// after 15 s instead of holding the function until the platform stops it (H169).
+export const ebTimeout = () => AbortSignal.timeout(15_000);
+
 // 401/403 from Enable Banking means the app itself was refused (left Inactive, or wrong key id).
 export function ebErrorMessage(status: number): string {
   if (status === 401 || status === 403) {

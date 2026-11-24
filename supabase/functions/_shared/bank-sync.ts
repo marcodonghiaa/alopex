@@ -116,7 +116,11 @@ async function getEb(fetch: Deps["fetch"], token: string, path: string) {
   return res.json();
 }
 
+const MAX_PAGES = 500;
+
 // Pushes into `into` page by page, so the pages read before a failure are not lost.
+// A key the bank already sent, or more than MAX_PAGES pages, would page until the run's deadline
+// (H163): stop with PAGING_LOOP instead, which saves the pages read and keeps the cursor.
 async function getAllTransactions(
   fetch: Deps["fetch"],
   token: string,
@@ -125,13 +129,19 @@ async function getAllTransactions(
   into: EbTransaction[],
 ) {
   let continuationKey: string | null = null;
+  const seen = new Set<string>();
   do {
+    if (seen.size >= MAX_PAGES) throw Object.assign(new Error("Too many pages"), { code: "PAGING_LOOP" });
     const params = new URLSearchParams(query);
     if (continuationKey) params.set("continuation_key", continuationKey);
     const data = await getEb(fetch, token, `${ebId}/transactions?${params}`);
     into.push(...(data.transactions || []));
     // longest can answer an empty page with a key: keep going until no key comes back.
     continuationKey = data.continuation_key || null;
+    if (continuationKey && seen.has(continuationKey)) {
+      throw Object.assign(new Error("Repeated continuation key"), { code: "PAGING_LOOP" });
+    }
+    if (continuationKey) seen.add(continuationKey);
   } while (continuationKey);
 }
 

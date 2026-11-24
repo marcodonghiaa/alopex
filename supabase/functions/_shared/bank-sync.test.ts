@@ -176,6 +176,51 @@ Deno.test("transactions: follows continuation_key across pages", async () => {
   assertEquals(result.upserted, 2);
 });
 
+// H163: a bank answering the same continuation_key again made every run page until the 120 s
+// deadline (TIMEOUT, one bank call a page). A repeated key now stops the run at once: the pages
+// read are saved and the cursor stays, so nothing is skipped.
+Deno.test("transactions: a repeated continuation_key stops paging, saves what came in, keeps the cursor", async () => {
+  let calls = 0;
+  const fetch = (async () => {
+    calls++;
+    return { ok: true, status: 200, json: async () => ({ transactions: [TX], continuation_key: "same" }) };
+  }) as unknown as Deps["fetch"];
+  const { supabase, writes } = fakeSupabase();
+  const silence = console.error;
+  console.error = () => {};
+  let result;
+  try {
+    result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
+  } finally {
+    console.error = silence;
+  }
+
+  assertEquals(calls, 2);
+  assertEquals(result, { upserted: 1, rejected: null, cursor: null, error: "PAGING_LOOP" });
+  assertEquals((writes[0].data as unknown[]).length, 1);
+});
+
+Deno.test("transactions: paging stops after 500 pages", async () => {
+  let calls = 0;
+  const fetch = (async () => {
+    calls++;
+    return { ok: true, status: 200, json: async () => ({ transactions: [], continuation_key: `k${calls}` }) };
+  }) as unknown as Deps["fetch"];
+  const { supabase } = fakeSupabase();
+  const silence = console.error;
+  console.error = () => {};
+  let result;
+  try {
+    result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
+  } finally {
+    console.error = silence;
+  }
+
+  assertEquals(calls, 500);
+  assertEquals(result.error, "PAGING_LOOP");
+  assertEquals(result.cursor, null);
+});
+
 Deno.test("transactions: a 404 is rejected and the cursor stays", async () => {
   const { fetch } = fakeFetch({ "/transactions?": { ok: false, status: 404 } });
   const { supabase, writes } = fakeSupabase();

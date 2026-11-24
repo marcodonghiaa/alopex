@@ -230,12 +230,13 @@ export async function syncAccountTransactions(
   return { upserted: 0, rejected: null, cursor: today, error: null };
 }
 
-// Older rows lack identification_hash (and iban) or account_type: ask EB once and store them.
-// A bank that sends no type gets "checking" (what unknown counts as), so the call is not
-// repeated. Best effort.
+// Older rows lack account_type, and some identification_hash (and iban): ask EB once and store
+// them. A bank that sends no type gets "checking" (what unknown counts as), so the call is not
+// repeated. A hash is only looked up with the type (H161): a bank whose details have none would
+// otherwise be asked on every run, toward its few unattended calls a day. A renewed consent
+// fills a missing hash too (matchPatch). Best effort.
 async function fillMissingIds({ fetch, supabase }: Deps, token: string, account: SyncAccount) {
-  const needType = account.account_type === null;
-  if (account.identification_hash && !needType) return;
+  if (account.account_type !== null) return;
   try {
     const details = await getEb(fetch, token, `${ebAccountId(account)}/details`);
     const patch: Record<string, unknown> = {};
@@ -247,8 +248,7 @@ async function fillMissingIds({ fetch, supabase }: Deps, token: string, account:
         console.error("Account ids not filled: no hash in details");
       }
     }
-    if (needType) patch.account_type = accountType(details?.cash_account_type) ?? "checking";
-    if (Object.keys(patch).length === 0) return;
+    patch.account_type = accountType(details?.cash_account_type) ?? "checking";
     const { error } = await supabase.from("accounts").update(patch).eq("uid", account.uid);
     if (error) throw error;
   } catch (err) {

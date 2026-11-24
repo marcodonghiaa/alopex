@@ -226,11 +226,11 @@ Deno.test("balance: fills a missing hash once, then fetches the balance", async 
   });
   const { supabase, writes } = fakeSupabase();
 
-  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null }), TODAY);
+  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null, account_type: null }), TODAY);
 
   assertEquals(urls, [`${EB}/eb/details`, `${EB}/eb/balances`]);
   assertEquals(writes, [
-    { table: "accounts", op: "update", data: { identification_hash: "h", iban: "IT1" }, filters: [["eq", "uid", "pk"]] },
+    { table: "accounts", op: "update", data: { identification_hash: "h", iban: "IT1", account_type: "checking" }, filters: [["eq", "uid", "pk"]] },
   ]);
   assertEquals(row?.account_uid, "pk");
 });
@@ -264,11 +264,23 @@ Deno.test("balance: a typed account with a hash skips details", async () => {
   assertEquals(writes, []);
 });
 
+// H161: a bank whose /details never has an identification_hash was asked again on every run,
+// one more unattended call toward its daily limit. /details is asked once, with the type lookup.
+Deno.test("balance: a typed account the bank gives no hash for does not ask details again", async () => {
+  const { fetch, urls } = fakeFetch({ "/balances": { body: BALANCES } });
+  const { supabase, writes } = fakeSupabase();
+
+  await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null, account_type: "checking" }), TODAY);
+
+  assertEquals(urls, [`${EB}/eb/balances`]);
+  assertEquals(writes, []);
+});
+
 Deno.test("balance: a 429 on details still returns the balance", async () => {
   const { fetch } = fakeFetch({ "/details": { ok: false, status: 429 }, "/balances": { body: BALANCES } });
   const { supabase, writes } = fakeSupabase();
 
-  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null }), TODAY);
+  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null, account_type: null }), TODAY);
 
   assertEquals(writes, []);
   assert(row);

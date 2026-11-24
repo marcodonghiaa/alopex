@@ -15,6 +15,7 @@ export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "
       let remove = false;
       let added: Row[] | null = null;
       let window: [number, number] = [0, Infinity];
+      let single = false;
       const q = {
         select: () => q,
         update: (u: Row) => ((patch = u), q),
@@ -44,6 +45,7 @@ export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "
         order: (c: string, o?: { ascending?: boolean }) => (orders.push([c, o?.ascending !== false]), q),
         limit: (n: number) => ((window = [0, n - 1]), q),
         range: (a: number, b: number) => ((window = [a, b]), q),
+        maybeSingle: () => ((single = true), q),
         then(resolve: (v: unknown) => void) {
           if (added) {
             (tables[table] ??= []).push(...added.map((r) => ({ ...r })));
@@ -65,7 +67,8 @@ export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "
             for (const [c, asc] of orders) if (a[c] !== b[c]) return (a[c] < b[c] ? -1 : 1) * (asc ? 1 : -1);
             return 0;
           });
-          resolve({ data: rows.slice(window[0], window[1] + 1).map((r) => ({ ...r })), error: null });
+          const data = rows.slice(window[0], window[1] + 1).map((r) => ({ ...r }));
+          resolve({ data: single ? data[0] ?? null : data, error: null });
         },
       };
       return q;

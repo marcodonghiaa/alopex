@@ -115,3 +115,80 @@ Deno.test("linkAccounts: an account matched twice in one consent is synced once"
   }
   assertEquals("syncUids" in result! ? result.syncUids : result, ["acc1"]);
 });
+
+
+// accounts inserts of the uids in `failing` get a database error; everything else is memoryDb.
+function failingInserts(db: ReturnType<typeof memoryDb>, failing: (uid: string) => boolean) {
+  const from = db.from.bind(db);
+  return {
+    ...db,
+    from(table: string) {
+      const q = from(table);
+      if (table !== "accounts") return q;
+      const insert = q.insert;
+      return {
+        ...q,
+        insert: (row: { uid: string }) =>
+          failing(row.uid) ? { then: (resolve: (v: unknown) => void) => resolve({ error: { code: "XX000" } }) } : insert(row),
+      };
+    },
+  };
+}
+
+async function quietLink(db: unknown, session: Record<string, unknown>) {
+  const eb = fakeEb(session);
+  const silence = console.error;
+  console.error = () => {};
+  try {
+    return await linkAccounts(db, "u", "code");
+  } finally {
+    console.error = silence;
+    eb.restore();
+  }
+}
+
+// H160: one account's failed write aborted the loop. The accounts saved before it stayed linked
+// but got no first sync (the bank's long-history hour lost) and the user was told the link failed.
+Deno.test("linkAccounts: one account's failed write skips only that account; the rest are saved and synced", async () => {
+  const db = memoryDb({ accounts: [], bank_sessions: [] });
+  const acc = (uid: string, hash: string) => ({ uid, currency: "EUR", identification_hash: hash, account_id: { iban: `IT${hash}` } });
+  const result = await quietLink(failingInserts(db, (uid) => uid === "eb-2"), {
+    session_id: "s",
+    accounts: [acc("eb-1", "h1"), acc("eb-2", "h2"), acc("eb-3", "h3")],
+  });
+  assertEquals("syncUids" in result ? result.syncUids : result, ["eb-1", "eb-3"]);
+  assertEquals(db.tables.accounts.map((a) => a.uid), ["eb-1", "eb-3"]);
+});
+
+Deno.test("linkAccounts: when no account could be saved, the link fails", async () => {
+  const db = memoryDb({ accounts: [], bank_sessions: [] });
+  const result = await quietLink(failingInserts(db, () => true), {
+    session_id: "s",
+    accounts: [{ uid: "eb-1", currency: "EUR", identification_hash: "h1" }],
+  });
+  assertEquals("error" in result, true);
+});
+
+// A concurrent callback inserted the same pocket first: this link updates that row and leaves its
+// first sync to the callback that inserted it.
+Deno.test("linkAccounts: an account a concurrent link inserted first is updated, not synced twice", async () => {
+  const db = memoryDb({ accounts: [], bank_sessions: [] });
+  const from = db.from.bind(db);
+  const racing = {
+    ...db,
+    from(table: string) {
+      const q = from(table);
+      if (table !== "accounts") return q;
+      return {
+        ...q,
+        insert: () => {
+          db.tables.accounts.push({ uid: "other", user_id: "u", currency: "EUR", identification_hash: "h1" });
+          return { then: (resolve: (v: unknown) => void) => resolve({ error: { code: "23505" } }) };
+        },
+      };
+    },
+  };
+  const result = await quietLink(racing, { session_id: "s", accounts: [{ uid: "eb-1", currency: "EUR", identification_hash: "h1" }] });
+  assertEquals("syncUids" in result ? result.syncUids : result, []);
+  assertEquals(db.tables.accounts.map((a) => [a.uid, a.eb_account_uid, a.bank_session_id]), [["other", "eb-1", "s"]]);
+});

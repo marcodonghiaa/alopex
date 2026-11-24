@@ -8,7 +8,7 @@
 // sync filling the flow first) still applies. So are recent rule transfers, once no rule or
 // Transfer category holds them any more. Rows you decided ('user', 'legacy') are never read.
 // Then refunds are paired.
-import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, fetchByRefs, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { matchRefunds, type RefundRow, WINDOW_DAYS } from "./refunds.ts";
 import { fetchRules, matchRule, type Rule } from "./rules.ts";
@@ -200,12 +200,11 @@ async function repairHalfPairs(db: Db): Promise<number> {
   // refunds for every user; its rows aren't touched blind.
   const skipped = new Set<string>();
   for (const [account_uid, refs] of byAccount) {
-    for (let i = 0; i < refs.length && !skipped.has(account_uid); i += 50) {
-      const { data, error } = await db.from("transactions").select(SIDE_COLUMNS).eq("account_uid", account_uid).in("entry_reference", refs.slice(i, i + 50));
-      if (error) {
-        console.error(`Refund repair skipped one account: ${errorTag(error)}`);
-        skipped.add(account_uid);
-      } else for (const r of data as PairSide[]) charges.set(keyOf(r), r);
+    try {
+      for (const r of await fetchByRefs<PairSide>(db, SIDE_COLUMNS, account_uid, refs)) charges.set(keyOf(r), r);
+    } catch (error) {
+      console.error(`Refund repair skipped one account: ${errorTag(error)}`);
+      skipped.add(account_uid);
     }
   }
 

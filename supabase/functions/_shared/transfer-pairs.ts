@@ -6,7 +6,7 @@
 // other side, so its counterpart stops counting too. Yours, legacy, rule and own-account rows stay.
 // Better no pair than a wrong one: any tie skips the rows involved. A suggested pair whose rows
 // changed since (you edited one, or the update never landed) is removed again.
-import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, fetchByRefs, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 
 export const PAIR_WINDOW_DAYS = 4;
@@ -116,16 +116,8 @@ async function dropStalePairs(db: Db, pairs: PairRecord[]): Promise<PairRecord[]
   const suggested = pairs.filter((p) => p.status === "suggested");
   const sides = new Map<string, Side>();
   for (const [account, refs] of Map.groupBy(suggested.flatMap((p) => [[p.out_account_uid, p.out_ref], [p.in_account_uid, p.in_ref]]), ([a]) => a)) {
-    const list = refs.map(([, r]) => r);
-    for (let i = 0; i < list.length; i += 50) {
-      const { data, error } = await db
-        .from("transactions")
-        .select("account_uid, entry_reference, credit_debit_indicator, flow_source, deleted_at")
-        .eq("account_uid", account)
-        .in("entry_reference", list.slice(i, i + 50));
-      if (error) throw error;
-      for (const r of data as Side[]) sides.set(sideKey(r), r);
-    }
+    const columns = "account_uid, entry_reference, credit_debit_indicator, flow_source, deleted_at";
+    for (const r of await fetchByRefs<Side>(db, columns, account, refs.map(([, r]) => r))) sides.set(sideKey(r), r);
   }
   const sidesOf = (p: PairRecord) => [sides.get(`${p.out_account_uid}:${p.out_ref}`), sides.get(`${p.in_account_uid}:${p.in_ref}`)];
   const live = (s?: Side) => !!s && !s.deleted_at && LIVE_SIDE.includes(s.flow_source ?? "");

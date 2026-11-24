@@ -37,6 +37,17 @@ export async function readPages<T>(page: (from: number, to: number) => PromiseLi
 
 const CHUNK_SIZE = 50; // keeps the `in (...)` request URL well under proxy limits
 
+/** One account's transactions by entry_reference, CHUNK_SIZE refs per request. Throws on the first failed read. */
+export async function fetchByRefs<T>(db: Db, columns: string, accountUid: string, refs: string[]): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < refs.length; i += CHUNK_SIZE) {
+    const { data, error } = await db.from("transactions").select(columns).eq("account_uid", accountUid).in("entry_reference", refs.slice(i, i + CHUNK_SIZE));
+    if (error) throw error;
+    out.push(...(data ?? []));
+  }
+  return out;
+}
+
 // One UPDATE per (account, update payload) group instead of one per row. Every statement
 // is guarded on guardColumn: is-null by default (only fills empty values), or an in-list
 // when guardIn is given (e.g. only rows whose category_source is ai/rule). userId also scopes

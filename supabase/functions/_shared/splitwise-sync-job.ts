@@ -17,7 +17,7 @@ import { type Db, PAGE_SIZE, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import type { Reply } from "./origins.ts";
 import { type CallerDeps, callerOrReply } from "./caller.ts";
-import { type SplitwiseClient, SplitwiseApiError, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
+import { type SplitwiseClient, SplitwiseApiError, type SwExpense, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 import { balancesFrom, groupLabels, planSync } from "./splitwise-sync.ts";
 
 const DAY = 86_400_000;
@@ -42,7 +42,7 @@ export type Connection = {
 export type JobDeps = {
   db: Db; // service role
   rpc: Rpc; // service role
-  client: (apiKey: string) => Pick<SplitwiseClient, "expenses" | "groups">;
+  client: (apiKey: string) => Pick<SplitwiseClient, "expenses" | "groups" | "expense">;
   now: () => number;
 };
 export type Counts = { new: number; adopted: number; review: number; deleted: number };
@@ -84,7 +84,29 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
     // counts as done, so a real mass removal never blocks the sync (the next full check, a week
     // later, holds them again).
     if (missing.length > Math.max(MAX_SURE_GONE, new Set(local).size / 2)) held = missing.length;
-    else deleted.push(...missing);
+    else if (missing.length > MAX_SURE_GONE) deleted.push(...missing);
+    else {
+      // Offset paging over a list that moves during the read can skip a row, not only repeat one
+      // (H232). A few missing ids are read again one by one: one that is still there is written
+      // as usual, a 404 or a deleted one goes, and one Splitwise won't answer for is kept.
+      // A refused key or a rate limit stops the sync as anywhere else.
+      const found: SwExpense[] = [];
+      for (const id of missing) {
+        try {
+          const e = await api.expense(id);
+          if (e) found.push(e);
+          else deleted.push(id);
+        } catch (err) {
+          if (err instanceof SplitwiseAuthError || err instanceof SplitwiseRateLimitError || !(err instanceof SplitwiseApiError)) throw err;
+          console.error(`sync-splitwise: a missing expense couldn't be checked, kept: ${errorTag(err)}`);
+        }
+      }
+      const again = planSync(found, me, labels);
+      plan.shares.push(...again.shares);
+      plan.review.push(...again.review);
+      deleted.push(...again.gone);
+      plan.skipped.push(...again.skipped);
+    }
   }
   const balances = balancesFrom(groups, me, labels);
   const calls = Math.max(1, ...[plan.shares, plan.review, deleted].map((a) => Math.ceil(a.length / CHUNK)));

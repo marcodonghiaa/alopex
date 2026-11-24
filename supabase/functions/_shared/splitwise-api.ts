@@ -151,6 +151,19 @@ export function splitwiseClient(
       }
       throw new SplitwiseApiError("Splitwise has too many expenses to read in one run");
     },
+    /** One expense by id (deleted ones included), or null when Splitwise answers 404. */
+    async expense(id: number): Promise<SwExpense | null> {
+      let body: Record<string, unknown>;
+      try {
+        body = await get(`get_expense/${encodeURIComponent(String(id))}`);
+      } catch (err) {
+        if (err instanceof SplitwiseApiError && err.status === 404) return null;
+        throw err;
+      }
+      const e = body.expense as SwExpense | null;
+      if (!e || typeof e !== "object" || typeof e.id !== "number") throw new SplitwiseApiError(UNREADABLE);
+      return e;
+    },
     async groups(): Promise<SwGroup[]> {
       return list<SwGroup>(await get("get_groups"), "groups");
     },

@@ -2,7 +2,7 @@
 // row: your rules first, then the category you set by hand for the same merchant, then the AI;
 // afterwards AI rows take your later hand-set choice for their merchant. Without an AI (no key,
 // or it fails) your rules and past choices still apply.
-import { applyGroupedUpdates, type Db } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
 import { CATEGORIES, categoriesFor } from "./categories.ts";
 import { applyLearned, fetchLearned, learnedUpdate, planRelearn } from "./learned-categories.ts";
 import { errorTag } from "./log-safe.ts";
@@ -12,7 +12,6 @@ import type { CategorizeRow } from "./categorize-prompt.ts";
 
 const BATCH_SIZE = 40;
 const RELEARN_DAYS = 120;
-const PAGE = 1000;
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
@@ -105,9 +104,8 @@ function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeLeft: (
 // ponytail: reads 120 days of AI rows with no time check; a few pages for one person.
 async function relearnAiRows(db: Db): Promise<number> {
   const since = new Date(Date.now() - RELEARN_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const rows: Row[] = [];
-  for (let from = 0;; from += PAGE) {
-    const { data, error } = await db
+  const rows: Row[] = await readPages((from, to) =>
+    db
       .from("transactions")
       .select("user_id, account_uid, entry_reference, creditor_name, credit_debit_indicator, category, category_source")
       .eq("category_source", "ai")
@@ -115,11 +113,8 @@ async function relearnAiRows(db: Db): Promise<number> {
       .is("deleted_at", null)
       .order("account_uid")
       .order("entry_reference")
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    rows.push(...data);
-    if (data.length < PAGE) break;
-  }
+      .range(from, to)
+  );
   let changed = 0;
   for (const userRows of Map.groupBy(rows, (r) => r.user_id).values()) {
     const learned = await fetchLearned(db, userRows[0].user_id, userRows.map((r) => r.creditor_name));

@@ -8,13 +8,12 @@
 // sync filling the flow first) still applies. So are recent rule transfers, once no rule or
 // Transfer category holds them any more. Rows you decided ('user', 'legacy') are never read.
 // Then refunds are paired.
-import { applyGroupedUpdates, type Db } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { matchRefunds, type RefundRow, WINDOW_DAYS } from "./refunds.ts";
 import { matchRule, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
 
 export const BATCH_SIZE = 200;
-const PAGE_SIZE = 1000; // PostgREST caps a response at 1000 rows
 const TRANSFER_CODES = new Set(["EXCHANGE", "TOPUP"]);
 const RERESOLVE_DAYS = 90;
 const FLOW_COLUMNS =
@@ -93,21 +92,20 @@ async function reresolveDefaults(db: Db, rules: FlowRule[], timeLeft: () => bool
   const rows: (FlowRow & { flow_type: string; flow_source: string })[] = [];
   // ponytail: 90 days of one person's default rows, a few pages; read first, then update.
   for (const [source, types] of RERESOLVE) {
-    for (let from = 0;; from += PAGE_SIZE) {
-      const { data, error } = await db
-        .from("transactions")
-        .select(`${FLOW_COLUMNS}, flow_type, flow_source`)
-        .eq("flow_source", source)
-        .in("flow_type", types)
-        .is("deleted_at", null)
-        .gte("booking_date", since)
-        .order("account_uid")
-        .order("entry_reference")
-        .range(from, from + PAGE_SIZE - 1);
-      if (error) throw error;
-      rows.push(...data);
-      if (data.length < PAGE_SIZE) break;
-    }
+    rows.push(
+      ...await readPages<(typeof rows)[number]>((from, to) =>
+        db
+          .from("transactions")
+          .select(`${FLOW_COLUMNS}, flow_type, flow_source`)
+          .eq("flow_source", source)
+          .in("flow_type", types)
+          .is("deleted_at", null)
+          .gte("booking_date", since)
+          .order("account_uid")
+          .order("entry_reference")
+          .range(from, to)
+      ),
+    );
   }
   const items = rows
     .map((row) => ({ row, update: resolveFlow(row, rules) }))
@@ -161,21 +159,15 @@ const keyOf = (r: { account_uid: string; entry_reference: string }) => `${r.acco
 
 // Reads every page of a query in primary-key order (pages never overlap), deduped by key: a write
 // from elsewhere during the read can shift a row into the next page.
-async function readAll<T extends { account_uid: string; entry_reference: string }>(page: (from: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
-  const rows = new Map<string, T>();
-  for (let from = 0;; from += PAGE_SIZE) {
-    const { data, error } = await page(from);
-    if (error) throw error;
-    for (const r of data ?? []) rows.set(keyOf(r), r);
-    if ((data ?? []).length < PAGE_SIZE) return [...rows.values()];
-  }
+async function readAll<T extends { account_uid: string; entry_reference: string }>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+  return [...new Map((await readPages(page)).map((r) => [keyOf(r), r])).values()];
 }
 
 // Rows still counted as spend/income, recent enough to hold either side of a refund pair.
 // ponytail: no time budget inside, fine for one person's 180 days (a few pages); pass timeLeft
 // and skip refunds for the run if it ever gets near the 150 s wall clock.
 function fetchRefundCandidates(db: Db): Promise<RefundRow[]> {
-  return readAll<RefundRow>((from) =>
+  return readAll<RefundRow>((from, to) =>
     db
       .from("transactions")
       .select("entry_reference, account_uid, amount, currency, credit_debit_indicator, creditor_name, remittance_info, booking_date, refund_of")
@@ -185,7 +177,7 @@ function fetchRefundCandidates(db: Db): Promise<RefundRow[]> {
       .gte("booking_date", REFUND_SINCE())
       .order("account_uid")
       .order("entry_reference")
-      .range(from, from + PAGE_SIZE - 1)
+      .range(from, to)
   );
 }
 
@@ -200,7 +192,7 @@ const SIDE_COLUMNS = "account_uid, entry_reference, credit_debit_indicator, refu
 // and pairs anew below. Only rows in REFUND_SOURCES change; the window is safe for charges since
 // their refund lands after them, and a credit looks its charge up by key, with no date limit.
 async function repairHalfPairs(db: Db): Promise<number> {
-  const refunded = await readAll<PairSide>((from) =>
+  const refunded = await readAll<PairSide>((from, to) =>
     db
       .from("transactions")
       .select(SIDE_COLUMNS)
@@ -209,7 +201,7 @@ async function repairHalfPairs(db: Db): Promise<number> {
       .gte("booking_date", REFUND_SINCE())
       .order("account_uid")
       .order("entry_reference")
-      .range(from, from + PAGE_SIZE - 1)
+      .range(from, to)
   );
   const credits = refunded.filter((r) => r.credit_debit_indicator === "CRDT");
   const charges = new Map<string, PairSide>();

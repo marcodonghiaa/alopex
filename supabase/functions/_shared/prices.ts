@@ -3,6 +3,7 @@
 import { fxRows } from "./fx-rates.ts";
 import { parseYahooChart } from "./holdings.ts";
 import { errorTag } from "./log-safe.ts";
+import { readPages } from "./batch-update.ts";
 
 // deno-lint-ignore no-explicit-any
 type Db = { from(table: string): any };
@@ -44,17 +45,13 @@ export async function syncFx(db: Db, get: GetJson): Promise<number> {
 }
 
 // Every row of a holdings table, read in 1000-row pages (PostgREST's cap) in a stable order (H048).
-const PAGE = 1000;
-async function selectAll(db: Db, table: string, columns: string, order: string[]) {
-  const all = [];
-  for (let from = 0; ; from += PAGE) {
+function selectAll(db: Db, table: string, columns: string, order: string[]) {
+  // deno-lint-ignore no-explicit-any
+  return readPages<any>((from, to) => {
     let q = db.from(table).select(columns);
     for (const c of order) q = q.order(c);
-    const { data, error } = await q.range(from, from + PAGE - 1);
-    if (error) throw error;
-    all.push(...(data ?? []));
-    if (!data || data.length < PAGE) return all;
-  }
+    return q.range(from, to);
+  });
 }
 
 async function latestRate(db: Db, currency: string): Promise<number> {

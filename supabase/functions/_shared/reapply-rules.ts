@@ -3,10 +3,9 @@
 // 'legacy') are never read and the update guards on the same column (see planRuleReapply).
 // db is the service-role client (so the hand-edit trigger doesn't mark these rows 'manual');
 // every read and write is scoped to userId.
-import { applyGroupedUpdates, type Db } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
 import { planRuleReapply, planRuleRetire, REAPPLY_SOURCES, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
 
-const PAGE_SIZE = 1000;
 const SAMPLE_SIZE = 5;
 
 // Some updates failed; the others are saved. Running it again is safe: it only plans what's left.
@@ -33,8 +32,7 @@ export async function reapplyRules(db: Db, userId: string, apply: boolean, retir
 
   // Read every page first, then write: updates never shift the pages still to be read.
   // deno-lint-ignore no-explicit-any
-  const rows: any[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
+  const rows: any[] = await readPages((from, to) => {
     let query = db
       .from("transactions")
       .select("user_id, account_uid, entry_reference, creditor_name, remittance_info, category, category_source")
@@ -45,14 +43,8 @@ export async function reapplyRules(db: Db, userId: string, apply: boolean, retir
       ? query.eq("category_source", "rule").eq("category", retired.set_category)
       // Never-categorized rows too (source null): the ones a new user writes rules for (e2e #18).
       : query.or(`category_source.is.null,category_source.in.(${REAPPLY_SOURCES.join(",")})`);
-    const { data, error } = await query
-      .order("account_uid")
-      .order("entry_reference")
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    rows.push(...data);
-    if (data.length < PAGE_SIZE) break;
-  }
+    return query.order("account_uid").order("entry_reference").range(from, to);
+  });
 
   const items = retired
     ? planRuleRetire(rows, { ...retired, user_id: userId }, rules as Rule[])

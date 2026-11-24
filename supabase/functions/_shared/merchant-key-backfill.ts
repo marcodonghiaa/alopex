@@ -2,11 +2,10 @@
 // creditor_name changed) and drops aliases that repeat the newest alias text for their key.
 // Aggregator keys (PayPal, Apple, Google) span unrelated payees: rows store them, but they
 // never pick up an alias by key, and aliases named after them stay unkeyed and are never merged.
-import { applyGroupedUpdates, type Db } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, PAGE_SIZE } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { normalizeMerchant } from "./merchant-key.ts";
 
-const PAGE_SIZE = 1000; // PostgREST caps a response at 1000 rows
 
 type Alias = { user_id: string; source_name: string; alias: string; merchant_key: string | null; created_at: string };
 type TxRow = { user_id: string; account_uid: string; entry_reference: string; creditor_name: string; custom_name: string | null };

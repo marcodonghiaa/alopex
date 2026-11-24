@@ -97,7 +97,7 @@ Bank access lasts 180 days. Two weeks before it ends the Accounts page shows a *
 
 ### Splitwise (optional)
 
-Alopex can read your Splitwise expenses by itself, every 6 hours and on **Sync now**, so your spending counts only your share of what you split. Each person connects their own account with a personal API key, and **Splitwise gives API keys only to accounts with an active Splitwise Pro subscription** (the account that registers the app needs Pro, so each person needs their own). No Pro? Import the file you export from a Splitwise group instead (**Import a Splitwise file**): it works for everyone, without Pro.
+Alopex can read your Splitwise expenses by itself, 4 times a day after each bank sync and on **Sync now**, so your spending counts only your share of what you split. Each person connects their own account with a personal API key, and **Splitwise gives API keys only to accounts with an active Splitwise Pro subscription** (the account that registers the app needs Pro, so each person needs their own). No Pro? Import the file you export from a Splitwise group instead (**Import a Splitwise file**): it works for everyone, without Pro.
 
 1. Sign in at [secure.splitwise.com/apps](https://secure.splitwise.com/apps) and register an app (any name; the homepage and callback URLs don't matter for a personal key).
 2. On the app's page, generate an **API key** and copy it.

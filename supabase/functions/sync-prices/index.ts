@@ -20,18 +20,16 @@ const COINBASE = {
 
 const supabase = serviceClient();
 
-// A step's count, or null when it failed (logged by tag only).
 // Stop pricing more holdings after this, so the crypto step still runs under the 150 s wall clock.
 const PORTFOLIO_BUDGET_MS = 90000;
 
-const FAILED = "failed";
-
-async function step(name: string, run: () => Promise<number | null>): Promise<number | null | typeof FAILED> {
+// A step's count, null when it was skipped (Coinbase not set up), "failed" when it threw (logged by tag only).
+async function step(name: string, run: () => Promise<number | null>): Promise<number | null | "failed"> {
   try {
     return await run();
   } catch (err) {
     console.error(`sync-prices ${name} failed: ${errorTag(err)}`);
-    return FAILED;
+    return "failed";
   }
 }
 
@@ -46,6 +44,6 @@ Deno.serve(async (req) => {
   const crypto = await step("crypto", () => syncCrypto(supabase, getJson, today));
   const result = { fx, portfolio, coinbase, crypto, ms: Date.now() - started };
   console.log(`sync-prices: ${JSON.stringify(result)}`);
-  const failed = [fx, portfolio, coinbase, crypto].includes(FAILED);
+  const failed = [fx, portfolio, coinbase, crypto].includes("failed");
   return Response.json(result, { status: failed ? 500 : 200 });
 });

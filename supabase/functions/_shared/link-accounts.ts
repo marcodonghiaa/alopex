@@ -8,7 +8,7 @@ import { accountType, matchAccount, matchPatch, type StoredAccount } from "./acc
 import { bankLogo, type BankInfo, fetchAspsps } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
-import { closeReplaced, relinkPatch } from "./eb-sessions.ts";
+import { closeReplaced, closeSessions, relinkPatch } from "./eb-sessions.ts";
 
 export const LINK_FAILED = "Couldn't link the bank, please try again";
 
@@ -47,7 +47,11 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     }
 
     const accounts = (data.accounts ?? []) as Array<EnableBankingAccount>;
-    if (accounts.length === 0) return { error: EB_NO_ACCOUNTS };
+    if (accounts.length === 0) {
+      // Nothing is stored for this session, so nothing could close it later (H167): close it now.
+      if (typeof data.session_id === "string") await closeSessions([data.session_id], fetch, () => Promise.resolve(token));
+      return { error: EB_NO_ACCOUNTS };
+    }
     const consentValidUntil = data.access?.valid_until ?? null;
 
     // The bank itself (name, country), not the holder name EB returns as the account name.

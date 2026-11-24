@@ -192,3 +192,18 @@ Deno.test("linkAccounts: an account a concurrent link inserted first is updated,
   assertEquals("syncUids" in result ? result.syncUids : result, []);
   assertEquals(db.tables.accounts.map((a) => [a.uid, a.eb_account_uid, a.bank_session_id]), [["other", "eb-1", "s"]]);
 });
+
+// H167: a consent that shares no account returned before its session was stored anywhere, so the
+// session stayed open at Enable Banking with nothing on this instance to close it.
+Deno.test("linkAccounts: a consent that shares no account closes its session", async () => {
+  const db = memoryDb({ accounts: [], bank_sessions: [] });
+  const eb = fakeEb({ session_id: "empty", accounts: [] });
+  let result;
+  try {
+    result = await linkAccounts(db, "u", "code");
+  } finally {
+    eb.restore();
+  }
+  assertEquals("error" in result!, true);
+  assertEquals(eb.calls.includes("DELETE https://api.enablebanking.com/sessions/empty"), true, eb.calls.join("\n"));
+});

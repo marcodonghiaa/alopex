@@ -21,6 +21,8 @@ Deno.serve(serveWithCors(deleteAccountHandler({
     signInClient().auth.signInWithPassword({ email, password }),
   rpc: (fn, args) => service.rpc(fn, args),
   sessionIds: (userId) => service.from("bank_sessions").select("session_id").eq("user_id", userId),
+  accountSessionIds: (userId) =>
+    service.from("accounts").select("bank_session_id").eq("user_id", userId).not("bank_session_id", "is", null),
   deleteUser: (userId) => service.auth.admin.deleteUser(userId),
   closeSessions: (ids) => closeSessions(ids),
 })));

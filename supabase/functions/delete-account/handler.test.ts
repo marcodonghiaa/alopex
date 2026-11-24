@@ -14,6 +14,7 @@ type Over = {
   passwordError?: unknown;
   allowed?: { data: unknown; error: unknown };
   sessions?: { data: { session_id: string }[] | null; error: unknown };
+  accountSessions?: { data: { bank_session_id: string | null }[] | null; error: unknown };
   deleteError?: unknown;
   closeFails?: boolean;
 };
@@ -41,6 +42,10 @@ function setup(o: Over = {}) {
     },
     rpc: (fn, args) => (steps.push(`${fn} ${args.p_user}`), Promise.resolve(o.allowed ?? { data: true, error: null })),
     sessionIds: (userId) => (steps.push(`sessions ${userId}`), Promise.resolve(o.sessions ?? { data: [{ session_id: "s1" }], error: null })),
+    accountSessionIds: (userId) => (
+      steps.push(`account sessions ${userId}`),
+        Promise.resolve(o.accountSessions ?? { data: [{ bank_session_id: "s1" }, { bank_session_id: null }], error: null })
+    ),
     deleteUser: (userId) => (steps.push(`deleteUser ${userId}`), Promise.resolve({ error: o.deleteError ?? null })),
     closeSessions: (ids) => {
       steps.push(`close ${ids.join(",")}`);
@@ -73,6 +78,7 @@ Deno.test("password checked, then owner guard, then delete, then bank sessions c
     "signIn a@b.c pw",
     "can_delete_user u1",
     "sessions u1",
+    "account sessions u1",
     "deleteUser u1",
     "close s1",
   ]);
@@ -128,4 +134,21 @@ Deno.test("a failed delete closes no bank session; a failed close still answers 
   assertEquals(failed.steps.some((x) => x.startsWith("close")), false);
   assertEquals(await setup({ closeFails: true }).call(), { status: 200, body: { ok: true } });
   assertEquals((await setup({ sessions: { data: null, error: null } }).call()).status, 200);
+});
+
+// H167: bank_sessions is written best effort at link time, so a session only the accounts
+// remember (accounts.bank_session_id) stayed open at Enable Banking after the user was deleted.
+Deno.test("sessions only the accounts remember are closed too, each once", async () => {
+  const s = setup({
+    sessions: { data: [{ session_id: "s1" }], error: null },
+    accountSessions: { data: [{ bank_session_id: "s1" }, { bank_session_id: "s2" }, { bank_session_id: "s2" }, { bank_session_id: null }], error: null },
+  });
+  assertEquals(await s.call(), { status: 200, body: { ok: true } });
+  assertEquals(s.steps.at(-1), "close s1,s2");
+});
+
+Deno.test("accounts' sessions unreadable: nothing is deleted", async () => {
+  const s = setup({ accountSessions: { data: null, error: { code: "XX000" } } });
+  assertEquals(await s.call(), { status: 500, body: SORRY });
+  assertEquals(s.steps.includes("deleteUser u1"), false);
 });

@@ -17,6 +17,7 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ### New transaction columns are server-only by default
 - **Migration:** `20270110000000_transactions_update_allowlist`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- **If you added your own column to `transactions`** (outside these migrations) that changes on every update, such as an `updated_at` set by a trigger, dashboard edits are now refused. Drop that column, or add it to the allowed list in a migration of your own that redefines the guard function.
 - What changes: nothing you can see. The guard on transactions now lists what a signed-in user may change (category, name, flow, split, note, tags and the like, plus amount, date and name on manual accounts) instead of what they may not, so a column a later release adds can only be written by the sync until it is allowed on purpose. Every column that exists today keeps its old rule.
 - **Roll back:** run `supabase/rollbacks/20270110000000_transactions_update_allowlist.down.sql`, then `supabase migration repair --status reverted 20270110000000 --linked`.
 

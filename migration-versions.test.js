@@ -26,8 +26,10 @@ test('migrations from 20261104 on (when release notes started) are named in UPGR
 // update would stop. Every migration this branch adds must sort above everything on main. Needs
 // origin/main (CI fetches full history); skipped without it.
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+// Compared with main's tip, not the fork point: main may have gained newer migrations since.
+const MAIN = process.env.MIGRATION_BASE_REF || 'origin/main';
 let base = null;
-try { base = git('merge-base', 'HEAD', process.env.MIGRATION_BASE_REF || 'origin/main'); } catch { /* no git or no main */ }
+try { git('merge-base', 'HEAD', MAIN); base = git('rev-parse', MAIN); } catch { /* no git or no main */ }
 test('migrations added on this branch sort after every migration on main', { skip: base ? false : 'origin/main not available' }, () => {
   const onMain = git('ls-tree', '--name-only', base, 'supabase/migrations/').split('\n')
     .map((f) => f.split('/').pop()).filter((f) => f.endsWith('.sql'));

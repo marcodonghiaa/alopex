@@ -120,7 +120,8 @@ Deno.test("an AI that answers nothing stops once the same batch comes back: that
     const result = await categorize(db, async (rows) => (asked.push(rows.map((r) => r.entry_reference).join()), []));
     // The same batch again is a stall: not sent, not counted, and that user waits for the next run.
     assertEquals(asked, ["a,b", "c"]);
-    assertEquals(result.categorized, 3);
+    // H252: nothing was filled, so nothing counts and the catch-up doesn't send it again.
+    assertEquals(result.categorized, 0);
   } finally {
     console.warn = warn;
   }

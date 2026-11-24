@@ -29,27 +29,31 @@ export async function fetchBatchForOneUser(
 
 // One user's batch at a time for `handle` (the AI step) until none is left or time runs out. A
 // batch that comes back unchanged is a stall: that user is skipped for the rest of the run.
-// Returns how many rows were handled. stallKey: the row as the stall guard keys it.
+// Returns how many rows were handled, not counting a batch that came back unchanged (it filled
+// nothing, H252: counted, it made post-sync's catch-up re-send it for up to 10 rounds). progress
+// holds the same count as it goes, for a caller that reports it even when handle throws.
+// stallKey: the row as the stall guard keys it.
 export async function aiBatches(
   db: Db,
   query: { table?: string; select: string; nullColumn: string; limit: number },
   timeLeft: () => boolean,
   handle: (rows: Row[]) => Promise<void>,
   stallKey: (r: Row) => { user_id: string; account_uid: string; entry_reference: string } = (r) => r as never,
+  progress = { rows: 0 },
 ): Promise<number> {
-  let total = 0;
   const stalls = createStallGuard();
   while (timeLeft()) {
     const rows = await fetchBatchForOneUser(db, { ...query, excludeUserIds: stalls.stuckUserIds });
     if (rows.length === 0) break;
     if (stalls.isStalled(rows.map(stallKey))) {
       console.warn("No progress for one user, skipping them for this run.");
+      progress.rows -= rows.length; // the same rows as the batch before: it filled none of them
       continue;
     }
     await handle(rows);
-    total += rows.length;
+    progress.rows += rows.length;
   }
-  return total;
+  return progress.rows;
 }
 
 // Walks every transaction whose `nullColumn` is still null, for deterministic work that sends

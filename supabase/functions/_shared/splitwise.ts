@@ -70,19 +70,18 @@ async function applyPlan(db: Db, plan: Array<{ id: string; user_id: string; cate
   }
 }
 
-/** ask: null when there is no AI key. Returns how many shares were looked at. */
+/** ask: null when there is no AI key. Returns how many shares were handled (see aiBatches). */
 export async function categorizeSplitwise(db: Db, ask: Ask | null, timeLeft: () => boolean = () => true) {
   if (!ask) return { splitwise: 0, splitwiseAiFailed: false };
-  let looked = 0; // kept here, not returned by aiBatches, so a failed run still reports it
+  const progress = { rows: 0 }; // kept here, not only returned by aiBatches, so a failed run still reports it
   try {
     await aiBatches(db, { table: "splitwise_expenses", select: "id, description", nullColumn: "category", limit: BATCH_SIZE }, timeLeft, async (rows) => {
       const shares = rows as Share[];
       await applyPlan(db, planSplitwiseUpdates(await ask(buildSplitwisePrompt(shares), "category", SPLITWISE_CATEGORIES), shares));
-      looked += rows.length;
-    }, (r) => ({ user_id: r.user_id, account_uid: "splitwise", entry_reference: r.id })); // a share has no account_uid or entry_reference
-    return { splitwise: looked, splitwiseAiFailed: false };
+    }, (r) => ({ user_id: r.user_id, account_uid: "splitwise", entry_reference: r.id }), progress); // a share has no account_uid or entry_reference
+    return { splitwise: progress.rows, splitwiseAiFailed: false };
   } catch (err) {
     console.error(`Splitwise categorization failed: ${errorTag(err)}`);
-    return { splitwise: looked, splitwiseAiFailed: true };
+    return { splitwise: progress.rows, splitwiseAiFailed: true };
   }
 }

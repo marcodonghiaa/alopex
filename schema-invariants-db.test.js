@@ -11,7 +11,7 @@ const SHARED_TABLES = ['fx_rates', 'price_history'];
 // Definer functions written before `set search_path = ''` was the rule (their names are qualified
 // or only public is searched). New ones must use ''; leave this list as it is or shrink it.
 const LEGACY_PUBLIC_SEARCH_PATH = [
-  'add_manual_debt', 'add_manual_transaction', 'apply_merchant_alias', 'count_splitwise_review', 'delete_holding',
+  'add_manual_debt', 'add_manual_transaction', 'count_splitwise_review', 'delete_holding',
   'dismiss_splitwise_review', 'link_splitwise_review', 'reject_splitwise_match', 'set_account_type',
   'set_holding_quantity', 'set_manual_balance', 'splitwise_attempt', 'upsert_detected_streams',
 ];
@@ -52,6 +52,11 @@ test('schema invariants', { skip }, async (t) => {
       and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%')`)), []);
     assert.deepEqual(list(admin(`select string_agg(p.proname, ',') ${defs}
       and not ('search_path=""' = any(coalesce(p.proconfig, '{}'))) and p.proname not in ${inList(LEGACY_PUBLIC_SEARCH_PATH)}`)), []);
+    // H267: without pg_temp last, a session's temp tables are searched before public, so the
+    // legacy ones must at least end in pg_temp.
+    assert.deepEqual(list(admin(`select string_agg(p.proname, ',') ${defs}
+      and not ('search_path=""' = any(coalesce(p.proconfig, '{}')))
+      and not ('search_path=public, pg_temp' = any(coalesce(p.proconfig, '{}')))`)), []);
   });
 
   await t.test('anon can run no security definer function, except the MFA check policies use', () => {

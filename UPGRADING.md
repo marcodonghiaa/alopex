@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Six database functions search temporary tables last
+- **Migration:** `20270115000000_definer_search_path_pg_temp`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. `add_manual_debt`, `add_manual_transaction`, `set_account_type`, `set_holding_quantity`, `set_manual_balance` and `upsert_detected_streams` now look up tables in `public` and only then in a session's temporary tables, like the newer functions, so a temporary table can never stand in for a real one inside them.
+- **Roll back:** run `supabase/rollbacks/20270115000000_definer_search_path_pg_temp.down.sql`, then `supabase migration repair --status reverted 20270115000000 --linked`.
+
 ### Sync cursors are server-only
 - **Migration:** `20270114000000_sync_cursors_server_only`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: nothing you can see. `sync_cursors` (where each account's sync got to) no longer carries Supabase's default grants to `anon` and `authenticated`, like the other server-only tables, so it stays closed even if row level security is ever turned off. The sync uses the service role and is not affected.

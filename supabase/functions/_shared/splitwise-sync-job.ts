@@ -19,6 +19,7 @@ import type { Reply } from "./origins.ts";
 import { type CallerDeps, callerOrReply } from "./caller.ts";
 import { type SplitwiseClient, SplitwiseApiError, type SwExpense, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 import { balancesFrom, groupLabels, planSync } from "./splitwise-sync.ts";
+import type { Rpc } from "./batch-update.ts";
 
 const DAY = 86_400_000;
 const OVERLAP_MS = DAY;
@@ -31,7 +32,6 @@ const CONNECTION_COLS = "user_id, splitwise_user_id, cursor_updated_at, last_ful
 const RECONNECT = "Splitwise refused the API key, or your Splitwise Pro subscription ended. Connect again, or import a Splitwise file.";
 const PRO_REQUIRED = "Splitwise needs an active Splitwise Pro subscription for API keys. Renew it and connect again, or import a Splitwise file.";
 
-export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 export type Connection = {
   user_id: string;
   splitwise_user_id: number;

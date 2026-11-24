@@ -5,12 +5,12 @@
 import { type Db, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { type Charge, detectStreams } from "./recurring.ts";
+import type { Rpc } from "./batch-update.ts";
 
 const MAX_STREAMS = 2000; // upsert_detected_streams refuses more
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
-export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 
 function pages(query: () => any, order: string[]): Promise<Row[]> {
   return readPages((from, to) => {

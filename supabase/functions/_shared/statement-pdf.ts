@@ -2,8 +2,7 @@
 // runs anywhere. The PDF is sent to Gemini and never stored.
 import { geminiText } from "./gemini.ts";
 import { errorTag } from "./log-safe.ts";
-
-type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
+import type { Rpc } from "./batch-update.ts";
 
 /**
  * Claims one PDF read for the user (10 per 10 minutes, splitwise_attempt kind 'statement') before

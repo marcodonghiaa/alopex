@@ -5,9 +5,8 @@ import { buildRows, type EbTransaction, lookupKeys, normalizeIban, storedContent
 import { errorTag } from "./log-safe.ts";
 import { EB_API } from "./enable-banking.ts";
 import { accountType, pickBalance } from "./account-match.ts";
+import type { Db } from "./batch-update.ts";
 
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
 export type Deps = { fetch: typeof fetch; supabase: Db };
 
 export interface SyncAccount {

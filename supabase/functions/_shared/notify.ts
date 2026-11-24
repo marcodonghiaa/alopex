@@ -2,9 +2,8 @@
 import { errorTag } from "./log-safe.ts";
 import { capitaliseName, cleanMerchantName } from "./merchant-name.ts";
 import { fetchSubscriptions, type SendPush, sendToAllSubscriptions } from "./push.ts";
+import type { Db } from "./batch-update.ts";
 
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
 

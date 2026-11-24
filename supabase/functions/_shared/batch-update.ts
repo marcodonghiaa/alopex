@@ -3,6 +3,7 @@ import { errorTag } from "./log-safe.ts";
 
 // deno-lint-ignore no-explicit-any
 export type Db = { from(table: string): any };
+export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 
 export interface RowUpdate {
   account_uid: string;

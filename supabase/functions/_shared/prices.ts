@@ -3,10 +3,8 @@
 import { FRANKFURTER, fxRows } from "./fx-rates.ts";
 import { coingeckoPriceUrl, parseYahooChart, yahooChartUrl } from "./holdings.ts";
 import { errorTag } from "./log-safe.ts";
-import { readPages } from "./batch-update.ts";
+import { type Db, readPages } from "./batch-update.ts";
 
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
 type Json = Record<string, unknown>;
 /** GET a URL and return its JSON; throws with the status only on a bad answer. */
 export type GetJson = (url: string, headers?: Record<string, string>) => Promise<Json>;

@@ -2,6 +2,7 @@
 // a link is refused (burnCode) and when a user deletes their account (closeSessions).
 import { EB_API, ebTimeout, signEnableBankingJwt } from "./enable-banking.ts";
 import { errorTag } from "./log-safe.ts";
+import type { Db } from "./batch-update.ts";
 
 // POST /sessions: exchanges Enable Banking's one-time code for a session. data is {} when the
 // body is not JSON.
@@ -79,9 +80,6 @@ export function replacedSessions(
 export function relinkPatch(sessionId: string | null) {
   return sessionId ? { bank_session_id: sessionId, sync_error: null, sync_error_at: null } : {};
 }
-
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
 
 // After a renewal: closes the sessions it replaced. Accounts are re-read just before closing,
 // because a second renewal running at the same time may have pointed accounts at one of them.

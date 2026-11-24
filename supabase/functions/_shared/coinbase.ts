@@ -1,8 +1,7 @@
 // The owner's Coinbase balances
 // become crypto_holdings rows (source 'Coinbase'), priced afterwards by the crypto step.
 // Optional: without the key name and private key there is nothing to sync.
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
+import type { Db } from "./batch-update.ts";
 // deno-lint-ignore no-explicit-any
 type Json = Record<string, any>;
 

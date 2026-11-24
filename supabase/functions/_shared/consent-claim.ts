@@ -2,8 +2,7 @@
 // session: RLS lets a user delete only their own rows, so a state minted by someone else is
 // simply not found. The user_id check repeats that in code, in case a service client is passed.
 
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
+import type { Db } from "./batch-update.ts";
 
 /** A bank link must finish within 15 minutes of being started. */
 export const CONSENT_WINDOW_MS = 15 * 60 * 1000;

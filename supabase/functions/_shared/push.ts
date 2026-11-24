@@ -1,9 +1,8 @@
 // Web Push shared by the notifications. The send function comes in from
 // the caller (web-push in notify/index.ts), so this stays testable without npm.
 import { errorTag } from "./log-safe.ts";
+import type { Db } from "./batch-update.ts";
 
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
 export type Subscription = { id: string; endpoint: string; p256dh: string; auth: string };
 /** Sends one push; throws an error with statusCode on a refused subscription. */
 export type SendPush = (sub: Subscription, payload: string) => Promise<unknown>;

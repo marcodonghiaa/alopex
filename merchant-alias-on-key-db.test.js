@@ -23,6 +23,7 @@ const ROWS = [
   ['pp', U, ACC, 'PAYPAL *P1A2B3C4D5', 'paypal', 7, null], // another PayPal payee's alias: none
   ['ppown', U, ACC, 'PAYPAL *P9F8E7D6C5', 'paypal', 7, null], // its own exact name: yes
   ['other', V, ACC_V, 'ACME 4521', 'acme', 9, null], // another user's aliases: none
+  ['apple', U, ACC, 'APPLE.COM/BILL', 'apple', 2.99, null], // priced aliases: the one at its price
 ];
 const ALIASES = [
   // user, source_name, alias, merchant_key, created_at
@@ -31,9 +32,13 @@ const ALIASES = [
   [U, 'Lidl 4521', 'Lidl A', 'lidl', '2026-03-01'],
   [U, 'Lidl 4521 Milano', 'Lidl B', 'lidl', '2026-03-01'],
   [U, 'PAYPAL *P9F8E7D6C5', 'Gym', null, '2026-06-01'],
+  [U, 'APPLE.COM/BILL', 'iCloud', null, '2026-01-01', 0.99],
+  [U, 'APPLE.COM/BILL', 'Music', null, '2026-02-01', 2.99],
 ];
 // What the old TS path (merchant-key-backfill.ts: bySource ?? (aggregator ? none : byKey)) wrote.
-const OLD_TS = { exact: 'Acme Pro', bykey: 'Acme Credits', tie: 'Lidl A', named: 'Mine', pp: '-', ppown: 'Gym', other: '-' };
+// The old path ignored the price (it took the oldest alias of the name: iCloud); the trigger does not.
+const OLD_TS = { exact: 'Acme Pro', bykey: 'Acme Credits', tie: 'Lidl A', named: 'Mine', pp: '-', ppown: 'Gym', other: '-', apple: 'iCloud' };
+const EXPECTED = { ...OLD_TS, apple: 'Music' };
 
 test('the alias trigger names rows when the backfill sets merchant_key', { skip }, async (t) => {
   const { admin, as, applySql, drop } = fullChainDb('alias_on_key', { upTo: NAME });
@@ -44,9 +49,9 @@ test('the alias trigger names rows when the backfill sets merchant_key', { skip 
       `insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, creditor_name, custom_name)
        values ('${ref}', '${acc}', '${user}', ${amount}, 'EUR', 'DBIT', '2026-11-20', '${name}', ${custom ? `'${custom}'` : 'null'});`).join('\n'));
     // Aliases made after the rows were stored, so only the backfill can name them.
-    admin(ALIASES.map(([user, source, alias, key, at]) =>
-      `insert into public.merchant_aliases (user_id, source_name, alias, merchant_key, created_at)
-       values ('${user}', '${source}', '${alias}', ${key ? `'${key}'` : 'null'}, '${at}');`).join('\n'));
+    admin(ALIASES.map(([user, source, alias, key, at, price]) =>
+      `insert into public.merchant_aliases (user_id, source_name, alias, merchant_key, created_at, amount)
+       values ('${user}', '${source}', '${alias}', ${key ? `'${key}'` : 'null'}, '${at}', ${price ?? 'null'});`).join('\n'));
   };
   // The backfill's write: merchant_key only, on rows that have none.
   const backfill = () => admin(ROWS.map(([ref, , , , key]) =>
@@ -61,12 +66,16 @@ test('the alias trigger names rows when the backfill sets merchant_key', { skip 
   assert.deepStrictEqual(names(), { ...Object.fromEntries(ROWS.map(([ref]) => [ref, '-'])), named: 'Mine' },
     'before: setting merchant_key alone names nothing');
 
+  // The function (settings, body) and trigger as 20261227000000 left them, for the rollback test.
+  const definition = () => admin(`select array_to_string(proconfig, ',') || ' ' || md5(prosrc) || ' ' || pg_get_triggerdef(t.oid)
+    from pg_proc p join pg_trigger t on t.tgfoid = p.oid where t.tgname = 'trg_apply_merchant_alias'`);
+  const before = definition();
   applySql(`supabase/migrations/${NAME}.sql`);
 
-  await t.test('the trigger picks the alias the old TS path picked, aggregators included', () => {
+  await t.test('the trigger picks the alias the old TS path picked, aggregators included, price-aware', () => {
     seed();
     backfill();
-    assert.deepStrictEqual(names(), OLD_TS);
+    assert.deepStrictEqual(names(), EXPECTED);
   });
 
   await t.test('an update that keeps or clears the key leaves the name alone', () => {
@@ -88,14 +97,15 @@ test('the alias trigger names rows when the backfill sets merchant_key', { skip 
     assert.strictEqual(admin(`select array_to_string(proconfig, ',') || ' ' || prosecdef from pg_proc where oid = 'public.apply_merchant_alias()'::regprocedure`), 'search_path="" true');
   });
 
-  await t.test('rollback: insert-only trigger again; re-apply works', () => {
+  await t.test('rollback: insert-only trigger and the previous function, exactly; re-apply works', () => {
     applySql(`supabase/rollbacks/${NAME}.down.sql`);
+    assert.strictEqual(definition(), before);
     seed();
     backfill();
     assert.strictEqual(names().bykey, '-');
     applySql(`supabase/migrations/${NAME}.sql`);
     seed();
     backfill();
-    assert.deepStrictEqual(names(), OLD_TS);
+    assert.deepStrictEqual(names(), EXPECTED);
   });
 });

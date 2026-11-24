@@ -49,18 +49,6 @@ export async function fetchAspsps(token: string, country: string, fetchFn: typeo
   }
 }
 
-// start-bank-consent's valid_until: the bank's own maximum, looked up in its country. Best effort:
-// a failed lookup asks for the usual 180 days.
-export async function consentEnd(
-  token: string,
-  country: string,
-  bankName: string,
-  now: number,
-  fetchFn: typeof fetch = fetch,
-): Promise<string> {
-  return consentValidUntil(await fetchAspsps(token, country, fetchFn), bankName, now);
-}
-
 // start-bank-consent's /auth call. Every failure discards the pending row it was given, or a few
 // failed tries fill MAX_OPEN_CONSENTS and lock the user out with a misleading 429 (H037).
 export async function requestConsentUrl(opts: {

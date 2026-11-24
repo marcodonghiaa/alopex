@@ -16,7 +16,7 @@ import { asUser, userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { isBankName, isCountryCode, MAX_OPEN_CONSENTS } from "../_shared/validate.ts";
 import { CONSENT_WINDOW_MS } from "../_shared/consent-claim.ts";
-import { consentEnd, requestConsentUrl } from "../_shared/bank-info.ts";
+import { consentValidUntil, fetchAspsps, requestConsentUrl } from "../_shared/bank-info.ts";
 
 Deno.serve(serveWithCors(async (req, json, origin) => {
   if (req.method !== "POST") {
@@ -72,7 +72,8 @@ Deno.serve(serveWithCors(async (req, json, origin) => {
   }
 
   // Banks cap the consent (maximum_consent_validity); asking past it can fail the link.
-  const validUntil = await consentEnd(token, body.country, body.bankName, Date.now());
+  // A failed lookup asks for the usual 180 days.
+  const validUntil = consentValidUntil(await fetchAspsps(token, body.country), body.bankName, Date.now());
 
   const result = await requestConsentUrl({
     token,

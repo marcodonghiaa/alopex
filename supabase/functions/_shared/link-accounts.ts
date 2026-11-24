@@ -2,13 +2,13 @@
 // one-time code for a session, then stores the accounts it shares under `userId`. The caller must
 // already have proved that `userId` is the signed-in user who started this link.
 
-import { EB_NO_ACCOUNTS, ebTimeout, signEnableBankingJwt } from "./enable-banking.ts";
+import { EB_NO_ACCOUNTS, signEnableBankingJwt } from "./enable-banking.ts";
 import { errorTag } from "./log-safe.ts";
 import { accountType, matchAccount, matchPatch, type StoredAccount } from "./account-match.ts";
 import { bankLogo, type BankInfo, fetchAspsps } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
-import { closeReplaced, closeSessions, relinkPatch } from "./eb-sessions.ts";
+import { closeReplaced, closeSessions, exchangeCode, relinkPatch } from "./eb-sessions.ts";
 
 export const LINK_FAILED = "Couldn't link the bank, please try again";
 
@@ -36,13 +36,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
 
   try {
     const token = await signEnableBankingJwt();
-    const res = await fetch("https://api.enablebanking.com/sessions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-      signal: ebTimeout(),
-    });
-    const data = await res.json().catch(() => ({}));
+    const { res, data } = await exchangeCode(token, code);
     if (!res.ok) {
       return fail({ status: res.status });
     }

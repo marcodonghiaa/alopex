@@ -3,6 +3,7 @@
 
 import { buildRows, type EbTransaction, lookupKeys, normalizeIban, storedContent, type StoredRefs } from "./transaction-rows.ts";
 import { errorTag } from "./log-safe.ts";
+import { EB_API } from "./enable-banking.ts";
 import { accountType, pickBalance } from "./account-match.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -72,7 +73,7 @@ export function syncStatus(cursor: string | null, error: string | null): number 
   return error === "ASPSP_RATE_LIMIT_EXCEEDED" ? 429 : 502;
 }
 
-const EB = "https://api.enablebanking.com/accounts";
+const EB = `${EB_API}/accounts`;
 const OVERLAP_DAYS = 7;
 const FALLBACK_FIRST_SYNC_DAYS = 90;
 const DAY_MS = 24 * 3600 * 1000;

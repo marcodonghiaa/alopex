@@ -1,7 +1,20 @@
 // Enable Banking sessions: closing them, so a bank stops sharing data with this app. Used when
 // a link is refused (burnCode) and when a user deletes their account (closeSessions).
-import { ebTimeout, signEnableBankingJwt } from "./enable-banking.ts";
+import { EB_API, ebTimeout, signEnableBankingJwt } from "./enable-banking.ts";
 import { errorTag } from "./log-safe.ts";
+
+// POST /sessions: exchanges Enable Banking's one-time code for a session. data is {} when the
+// body is not JSON.
+export async function exchangeCode(token: string, code: string, fetchFn: typeof fetch = fetch) {
+  const res = await fetchFn(`${EB_API}/sessions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+    signal: ebTimeout(),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { res, data };
+}
 
 // A code whose link was refused (another user's state, or expired) must not stay redeemable:
 // whoever obtained it could pair it with a state of their own. Exchange it and close the session
@@ -13,13 +26,7 @@ export async function burnCode(
 ): Promise<void> {
   try {
     const token = await sign();
-    const res = await fetchFn("https://api.enablebanking.com/sessions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-      signal: ebTimeout(),
-    });
-    const data = await res.json().catch(() => ({}));
+    const { res, data } = await exchangeCode(token, code, fetchFn);
     if (res.ok && typeof data.session_id === "string") {
       await closeSessions([data.session_id], fetchFn, () => Promise.resolve(token));
     }
@@ -40,7 +47,7 @@ export async function closeSessions(
   let closed = 0;
   for (const id of sessionIds) {
     try {
-      const res = await fetchFn(`https://api.enablebanking.com/sessions/${encodeURIComponent(id)}`, {
+      const res = await fetchFn(`${EB_API}/sessions/${encodeURIComponent(id)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(10_000),

@@ -11,7 +11,7 @@
 // supabase/config.toml as a gateway-level backstop; this in-function check is
 // the one that's actually reproducible from a plain `supabase functions deploy`.
 
-import { EB_KEY_INVALID, ebErrorMessage, ebTimeout, signEnableBankingJwt } from "../_shared/enable-banking.ts";
+import { EB_API, EB_KEY_INVALID, ebErrorMessage, ebTimeout, signEnableBankingJwt } from "../_shared/enable-banking.ts";
 import { serveWithCors } from "../_shared/origins.ts";
 import { userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
@@ -48,7 +48,7 @@ Deno.serve(serveWithCors(async (req, json) => {
 
   try {
     const res = await fetch(
-      `https://api.enablebanking.com/aspsps?country=${encodeURIComponent(body.country)}`,
+      `${EB_API}/aspsps?country=${encodeURIComponent(body.country)}`,
       { headers: { Authorization: `Bearer ${token}` }, signal: ebTimeout() },
     );
     if (!res.ok) {

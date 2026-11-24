@@ -4,6 +4,8 @@
 const ENABLE_BANKING_APP_ID = Deno.env.get("ENABLE_BANKING_APP_ID")!;
 const ENABLE_BANKING_PRIVATE_KEY = Deno.env.get("ENABLE_BANKING_PRIVATE_KEY")!;
 
+export const EB_API = "https://api.enablebanking.com";
+
 export const EB_KEY_INVALID = "The Enable Banking key is invalid: run npx create-alopex@latest again with the .pem.";
 export const EB_NO_ACCOUNTS =
   "Enable Banking didn't share any accounts. Link this bank once on enablebanking.com → API applications → your app → Link accounts, then try again.";

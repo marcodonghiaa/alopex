@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { cryptoRows, type GetJson, type Holding, nextAssetType, priceHoldings, syncCrypto, syncFx } from "./prices.ts";
+import { cryptoRows, type GetJson, type Holding, nextAssetType, priceHoldings, pricingOrder, syncCrypto, syncFx, syncPortfolio } from "./prices.ts";
 
 const holding = (over: Partial<Holding> = {}): Holding => ({ user_id: "u1", isin: "IE00", yahoo_symbol: "VWCE.DE", shares: 2, asset_type: null, ...over });
 const quiet = async <T>(run: () => Promise<T>) => {
@@ -179,4 +179,49 @@ Deno.test("asks for each currency's rate once per run, and the values stay the s
   );
   assertEquals(asked, ["USD", "GBP"]);
   assertEquals(rows.map((r) => [r.isin, r.value_eur]), [["A", 18], ["B", 18], ["C", 24]]);
+});
+
+// H187: the time cutoff always dropped the same tail of the list, every run, and sold holdings
+// (0 shares) used up quotes ahead of held ones.
+Deno.test("held holdings not priced yet today go first, then the ones already priced, sold ones last", () => {
+  const h = (isin: string, shares = 1) => holding({ isin, yahoo_symbol: isin, shares });
+  const order = pricingOrder([h("A"), h("S", 0), h("B"), h("C"), h("T", 0)], new Set(["u1|A", "u1|T"]));
+  assertEquals(order.map((x) => x.isin), ["B", "C", "A", "S", "T"]);
+});
+
+Deno.test("portfolio: a run cut short leaves its tail first for the next run; with time for all, the same rows", async () => {
+  const holdings = ["A", "B", "C"].map((isin) => holding({ isin, yahoo_symbol: isin }));
+  const snapshots: Array<Record<string, unknown>> = [];
+  const db = {
+    from: (table: string) => {
+      const q = {
+        select: () => q,
+        order: () => q,
+        eq: () => q,
+        range: () => q,
+        limit: () => q,
+        update: () => q,
+        upsert: async (rows: Array<Record<string, unknown>>) => (snapshots.push(...rows), { error: null }),
+        then: (resolve: (v: unknown) => void) =>
+          resolve({ data: table === "portfolio_holdings" ? holdings : table === "portfolio_snapshots" ? snapshots : [{ rate_to_eur: 1 }], error: null }),
+      };
+      return q;
+    },
+  };
+  const asked: string[] = [];
+  const get: GetJson = async (url) => {
+    const symbol = decodeURIComponent(new URL(url).pathname.split("/").pop()!);
+    asked.push(symbol);
+    return { chart: { result: [{ meta: { regularMarketPrice: 5, currency: "EUR", instrumentType: "ETF", symbol } }] } };
+  };
+  let budget = 1;
+  await quiet(() => syncPortfolio(db, get, "2026-11-06", () => budget-- > 0));
+  assertEquals(asked, ["A"]);
+  budget = 1;
+  await quiet(() => syncPortfolio(db, get, "2026-11-06", () => budget-- > 0));
+  assertEquals(asked, ["A", "B"]);
+  snapshots.length = 0;
+  asked.length = 0;
+  await syncPortfolio(db, get, "2026-11-06");
+  assertEquals(snapshots.map((r) => [r.isin, r.value_eur]), [["A", 10], ["B", 10], ["C", 10]]);
 });

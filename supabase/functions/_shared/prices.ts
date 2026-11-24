@@ -128,8 +128,30 @@ export async function priceHoldings(
   return { rows, typeUpdates };
 }
 
+// The order to price in, so the time cutoff never drops the same holdings every run (H187): held
+// ones not priced yet today first, then held ones already priced today, then sold ones (0 shares;
+// still priced when there is time, so their 0 value is written as before). Stable within each group.
+export function pricingOrder(holdings: Holding[], pricedToday: Set<string>): Holding[] {
+  const rank = (h: Holding) => (Number(h.shares) > 0 ? 0 : 2) + (pricedToday.has(`${h.user_id}|${h.isin}`) ? 1 : 0);
+  return holdings.map((h, i) => ({ h, i, r: rank(h) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.h);
+}
+
+// Holdings that already have today's snapshot. Only for ordering: on a failed read, none.
+async function pricedOn(db: Db, today: string): Promise<Set<string>> {
+  try {
+    const rows = await readPages<{ user_id: string; isin: string }>((from, to) =>
+      db.from("portfolio_snapshots").select("user_id, isin").eq("snapshot_date", today).order("user_id").order("isin").range(from, to)
+    );
+    return new Set(rows.map((r) => `${r.user_id}|${r.isin}`));
+  } catch (err) {
+    console.error(`sync-prices: today's snapshots unread, stable order kept: ${errorTag(err)}`);
+    return new Set();
+  }
+}
+
 export async function syncPortfolio(db: Db, get: GetJson, today: string, timeLeft?: () => boolean): Promise<number> {
-  const holdings = await selectAll(db, "portfolio_holdings", "user_id, isin, yahoo_symbol, shares, asset_type", ["user_id", "isin"]);
+  const all = await selectAll(db, "portfolio_holdings", "user_id, isin, yahoo_symbol, shares, asset_type", ["user_id", "isin"]);
+  const holdings = pricingOrder(all, await pricedOn(db, today));
   const { rows, typeUpdates } = await priceHoldings(
     holdings,
     async (symbol) =>

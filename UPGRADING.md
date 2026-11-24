@@ -10,6 +10,14 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Accounts and net worth show the same numbers
+- **Migration:** `20270103000000_net_worth_numbers_agree`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
+- What changes:
+  - A manual account in another currency is now converted at the latest rate on the Accounts page too, as net worth already does.
+  - An imported month of spending (from a spreadsheet) now stays until that month has real bank spend. Before, a single zero-share row hid it.
+- With the dashboard update, the Accounts total leaves out a bank balance that is more than 30 days old, as net worth does. The account is marked "not in total".
+- **Roll back:** run `supabase/rollbacks/20270103000000_net_worth_numbers_agree.down.sql`, then `supabase migration repair --status reverted 20270103000000 --linked`.
+
 ### Bank sync, prices, Splitwise and reminders hold up better
 - **Migrations:** `20270101000000_holding_id_checks` and `20270102000000_splitwise_switch_account`. Apply them with `supabase db push --linked`.
 - **Functions:** run `supabase functions deploy` (start-bank-consent, complete-bank-consent, sync-bank, sync-prices, notify, parse-statement and post-sync changed). Update the dashboard too, for the new bank-key message.

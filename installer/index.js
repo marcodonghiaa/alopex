@@ -355,6 +355,7 @@ The APP_ID is the long id shown next to your app.`);
   bold('Protect the accounts that hold your data: turn on two-factor sign-in at');
   console.log('  Supabase: https://supabase.com/dashboard/account/security');
   console.log('  Vercel:   https://vercel.com/account/settings/authentication');
+  console.log(`And in Supabase, Authentication -> Sign In / Providers -> Email: turn on "Require current password when changing password" (https://supabase.com/dashboard/project/${ref}/auth/providers).`);
 }
 
 // Switches public sign-ups off (the login exists already) and, once known, points auth emails at the dashboard.

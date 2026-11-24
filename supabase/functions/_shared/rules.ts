@@ -26,8 +26,9 @@ export function matchRule(row: Row, rule: Rule): boolean {
   return fields.some((f) => matches(foldOnce(f || "")));
 }
 
-// Same letters, same case: "Café" typed one way matches "Café" stored the other way.
-const fold = (s: string) => s.normalize("NFC").toLowerCase();
+// Case, accents and apostrophes ignored: "cafe" matches "CAFÉ", "mcdonalds" matches "McDonald's".
+// Same as foldText in alopex-web (src/lib/rules.ts): keep the two and rules.cases.json in sync.
+const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[’']/g, "").toLowerCase();
 // A row's names are folded once, not once per rule (most of what's left of the cost).
 const folded = new Map<string, string>();
 function foldOnce(s: string): string {

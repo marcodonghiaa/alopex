@@ -120,3 +120,22 @@ test('every Splitwise API sync summary says it needs Splitwise Pro, and the file
     assert.match(text, /(file|export|CSV)[^.]*(anyone|everyone|without (Splitwise )?Pro|any account|free)/i, `${where} says the file import works without Pro: ${text}`);
   }
 });
+
+// H114: without the dashboard as Site URL (or /reset-password allowed as a redirect), Supabase's
+// password-reset email opens localhost:3000; fails_when=the manual setup leaves that step out
+test('the manual setup points auth emails at the dashboard', () => {
+  const manual = read('README.md').split('<summary><b>Manual setup</b></summary>')[1].split('</details>')[0];
+  assert.match(manual, /Site URL/);
+  assert.match(manual, /\/reset-password/);
+});
+
+// H115: the dashboard sends the current password with a password change, but Supabase only checks
+// it with "Require current password" on, which no config push here can set; fails_when=the upgrade
+// notes and the manual setup stop telling the owner to turn it on
+test('the docs say to turn on the server check of the current password', () => {
+  const unreleased = read('UPGRADING.md').split('## Unreleased')[1].split('\n## ')[0];
+  assert.match(unreleased, /Require current password when changing password/);
+  const manual = read('README.md').split('<summary><b>Manual setup</b></summary>')[1].split('</details>')[0];
+  assert.match(manual, /Require current password when changing password/);
+  assert.match(read('installer/index.js'), /Require current password when changing password/);
+});

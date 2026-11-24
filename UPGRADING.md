@@ -10,6 +10,23 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Rules match the same way in the sync and the dashboard
+- **No migration, deploy functions:** `supabase functions deploy`. The sync now ignores accents and apostrophes in rule text, like the dashboard already did: a rule "cafe" now also sorts "CAFÉ ROMA". An apostrophe is no longer a word break, so a whole-word rule "mcdonald" stops matching "McDonald's" in the sync (the dashboard already worked this way); write the rule as "mcdonalds" or use "contains".
+
+### Changing the password asks the server to check the current one
+- **One setting to turn on (no migration, no function change):** in your Supabase project, **Authentication -> Sign In / Providers -> Email**, turn on *Require current password when changing password*, then update the dashboard. The dashboard now sends the current password with every change; with the setting on, Supabase refuses a change without it, so a copied login token alone can't set a new password. Supabase should still let a password-reset link set a new password without it: after turning the setting on, try *Forgot password* once, and if the reset page refuses, turn the setting off again (the dashboard still checks the current password in the browser). Leave *Secure password change* (reauthentication) as it is: the dashboard has no step for its emailed code.
+- **Roll back:** turn the setting off.
+
+### Undo of a removed subscription brings it back as it was
+- **Migration:** `20270105000000_stream_undo_keeps_status`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
+- What changes: Undo or Restore of a subscription you had confirmed brings it back to your subscriptions, not to "To review" (or nowhere). Subscriptions removed before this update are restored as before.
+- **Roll back:** run `supabase/rollbacks/20270105000000_stream_undo_keeps_status.down.sql`, then `supabase migration repair --status reverted 20270105000000 --linked`.
+
+### "Make a rule" uses the bank's name
+- **Migration:** `20270104000000_transactions_bank_name`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
+- What changes: on a row you renamed, "Make a rule" now fills in the name the bank sends (for example "AMZN Mktp DE*123", not "Amazon"), so the rule matches that row and the next ones.
+- **Roll back:** run `supabase/rollbacks/20270104000000_transactions_bank_name.down.sql`, then `supabase migration repair --status reverted 20270104000000 --linked`.
+
 ### Accounts and net worth show the same numbers
 - **Migration:** `20270103000000_net_worth_numbers_agree`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
 - What changes:

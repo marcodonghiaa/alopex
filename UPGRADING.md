@@ -28,8 +28,8 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 - **Roll back:** run `supabase/rollbacks/20270119000000_broker_flag_definer_only.down.sql`, then `supabase migration repair --status reverted 20270119000000 --linked`.
 
 ### Push subscriptions must be real browser endpoints
-- **Migration:** `20270118000000_push_subscription_checks`. Apply it with `supabase db push --linked`. No function or dashboard change.
-- What changes: a push subscription saved straight into the database (older dashboards did that) must now pass the same checks as turning check-ins on in the current dashboard: an `https://` endpoint and well-formed keys. A stored one that fails them could never receive a notification and is deleted; if that was yours, turn purchase check-ins on again.
+- **Migration:** `20270118000000_push_subscription_checks`. Apply it with `supabase db push --linked`, then `supabase functions deploy notify`. No dashboard change.
+- What changes: a push subscription saved straight into the database (older dashboards did that) must now pass the same checks as turning check-ins on in the current dashboard: an `https://` endpoint and well-formed keys. Both now also refuse an endpoint whose host is an IP address, `localhost` (or a name ending in `.localhost`), a name without a dot, or one with user info, so the notify job can't be pointed at a machine on your network by address. The notify job skips such an endpoint too. A name that resolves to a private address still passes. A stored one that fails them could never receive a notification and is deleted; if that was yours, turn purchase check-ins on again.
 - **Roll back:** run `supabase/rollbacks/20270118000000_push_subscription_checks.down.sql`, then `supabase migration repair --status reverted 20270118000000 --linked`.
 
 ### Category names and bank-link origins have a length cap

@@ -8,6 +8,23 @@ export type Subscription = { id: string; endpoint: string; p256dh: string; auth:
 /** Sends one push; throws an error with statusCode on a refused subscription. */
 export type SendPush = (sub: Subscription, payload: string) => Promise<unknown>;
 
+/**
+ * The table check push_subscriptions_valid (migration 20270118000000), here too because a row may
+ * predate it: an https endpoint of at most 2048 characters whose host is a DNS name (letters,
+ * digits, hyphens, at least one dot), never an IP literal, localhost or *.localhost, nor with user
+ * info. A DNS name that resolves to a private address still passes.
+ */
+export function pushEndpointOk(endpoint: string): boolean {
+  if (typeof endpoint !== "string" || endpoint.length > 2048) return false;
+  const authority = endpoint.match(/^https:\/\/([^/?#]*)/)?.[1];
+  if (authority === undefined) return false;
+  const host = authority.replace(/:[0-9]{1,5}$/, "");
+  if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+\.?$/.test(host)) return false;
+  const name = host.toLowerCase().replace(/\.+$/, "");
+  // A numeric (or 0x) last label makes the whole host an IPv4 address to URL parsers.
+  return !/(^|\.)localhost$/.test(name) && !/^([0-9]+|0x[0-9a-f]*)$/.test(name.slice(name.lastIndexOf(".") + 1));
+}
+
 export async function fetchSubscriptions(db: Db, userId: string): Promise<Subscription[]> {
   const { data, error } = await db.from("push_subscriptions").select("id, endpoint, p256dh, auth").eq("user_id", userId);
   if (error) throw error;
@@ -23,6 +40,10 @@ export async function sendToAllSubscriptions(db: Db, subscriptions: Subscription
   }
   let delivered = false;
   for (const [i, sub] of subscriptions.entries()) {
+    if (!pushEndpointOk(sub.endpoint)) {
+      console.error(`Push skipped for subscription ${i + 1}/${subscriptions.length}: endpoint is no push service`);
+      continue;
+    }
     try {
       await send(sub, JSON.stringify(payload));
       delivered = true;

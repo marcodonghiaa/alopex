@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Trades refuse impossible numbers
+- **Migration:** `20270116000000_holding_trades_finite`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: a trade's shares, price and fee must be real numbers; `NaN` and `Infinity` are refused, as holdings already refuse them. Trades you stored before are not checked; one with such a number has to be fixed or deleted before you can edit it again.
+- **Roll back:** run `supabase/rollbacks/20270116000000_holding_trades_finite.down.sql`, then `supabase migration repair --status reverted 20270116000000 --linked`.
+
 ### Six database functions search temporary tables last
 - **Migration:** `20270115000000_definer_search_path_pg_temp`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: nothing you can see. `add_manual_debt`, `add_manual_transaction`, `set_account_type`, `set_holding_quantity`, `set_manual_balance` and `upsert_detected_streams` now look up tables in `public` and only then in a session's temporary tables, like the newer functions, so a temporary table can never stand in for a real one inside them.

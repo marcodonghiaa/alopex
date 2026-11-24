@@ -139,3 +139,33 @@ test('the docs say to turn on the server check of the current password', () => {
   assert.match(manual, /Require current password when changing password/);
   assert.match(read('installer/index.js'), /Require current password when changing password/);
 });
+
+// H090: npx reuses a cached older installer unless asked for @latest (installer/README.md), so
+// "run the same command again" kept people on an old release.
+// fails_when=a site page tells you to update without @latest
+test('the site tells you to update with npx create-alopex@latest', () => {
+  const pages = ['site/llms.txt', 'site/index.html', 'site/integrations/supabase.html'];
+  for (const p of pages) {
+    const text = read(p).replace(/<[^>]+>/g, '');
+    const update = text.match(/[^.<>]*\bupdate\b[^.<>]*/gi) ?? [];
+    const howTo = update.filter((s) => /\brun/.test(s) && /same command|same folder|create-alopex/.test(s));
+    assert.ok(howTo.length > 0, `${p} says how to update`);
+    for (const s of howTo) assert.match(s, /create-alopex@latest/, `${p}: "${s.trim()}"`);
+  }
+});
+
+// H088/H089: Splitwise API sync, credit cards and debts, and budgets have shipped (changelog), but
+// the roadmap, the FAQ and llms.txt still listed them as coming or not included.
+// fails_when=a shipped feature is listed as upcoming again
+test('the site does not list shipped features as upcoming', () => {
+  const roadmap = read('site/roadmap.html');
+  const upcoming = roadmap.slice(roadmap.indexOf('In development'), roadmap.indexOf('class="shipped"'));
+  for (const f of ['Splitwise sync', 'Credit cards and debts', 'Budgets']) {
+    assert.doesNotMatch(upcoming, new RegExp(`<strong>${f}</strong>`), `roadmap still lists ${f} as upcoming`);
+  }
+  for (const meta of roadmap.match(/<meta [^>]*description[^>]*>/g)) assert.doesNotMatch(meta, /Splitwise sync|budgets/i);
+  const faq = read('site/index.html').match(/What is coming next\?<\/summary><p>[^<]*/)[0];
+  assert.doesNotMatch(faq, /Splitwise|credit cards|budgets/i);
+  const notIncluded = read('site/llms.txt').split('\n').find((l) => l.startsWith('- Not included'));
+  assert.doesNotMatch(notIncluded, /budgets/);
+});

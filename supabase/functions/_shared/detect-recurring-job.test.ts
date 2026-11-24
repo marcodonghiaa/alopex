@@ -255,3 +255,15 @@ Deno.test("every user is detected, even past 1000 accounts", async () => {
   const result = await runDetection(db, recorder().rpc, "2026-10-20", always);
   assertEquals([result.users, result.failed], [750, 0]);
 });
+
+// H288: rows post-sync hasn't given a flow yet count as spending everywhere (the views read a null
+// flow on a debit as spend), but detection read only flow_type = 'spend' and missed them.
+Deno.test("a debit with no flow yet is detected like spend; a transfer still is not", async () => {
+  const s = seed("u1");
+  const db = memoryDb({ v_transactions_eur: s.v, transactions: s.transactions.map((t) => ({ ...t, flow_type: null })) });
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(db, rpc, "u1", "2026-10-20"), 1);
+  assertEquals(calls[0].p_rows[0].typical_amount_eur, 10);
+  const transfers = memoryDb({ v_transactions_eur: s.v, transactions: s.transactions.map((t) => ({ ...t, flow_type: "transfer" })) });
+  assertEquals(await detectUser(transfers, recorder().rpc, "u1", "2026-10-20"), 0);
+});

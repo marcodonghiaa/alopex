@@ -22,14 +22,16 @@ function pages(query: () => any, order: string[]): Promise<Row[]> {
 
 async function userCharges(db: Db, user: string): Promise<Charge[]> {
   const order = ["account_uid", "entry_reference"];
-  const spend = (t: string, cols: string) =>
-    db.from(t).select(cols).eq("user_id", user).eq("credit_debit_indicator", "DBIT").eq("flow_type", "spend");
-  const txs = await pages(
-    () => spend("transactions", "account_uid, entry_reference, merchant_key, currency, amount, booking_date, category, custom_name, creditor_name, bank_transaction_code, flow_type, credit_debit_indicator, deleted_at, transaction_type, transaction_type_source").is("deleted_at", null).not("merchant_key", "is", null),
+  const debits = (t: string, cols: string) => db.from(t).select(cols).eq("user_id", user).eq("credit_debit_indicator", "DBIT");
+  // A debit post-sync hasn't given a flow yet is spend, as in v_transactions_eur (H288).
+  const txs = (await pages(
+    () =>
+      debits("transactions", "account_uid, entry_reference, merchant_key, currency, amount, booking_date, category, custom_name, creditor_name, bank_transaction_code, flow_type, credit_debit_indicator, deleted_at, transaction_type, transaction_type_source")
+        .or("flow_type.is.null,flow_type.in.(spend)").is("deleted_at", null).not("merchant_key", "is", null),
     order,
-  );
+  )).map((t): Row => ({ ...t, flow_type: t.flow_type ?? "spend" }));
   const eur = new Map<string, number>();
-  for (const r of await pages(() => spend("v_transactions_eur", "account_uid, entry_reference, personal_signed_amount_eur"), order)) {
+  for (const r of await pages(() => debits("v_transactions_eur", "account_uid, entry_reference, personal_signed_amount_eur").eq("flow_type", "spend"), order)) {
     if (r.personal_signed_amount_eur != null) eur.set(`${r.account_uid}|${r.entry_reference}`, Math.abs(r.personal_signed_amount_eur));
   }
   return txs.map(({ entry_reference, ...t }) => ({

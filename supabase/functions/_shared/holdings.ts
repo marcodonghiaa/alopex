@@ -1,6 +1,6 @@
 // Parsing and input checks for add-holding. Kept free of Deno APIs so the tests run anywhere.
 
-export type HoldingKind = "stock" | "crypto";
+type HoldingKind = "stock" | "crypto";
 
 export interface Candidate {
   id: string; // Yahoo symbol for a stock or ETF, CoinGecko id for a coin
@@ -28,7 +28,7 @@ export type HoldingRequest =
     broker: string | undefined;
   };
 
-export const MAX_QUERY_LENGTH = 50;
+const MAX_QUERY_LENGTH = 50;
 const MAX_RESULTS = 8;
 
 export const isIsin = (value: string): boolean => /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(value);

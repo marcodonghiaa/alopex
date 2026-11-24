@@ -113,7 +113,7 @@ export async function buildJwt(keyName: string, key: CryptoKey, now = Math.floor
   return `${signingInput}.${b64url(signature)}`;
 }
 
-export interface CoinbaseConfig {
+interface CoinbaseConfig {
   keyName?: string;
   privateKey?: string;
   userId?: string; // whose holdings these are: the Coinbase key belongs to one user

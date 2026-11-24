@@ -9,19 +9,12 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
-import { mfaRefusal } from "../_shared/mfa.ts";
-import { reapplyHandler, userIdFrom } from "./handler.ts";
+import { reapplyHandler } from "./handler.ts";
+import { userCaller } from "../_shared/clients.ts";
 
 const url = Deno.env.get("SUPABASE_URL")!;
-const asUser = (authorization: string) =>
-  createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: authorization } } });
 
 Deno.serve(serveWithCors(reapplyHandler({
-  async userIdFor(authorization) {
-    return userIdFrom(await asUser(authorization).auth.getUser());
-  },
-  async mfaRefusal(authorization) {
-    return await mfaRefusal(asUser(authorization));
-  },
+  ...userCaller,
   admin: () => createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!),
 })));

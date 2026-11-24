@@ -7,15 +7,14 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
+import { asUser as userClient, SECRET_KEY } from "../_shared/clients.ts";
 import { linkAccounts } from "../_shared/link-accounts.ts";
 import { burnCode } from "../_shared/eb-sessions.ts";
 import { claimConsent, isConsentInput } from "../_shared/consent-claim.ts";
 import { startFirstSync } from "../_shared/first-sync.ts";
-import { parseSecretKeys } from "../_shared/secret-key.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
-const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -25,11 +24,7 @@ const service = createClient(
 Deno.serve(serveWithCors(async (req, json) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const asUser = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: req.headers.get("Authorization")! } } },
-  );
+  const asUser = userClient(req.headers.get("Authorization")!);
   const { data: userData, error: userError } = await asUser.auth.getUser();
   if (userError || !userData.user) return json({ error: "Not signed in" }, 401);
   const mfa = await mfaRefusal(asUser);
@@ -55,7 +50,7 @@ Deno.serve(serveWithCors(async (req, json) => {
   // Transactions now, not at the next cron run; the reply does not wait for it.
   EdgeRuntime.waitUntil(startFirstSync(
     Deno.env.get("SUPABASE_URL")!,
-    SECRET_KEYS.default ?? Object.values(SECRET_KEYS)[0],
+    SECRET_KEY,
     result.syncUids,
     fetch,
     // Then categories, transfers and subscriptions right away, not at the next 6-hour run.

@@ -5,20 +5,14 @@
 // Push keys come from the VAPID_* secrets; without them nothing is sent. Callers send a project
 // secret key on the apikey header, like sync-bank.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import webpush from "npm:web-push@3.6.7";
-import { hasSecretKey, parseSecretKeys } from "../_shared/secret-key.ts";
-import { retryRejectedToken } from "../_shared/postgrest-retry.ts";
+import { hasSecretKey } from "../_shared/secret-key.ts";
+import { SECRET_KEYS, serviceClient } from "../_shared/clients.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import type { SendPush } from "../_shared/push.ts";
 import { runConsent, runWorthIt } from "../_shared/notify.ts";
 
-const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  SECRET_KEYS.default ?? Object.values(SECRET_KEYS)[0] ?? "",
-  { global: { fetch: retryRejectedToken(fetch) } },
-);
+const supabase = serviceClient();
 
 const [subject, publicKey, privateKey] = ["VAPID_SUBJECT", "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"].map((k) => Deno.env.get(k));
 const send: SendPush | null = subject && publicKey && privateKey

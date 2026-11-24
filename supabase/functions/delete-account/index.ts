@@ -9,6 +9,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
+import { asUser as userClient } from "../_shared/clients.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { closeSessions } from "../_shared/eb-sessions.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
@@ -21,11 +22,7 @@ const service = createClient(
 Deno.serve(serveWithCors(async (req, json) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const asUser = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: req.headers.get("Authorization")! } } },
-  );
+  const asUser = userClient(req.headers.get("Authorization")!);
   const { data: userData, error: userError } = await asUser.auth.getUser();
   if (userError || !userData.user) return json({ error: "Not signed in" }, 401);
   const mfa = await mfaRefusal(asUser);

@@ -9,8 +9,8 @@
 // Requires a signed-in user, or this is an open proxy to Gemini on your key.
 // Secret: GEMINI_API_KEY (and optionally GEMINI_MODEL).
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
+import { asUser } from "../_shared/clients.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { geminiRequest, geminiRefusal, parseGeminiRows, parseStatementRequest } from "../_shared/statement-pdf.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
@@ -20,11 +20,7 @@ const TIMEOUT_MS = 90_000;
 Deno.serve(serveWithCors(async (req, json) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const userClient = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: req.headers.get("Authorization")! } } },
-  );
+  const userClient = asUser(req.headers.get("Authorization")!);
   const { data: userData, error: userError } = await userClient.auth.getUser();
   if (userError || !userData.user) return json({ error: "Not signed in" }, 401);
   const mfa = await mfaRefusal(userClient);

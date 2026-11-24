@@ -11,9 +11,9 @@
 // supabase/config.toml as a gateway-level backstop; this in-function check is
 // the one that's actually reproducible from a plain `supabase functions deploy`.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { EB_KEY_INVALID, ebErrorMessage, signEnableBankingJwt } from "../_shared/enable-banking.ts";
 import { serveWithCors } from "../_shared/origins.ts";
+import { asUser } from "../_shared/clients.ts";
 import { isCountryCode } from "../_shared/validate.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
 import { bankChoices } from "../_shared/bank-info.ts";
@@ -30,11 +30,7 @@ Deno.serve(serveWithCors(async (req, json) => {
     return json({ error: "Method not allowed" }, 405);
   }
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: req.headers.get("Authorization")! } } },
-  );
+  const supabase = asUser(req.headers.get("Authorization")!);
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError || !userData.user) {
     return json({ error: "Not signed in" }, 401);

@@ -6,10 +6,9 @@
 // fans out one call per account): every call spends Enable Banking requests, and banks allow
 // ~4 unattended calls a day per account. verify_jwt is off: secret keys are not JWTs.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { signEnableBankingJwt } from "../_shared/enable-banking.ts";
-import { hasSecretKey, parseSecretKeys } from "../_shared/secret-key.ts";
-import { retryRejectedToken } from "../_shared/postgrest-retry.ts";
+import { hasSecretKey } from "../_shared/secret-key.ts";
+import { SECRET_KEYS, serviceClient } from "../_shared/clients.ts";
 import {
   ACCOUNT_COLUMNS,
   errorTag,
@@ -22,12 +21,7 @@ import {
 } from "../_shared/bank-sync.ts";
 
 // A project without secret keys (Settings -> API Keys) gets 401 on every call: create them first.
-const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  SECRET_KEYS.default ?? Object.values(SECRET_KEYS)[0] ?? "",
-  { global: { fetch: retryRejectedToken(fetch) } },
-);
+const supabase = serviceClient();
 
 // All bank calls of one invocation share this budget, leaving time under the 150 s
 // wall clock to save the cursor and snapshot. An aborted run keeps the old cursor.

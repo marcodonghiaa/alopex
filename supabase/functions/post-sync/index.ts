@@ -11,9 +11,8 @@
 // rows to your choice, spend/income to refunded).
 // Callers send a project secret key on the apikey header, like sync-bank.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
-import { hasSecretKey, parseSecretKeys } from "../_shared/secret-key.ts";
-import { retryRejectedToken } from "../_shared/postgrest-retry.ts";
+import { hasSecretKey } from "../_shared/secret-key.ts";
+import { SECRET_KEYS, serviceClient } from "../_shared/clients.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { classifyFlows, markRefunds } from "../_shared/flow.ts";
 import { pairTransfers } from "../_shared/transfer-pairs.ts";
@@ -28,12 +27,7 @@ import { getJson } from "../_shared/prices.ts";
 import { fillMerchantKeys } from "../_shared/merchant-key-backfill.ts";
 import { runStep } from "../_shared/run-step.ts";
 
-const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  SECRET_KEYS.default ?? Object.values(SECRET_KEYS)[0] ?? "",
-  { global: { fetch: retryRejectedToken(fetch) } },
-);
+const supabase = serviceClient();
 
 // Without GEMINI_API_KEY only your rules and past choices categorize; the rest waits for a key.
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");

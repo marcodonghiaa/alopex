@@ -10,9 +10,9 @@
 // POST, and without an explicit 200 + Allow-* response there the request
 // never leaves the browser at all ("Failed to send a request").
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { EB_KEY_INVALID, signEnableBankingJwt } from "../_shared/enable-banking.ts";
 import { serveWithCors } from "../_shared/origins.ts";
+import { asUser } from "../_shared/clients.ts";
 import { isBankName, isCountryCode, MAX_OPEN_CONSENTS } from "../_shared/validate.ts";
 import { CONSENT_WINDOW_MS } from "../_shared/consent-claim.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
@@ -23,11 +23,7 @@ Deno.serve(serveWithCors(async (req, json, origin) => {
     return json({ error: "Method not allowed" }, 405);
   }
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: req.headers.get("Authorization")! } } },
-  );
+  const supabase = asUser(req.headers.get("Authorization")!);
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError || !userData.user) {
     return json({ error: "Not signed in" }, 401);

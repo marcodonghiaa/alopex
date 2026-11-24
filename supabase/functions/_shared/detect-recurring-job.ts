@@ -2,27 +2,22 @@
 // Per user: spend rows from transactions, their EUR share from v_transactions_eur (applies
 // personal_amount and the fx fallback), merged in memory by account_uid + entry_reference.
 // Logs counts and error tags only, never merchant names.
-import type { Db } from "./batch-update.ts";
+import { type Db, PAGE_SIZE, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { type Charge, detectStreams } from "./recurring.ts";
 
-const PAGE_SIZE = 1000; // PostgREST caps a response at 1000 rows
 const MAX_STREAMS = 2000; // upsert_detected_streams refuses more
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
 export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 
-async function pages(query: () => any, order: string[]): Promise<Row[]> {
-  const out: Row[] = [];
-  for (let from = 0;; from += PAGE_SIZE) {
+function pages(query: () => any, order: string[]): Promise<Row[]> {
+  return readPages((from, to) => {
     let q = query();
     for (const c of order) q = q.order(c);
-    const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    out.push(...data);
-    if (data.length < PAGE_SIZE) return out;
-  }
+    return q.range(from, to);
+  });
 }
 
 async function userCharges(db: Db, user: string): Promise<Charge[]> {

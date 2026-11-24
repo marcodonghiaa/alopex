@@ -2,34 +2,21 @@
 // row: your rules first, then the category you set by hand for the same merchant, then the AI;
 // afterwards AI rows take your later hand-set choice for their merchant. Without an AI (no key,
 // or it fails) your rules and past choices still apply.
-import { applyGroupedUpdates, type Db } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
 import { CATEGORIES, categoriesFor } from "./categories.ts";
 import { applyLearned, fetchLearned, learnedUpdate, planRelearn } from "./learned-categories.ts";
 import { errorTag } from "./log-safe.ts";
-import { applyRules, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
-import { createStallGuard } from "./stall-guard.ts";
-import { aiRefs, fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
+import { applyRules, fetchRules, type Rule } from "./rules.ts";
+import { aiBatches, aiRefs, walkNullRows } from "./user-batch.ts";
 import type { CategorizeRow } from "./categorize-prompt.ts";
 
 const BATCH_SIZE = 40;
 const RELEARN_DAYS = 120;
-const PAGE = 1000;
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
 /** Sends one user's rows to the AI and returns [{entry_reference, category}]. */
 export type Classify = (rows: CategorizeRow[], categories: string[]) => Promise<Array<Record<string, string>>>;
-
-async function fetchRules(db: Db): Promise<Rule[]> {
-  const { data, error } = await db
-    .from("category_rules")
-    .select(`${RULE_MATCH_COLUMNS}, set_category, set_transaction_type`)
-    .not("set_category", "is", null)
-    .order("priority", { ascending: true })
-    .order("created_at", { ascending: true }); // every rule has priority 100: oldest first, as listed
-  if (error) throw error;
-  return data;
-}
 
 // The user's own list (see user_categories); the built-in list if it can't be read.
 async function fetchUserCategories(db: Db, userId: string): Promise<string[]> {
@@ -84,21 +71,12 @@ async function applyCategories(db: Db, results: Array<Record<string, string>>, b
   await applyGroupedUpdates(db, items);
 }
 
-async function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeLeft: () => boolean) {
-  let total = 0;
-  const stalls = createStallGuard();
-  while (timeLeft()) {
-    const rows = await fetchBatchForOneUser(db, {
-      select: "entry_reference, account_uid, creditor_name, debtor_name, remittance_info, amount, currency, credit_debit_indicator",
-      nullColumn: "category",
-      limit: BATCH_SIZE,
-      excludeUserIds: stalls.stuckUserIds,
-    });
-    if (rows.length === 0) break;
-    if (stalls.isStalled(rows as Array<{ user_id: string; account_uid: string; entry_reference: string }>)) {
-      console.warn("No progress for one user, skipping them for this run.");
-      continue;
-    }
+function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeLeft: () => boolean) {
+  return aiBatches(db, {
+    select: "entry_reference, account_uid, creditor_name, debtor_name, remittance_info, amount, currency, credit_debit_indicator",
+    nullColumn: "category",
+    limit: BATCH_SIZE,
+  }, timeLeft, async (rows) => {
     const { matched, unmatched: afterRules } = applyRules(rows, rules);
     await applyRuleMatches(db, matched);
     const unmatched = await learnFrom(db, afterRules);
@@ -107,9 +85,7 @@ async function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeL
       const { sent, byRef } = aiRefs(unmatched as Array<Row & { account_uid: string; entry_reference: string }>);
       await applyCategories(db, await classify(sent as CategorizeRow[], categories), byRef, categories);
     }
-    total += rows.length;
-  }
-  return total;
+  });
 }
 
 // Recent AI rows whose merchant you later categorized by hand take your category, so one
@@ -117,9 +93,8 @@ async function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeL
 // ponytail: reads 120 days of AI rows with no time check; a few pages for one person.
 async function relearnAiRows(db: Db): Promise<number> {
   const since = new Date(Date.now() - RELEARN_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const rows: Row[] = [];
-  for (let from = 0;; from += PAGE) {
-    const { data, error } = await db
+  const rows: Row[] = await readPages((from, to) =>
+    db
       .from("transactions")
       .select("user_id, account_uid, entry_reference, creditor_name, credit_debit_indicator, category, category_source")
       .eq("category_source", "ai")
@@ -127,11 +102,8 @@ async function relearnAiRows(db: Db): Promise<number> {
       .is("deleted_at", null)
       .order("account_uid")
       .order("entry_reference")
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    rows.push(...data);
-    if (data.length < PAGE) break;
-  }
+      .range(from, to)
+  );
   let changed = 0;
   for (const userRows of Map.groupBy(rows, (r) => r.user_id).values()) {
     const learned = await fetchLearned(db, userRows[0].user_id, userRows.map((r) => r.creditor_name));
@@ -171,7 +143,7 @@ function applyRulesOnly(db: Db, rules: Rule[], timeLeft: () => boolean): Promise
 
 /** classify: null when there is no AI key. Returns how many rows each path looked at. */
 export async function categorize(db: Db, classify: Classify | null, timeLeft: () => boolean = () => true) {
-  const rules = await fetchRules(db);
+  const rules = await fetchRules(db, "set_category");
   if (!classify) return { categorized: 0, relearned: 0, byRules: await applyRulesOnly(db, rules, timeLeft), aiFailed: false };
   try {
     const categorized = await categorizeWithAi(db, rules, classify, timeLeft);

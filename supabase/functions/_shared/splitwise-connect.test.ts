@@ -54,6 +54,8 @@ Deno.test("only POST, signed in, past two-step sign-in", async () => {
   const mfa = setup({ mfaRefusal: () => Promise.resolve({ body: { code: "mfa_required" }, status: 403 }) });
   assertEquals(await mfa.call({ apiKey: KEY, consent: true }), { status: 403, body: { code: "mfa_required" } });
   assertEquals(mfa.calls, []);
+  const mfaDown = setup({ mfaRefusal: () => Promise.reject(new Error("x")) });
+  assertEquals(await mfaDown.call({}), { status: 503, body: { error: "Sign-in check is unavailable, please try again" } });
 });
 
 Deno.test("connect: checks the key with Splitwise, then stores it with the consent", async () => {

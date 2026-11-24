@@ -6,33 +6,22 @@
 // also what the sync brought in (splitwise_disconnect). The key never appears in a reply or log.
 import { errorTag } from "./log-safe.ts";
 import type { Reply } from "./origins.ts";
+import { type CallerDeps, callerOrReply } from "./caller.ts";
 import { type SplitwiseClient, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 
 const MAX_BODY = 16 * 1024;
 // Splitwise keys are letters and digits; a little slack, never spaces.
 const KEY_SHAPE = /^[A-Za-z0-9_-]{10,200}$/;
 
-export type ConnectDeps = {
-  userIdFor(authorization: string): Promise<string | null>;
-  mfaRefusal(authorization: string): Promise<{ body: object; status: number } | null>;
+export type ConnectDeps = CallerDeps & {
   rpc(fn: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }>; // service role
   client(apiKey: string): Pick<SplitwiseClient, "currentUser">;
 };
 
 export const connectHandler = (deps: ConnectDeps) => async (req: Request, json: Reply): Promise<Response> => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  const authorization = req.headers.get("Authorization");
-  let userId: string | null;
-  let refusal: { body: object; status: number } | null = null;
-  try {
-    userId = authorization ? await deps.userIdFor(authorization) : null;
-    if (userId) refusal = await deps.mfaRefusal(authorization!);
-  } catch (err) {
-    console.error(`splitwise-connect: sign-in check failed: ${errorTag(err)}`);
-    return json({ error: "Sign-in check is unavailable, please try again" }, 503);
-  }
-  if (!userId) return json({ error: "Not signed in" }, 401);
-  if (refusal) return json(refusal.body, refusal.status);
+  const userId = await callerOrReply(req, deps, json, "splitwise-connect");
+  if (userId instanceof Response) return userId;
 
   const raw = await req.text().catch(() => "");
   if (raw.length > MAX_BODY) return json({ error: "Request too large" }, 413);

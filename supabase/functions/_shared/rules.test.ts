@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { applyRules, matchRule, planRuleReapply, type Rule } from "./rules.ts";
+import { applyRules, fetchRules, matchRule, planRuleReapply, type Rule } from "./rules.ts";
 import cases from "./rules.cases.json" with { type: "json" };
 
 const rule = (over: Partial<Rule> = {}): Rule => ({
@@ -110,4 +110,33 @@ Deno.test("reapply also files never-categorized rows, guarded on still being emp
     account_uid: "a1", entry_reference: "r1", update: { category: "Entertainment", category_source: "rule" },
     guardColumn: "category_source",
   }]);
+});
+
+Deno.test("fetchRules: the match columns plus the action, rules that set it, oldest first", async () => {
+  const asked: unknown[][] = [];
+  const db = {
+    from: (t: string) => {
+      asked.push(["from", t]);
+      const q = {
+        select: (c: string) => (asked.push(["select", c]), q),
+        eq: (c: string, v: string) => (asked.push(["eq", c, v]), q),
+        not: (c: string, op: string, v: null) => (asked.push(["not", c, op, v]), q),
+        order: (c: string, o: { ascending: boolean }) => (asked.push(["order", c, o.ascending]), q),
+        then: (ok: (r: unknown) => void) => ok({ data: [{ id: 1 }], error: null }),
+      };
+      return q;
+    },
+  };
+  assertEquals(await fetchRules<unknown>(db, "set_category", "u1"), [{ id: 1 }]);
+  assertEquals(asked, [
+    ["from", "category_rules"],
+    ["select", "user_id, match_field, match_text, match_mode, set_category, set_transaction_type"],
+    ["eq", "user_id", "u1"],
+    ["not", "set_category", "is", null],
+    ["order", "priority", true],
+    ["order", "created_at", true],
+  ]);
+  asked.length = 0;
+  await fetchRules(db, "set_flow_type");
+  assertEquals(asked.slice(1, 3), [["select", "user_id, match_field, match_text, match_mode, set_flow_type"], ["not", "set_flow_type", "is", null]]);
 });

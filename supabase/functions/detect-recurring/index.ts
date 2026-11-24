@@ -4,19 +4,13 @@
 // recurring_streams through upsert_detected_streams. No bank calls; safe to run any time.
 // Callers send a project secret key on the apikey header, like post-sync.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
-import { hasSecretKey, parseSecretKeys } from "../_shared/secret-key.ts";
-import { retryRejectedToken } from "../_shared/postgrest-retry.ts";
+import { hasSecretKey } from "../_shared/secret-key.ts";
+import { SECRET_KEYS, serviceClient } from "../_shared/clients.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { runDetection } from "../_shared/detect-recurring-job.ts";
 import { romeToday } from "../_shared/today.ts";
 
-const SECRET_KEYS = parseSecretKeys(Deno.env.get("SUPABASE_SECRET_KEYS"));
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  SECRET_KEYS.default ?? Object.values(SECRET_KEYS)[0] ?? "",
-  { global: { fetch: retryRejectedToken(fetch) } },
-);
+const supabase = serviceClient();
 
 // Stop starting new users after this, well under the 150 s wall clock. What's left waits for the next run.
 const BUDGET_MS = 100000;

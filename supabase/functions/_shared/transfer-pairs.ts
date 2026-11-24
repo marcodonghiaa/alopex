@@ -6,13 +6,12 @@
 // other side, so its counterpart stops counting too. Yours, legacy, rule and own-account rows stay.
 // Better no pair than a wrong one: any tie skips the rows involved. A suggested pair whose rows
 // changed since (you edited one, or the update never landed) is removed again.
-import { applyGroupedUpdates, type Db } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 
 export const PAIR_WINDOW_DAYS = 4;
 const LOOKBACK_DAYS = 90;
 const DAY_MS = 86_400_000;
-const PAGE = 1000;
 
 export interface PairRow {
   user_id: string;
@@ -83,11 +82,10 @@ export function matchTransferPairs(rows: PairRow[], rejectedKeys: Set<string> = 
   return pairs;
 }
 
-async function fetchCandidates(db: Db): Promise<PairRow[]> {
+function fetchCandidates(db: Db): Promise<PairRow[]> {
   const since = new Date(Date.now() - LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const rows: PairRow[] = [];
-  for (let from = 0;; from += PAGE) {
-    const { data, error } = await db
+  return readPages((from, to) =>
+    db
       .from("transactions")
       .select("user_id, account_uid, entry_reference, amount, currency, credit_debit_indicator, booking_date, flow_source")
       .in("flow_type", ["spend", "income", "transfer"]) // 'default' is spend/income, 'bank' transfer
@@ -96,28 +94,17 @@ async function fetchCandidates(db: Db): Promise<PairRow[]> {
       .gte("booking_date", since)
       .order("account_uid")
       .order("entry_reference")
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    rows.push(...data);
-    if (data.length < PAGE) return rows;
-  }
+      .range(from, to)
+  );
 }
 
 type PairRecord = { id: string; out_account_uid: string; out_ref: string; in_account_uid: string; in_ref: string; status: string };
 
 // ponytail: reads every pair ever made; a handful per month for one person.
-async function fetchPairs(db: Db): Promise<PairRecord[]> {
-  const pairs: PairRecord[] = [];
-  for (let from = 0;; from += PAGE) {
-    const { data, error } = await db
-      .from("transfer_pairs")
-      .select("id, out_account_uid, out_ref, in_account_uid, in_ref, status")
-      .order("id")
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    pairs.push(...data);
-    if (data.length < PAGE) return pairs;
-  }
+function fetchPairs(db: Db): Promise<PairRecord[]> {
+  return readPages((from, to) =>
+    db.from("transfer_pairs").select("id, out_account_uid, out_ref, in_account_uid, in_ref, status").order("id").range(from, to)
+  );
 }
 
 type Side = { account_uid: string; entry_reference: string; credit_debit_indicator: string; flow_source: string | null; deleted_at: string | null };

@@ -1,9 +1,26 @@
 // Deterministic user-authored rules take priority over the AI.
-import type { RowUpdate } from "./batch-update.ts";
+import type { Db, RowUpdate } from "./batch-update.ts";
 
 export const REAPPLY_SOURCES = ["ai", "rule"]; // never 'manual' or 'legacy': hand edits are not ours
 // Every step that runs rules reads these columns (flow and type rules select their own action).
 export const RULE_MATCH_COLUMNS = "user_id, match_field, match_text, match_mode";
+
+/** The rules that set `action`, in the order they apply; userId: only that user's. */
+export async function fetchRules<T = Rule>(
+  db: Db,
+  action: "set_category" | "set_transaction_type" | "set_flow_type",
+  userId?: string,
+): Promise<T[]> {
+  // A category rule can set a type too (netflix -> Entertainment + Subscription).
+  let q = db.from("category_rules").select(`${RULE_MATCH_COLUMNS}, ${action}${action === "set_category" ? ", set_transaction_type" : ""}`);
+  if (userId) q = q.eq("user_id", userId);
+  const { data, error } = await q
+    .not(action, "is", null)
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: true }); // every rule has priority 100: oldest first, as listed
+  if (error) throw error;
+  return data;
+}
 const TRANSFER = "Transfer";
 
 export interface Rule {

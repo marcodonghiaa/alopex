@@ -1,5 +1,5 @@
-import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { applyGroupedUpdates, type RowUpdate } from "./batch-update.ts";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { applyGroupedUpdates, readPages, type RowUpdate } from "./batch-update.ts";
 
 type Call = {
   table: string;
@@ -106,4 +106,25 @@ Deno.test("userId scopes every statement to that user and failures are counted",
   const failed = await applyGroupedUpdates(db, [item("1"), item("2", { account_uid: "acc2" })], "u1");
   assertEquals(db.calls.map((c) => c.eq.user_id), ["u1", "u1"]);
   assertEquals(failed, 1);
+});
+
+Deno.test("readPages reads 1000-row pages until a short one, and throws on an error", async () => {
+  const pageOf = (total: number) => {
+    const asked: number[][] = [];
+    const page = (from: number, to: number) => {
+      asked.push([from, to]);
+      const data = Array.from({ length: Math.max(0, Math.min(to + 1, total) - from) }, (_, i) => from + i);
+      return Promise.resolve({ data, error: null });
+    };
+    return { asked, page };
+  };
+  const two = pageOf(1500);
+  assertEquals((await readPages(two.page)).length, 1500);
+  assertEquals(two.asked, [[0, 999], [1000, 1999]]);
+  // Exactly a page: one more read finds nothing.
+  const exact = pageOf(1000);
+  assertEquals((await readPages(exact.page)).length, 1000);
+  assertEquals(exact.asked.length, 2);
+  assertEquals(await readPages(() => Promise.resolve({ data: null, error: null })), []);
+  await assertRejects(() => readPages(() => Promise.resolve({ data: null, error: new Error("boom") })), Error, "boom");
 });

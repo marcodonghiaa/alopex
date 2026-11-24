@@ -16,6 +16,19 @@ export interface RowUpdate {
   alsoEq?: [string, string];
 }
 
+export const PAGE_SIZE = 1000; // PostgREST caps a response at 1000 rows
+
+/** Every row of a query, page by page: `page(from, to)` reads rows from..to (inclusive). Order it. */
+export async function readPages<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0;; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    out.push(...(data ?? []));
+    if (!data || data.length < PAGE_SIZE) return out;
+  }
+}
+
 const CHUNK_SIZE = 50; // keeps the `in (...)` request URL well under proxy limits
 
 // One UPDATE per (account, update payload) group instead of one per row. Every statement

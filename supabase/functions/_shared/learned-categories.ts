@@ -1,9 +1,8 @@
 // What you set by hand is the best guess for the next
 // transaction from the same merchant: before the AI, a new row takes the category you most
 // recently chose for that merchant's other rows (category_source 'manual'). Rules still come first.
-import type { Db } from "./batch-update.ts";
+import { type Db, PAGE_SIZE as PAGE } from "./batch-update.ts";
 
-const PAGE = 1000;
 const CHUNK_SIZE = 50; // keeps the `in (...)` request URL well under proxy limits, as in batch-update.ts
 
 // A choice holds for one merchant name in one direction: on a card refund the bank puts the

@@ -8,23 +8,15 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
-import { mfaRefusal } from "../_shared/mfa.ts";
 import { splitwiseClient } from "../_shared/splitwise-api.ts";
 import { connectHandler } from "../_shared/splitwise-connect.ts";
-import { userIdFrom } from "../_shared/caller.ts";
+import { userCaller } from "../_shared/clients.ts";
 
 const url = Deno.env.get("SUPABASE_URL")!;
 const service = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-const asUser = (authorization: string) =>
-  createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: authorization } } });
 
 Deno.serve(serveWithCors(connectHandler({
-  async userIdFor(authorization) {
-    return userIdFrom(await asUser(authorization).auth.getUser());
-  },
-  async mfaRefusal(authorization) {
-    return await mfaRefusal(asUser(authorization));
-  },
+  ...userCaller,
   rpc: (fn, args) => service.rpc(fn, args),
   client: (key) => splitwiseClient(key),
 })));

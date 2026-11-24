@@ -21,3 +21,16 @@ Deno.test("an answer with no text is an error", async () => {
   const err = await assertRejects(() => classifyWithGemini(req, answer(200, { candidates: [] })));
   assertEquals((err as { code: string }).code, "GEMINI_EMPTY");
 });
+
+Deno.test("asks the model's generateContent with the key in a header, never in the URL", async () => {
+  const seen: Request[] = [];
+  const text = JSON.stringify([]);
+  const fetchFn = ((input: string, init: RequestInit) => {
+    seen.push(new Request(input, init));
+    return Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] })));
+  }) as unknown as typeof fetch;
+  await classifyWithGemini(req, fetchFn);
+  assertEquals(seen[0].url, "https://generativelanguage.googleapis.com/v1beta/models/m:generateContent");
+  assertEquals([seen[0].method, seen[0].headers.get("x-goog-api-key"), seen[0].headers.get("content-type")], ["POST", "k", "application/json"]);
+  assertEquals((await seen[0].json()).contents, [{ parts: [{ text: "p" }] }]);
+});

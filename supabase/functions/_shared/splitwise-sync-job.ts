@@ -13,9 +13,10 @@
 // A refused key marks the connection needs_reconnect, and a 403 naming Splitwise Pro marks it
 // pro_required (the cron skips both until the user connects again); a rate limit stops the run
 // and keeps the status. Logs counts and error tags only.
-import type { Db } from "./batch-update.ts";
+import { type Db, PAGE_SIZE, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import type { Reply } from "./origins.ts";
+import { type CallerDeps, callerOrReply } from "./caller.ts";
 import { type SplitwiseClient, SplitwiseApiError, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 import { balancesFrom, groupLabels, planSync } from "./splitwise-sync.ts";
 
@@ -23,7 +24,6 @@ const DAY = 86_400_000;
 const OVERLAP_MS = DAY;
 const FULL_EVERY_MS = 7 * DAY;
 const CHUNK = 5000; // splitwise_sync_apply's limit per array
-const PAGE = 1000; // PostgREST caps a response at 1000 rows
 const MAX_SURE_GONE = 10; // a full check may always remove this many
 const CONNECTION_COLS = "user_id, splitwise_user_id, cursor_updated_at, last_full_check_at, last_synced_at";
 // A 401 on a key that worked: revoked or regenerated, or (since 2026) a Splitwise Pro subscription
@@ -53,13 +53,8 @@ export function needsFullCheck(c: Connection, now: number): boolean {
 
 // deno-lint-ignore no-explicit-any
 async function allIds(query: () => any): Promise<number[]> {
-  const out: number[] = [];
-  for (let from = 0;; from += PAGE) {
-    const { data, error } = await query().order("splitwise_id").range(from, from + PAGE - 1);
-    if (error) throw error;
-    out.push(...(data as Array<{ splitwise_id: number }>).map((r) => r.splitwise_id));
-    if (data.length < PAGE) return out;
-  }
+  const rows = await readPages<{ splitwise_id: number }>((from, to) => query().order("splitwise_id").range(from, to));
+  return rows.map((r) => r.splitwise_id);
 }
 
 /** One user's sync. Throws the Splitwise or database error as it is. */
@@ -141,7 +136,7 @@ async function markFailure(db: Db, user: string, err: unknown): Promise<Outcome>
 export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
   const result = { users: 0, failed: 0, needsReconnect: 0, skipped: 0, rateLimited: false, new: 0, adopted: 0, review: 0, deleted: 0 };
   const { data, error } = await deps.db.from("splitwise_connections").select(CONNECTION_COLS)
-    .in("status", ["ok", "error"]).order("last_synced_at", { ascending: true, nullsFirst: true }).limit(PAGE);
+    .in("status", ["ok", "error"]).order("last_synced_at", { ascending: true, nullsFirst: true }).limit(PAGE_SIZE);
   if (error) {
     console.error(`sync-splitwise: connections read failed: ${errorTag(error)}`);
     return { ...result, failed: 1 };
@@ -173,10 +168,8 @@ export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
   return result;
 }
 
-export type HandlerDeps = JobDeps & {
+export type HandlerDeps = JobDeps & CallerDeps & {
   isServer(req: Request): boolean; // the project secret key on apikey (pg_cron)
-  userIdFor(authorization: string): Promise<string | null>;
-  mfaRefusal(authorization: string): Promise<{ body: object; status: number } | null>;
   timeLeft(): boolean;
 };
 
@@ -188,18 +181,8 @@ export const syncNowHandler = (deps: HandlerDeps) => async (req: Request, json: 
     return json(result, result.failed > 0 ? 500 : 200);
   }
 
-  const authorization = req.headers.get("Authorization");
-  let userId: string | null;
-  let refusal: { body: object; status: number } | null = null;
-  try {
-    userId = authorization ? await deps.userIdFor(authorization) : null;
-    if (userId) refusal = await deps.mfaRefusal(authorization!);
-  } catch (err) {
-    console.error(`sync-splitwise: sign-in check failed: ${errorTag(err)}`);
-    return json({ error: "Sign-in check is unavailable, please try again" }, 503);
-  }
-  if (!userId) return json({ error: "Not signed in" }, 401);
-  if (refusal) return json(refusal.body, refusal.status);
+  const userId = await callerOrReply(req, deps, json, "sync-splitwise");
+  if (userId instanceof Response) return userId;
 
   const body = await req.json().catch(() => null);
   const preview = body?.preview === true;

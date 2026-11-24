@@ -110,3 +110,30 @@ Deno.test("the same reference on two accounts: each row gets its own AI answer",
   await categorize(db, classify);
   assertEquals(db.tables.transactions.map((r) => [r.account_uid, r.category]), [["a1", "Dine Out"], ["a2", "Health"]]);
 });
+
+Deno.test("an AI that answers nothing stops once the same batch comes back: that user is skipped", async () => {
+  const db = memoryDb({ transactions: [tx("a", "SHOP A"), tx("b", "SHOP B"), tx("c", "SHOP C", { user_id: "u2" })], category_rules: [], user_categories: [] });
+  const asked: string[] = [];
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const result = await categorize(db, async (rows) => (asked.push(rows.map((r) => r.entry_reference).join()), []));
+    // The same batch again is a stall: not sent, not counted, and that user waits for the next run.
+    assertEquals(asked, ["a,b", "c"]);
+    assertEquals(result.categorized, 3);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+Deno.test("only rules that set a category categorize; the lowest priority, then the oldest, wins", async () => {
+  const rule = (set_category: string | null, priority: number, created_at: string) =>
+    ({ user_id: "u1", match_field: "creditor_name", match_text: "shop", match_mode: "contains", set_category, set_transaction_type: null, priority, created_at });
+  const db = memoryDb({
+    transactions: [tx("s", "SHOP")],
+    category_rules: [rule(null, 1, "2026-01-01"), rule("Groceries", 100, "2026-03-01"), rule("Others", 100, "2026-02-01"), rule("Housing", 200, "2026-01-01")],
+    user_categories: [],
+  });
+  await categorize(db, null);
+  assertEquals(byRef(db, "s").category, "Others");
+});

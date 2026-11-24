@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { applyRules, matchRule, planRuleReapply, type Rule } from "./rules.ts";
+import cases from "./rules.cases.json" with { type: "json" };
 
 const rule = (over: Partial<Rule> = {}): Rule => ({
   user_id: "u1", match_field: "creditor_name", match_text: "netflix", set_category: "Entertainment", set_transaction_type: null, ...over,
@@ -56,7 +57,14 @@ Deno.test("word treats accented letters as letters, in either Unicode form", () 
   assertEquals(matchRule(row({ creditor_name: "Café Roma" }), word("caf")), false);
   assertEquals(matchRule(row({ creditor_name: "Élan Vital" }), word("lan")), false);
   assertEquals(matchRule(row({ creditor_name: "Cafe\u0301 Roma" }), word("café")), true); // decomposed é
-  assertEquals(matchRule(row({ creditor_name: "Cafe\u0301 Roma" }), word("cafe")), false);
+});
+
+// H106: same cases as alopex-web's copy, so a rule matches the same names in the sync and the dashboard.
+Deno.test("matches names the same way as the dashboard: case, accents and apostrophes ignored", () => {
+  for (const [name, text, mode, expected] of cases.match) {
+    const r = rule({ match_text: text as string, match_mode: mode as string });
+    assertEquals(matchRule(row({ creditor_name: name }), r), expected, `${name} / ${text} / ${mode}`);
+  }
 });
 
 Deno.test("word checks a boundary only on letter or digit edges", () => {

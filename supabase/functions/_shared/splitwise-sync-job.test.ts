@@ -406,6 +406,14 @@ Deno.test("a refused key or a rate limit during the re-read stops the sync and r
   await syncUser(s.deps, conn({ last_full_check_at: null }), { preview: false }).catch((e) => (err = e));
   assertEquals(err instanceof SplitwiseRateLimitError, true);
   assertEquals(s.applies().length, 0);
+  const refused = setup({
+    expenses: [expense(1)],
+    reread: { 7: new SplitwiseAuthError("Splitwise refused the API key", 401) },
+    tables: { splitwise_expenses: [1, 7].map((id) => ({ user_id: "u1", splitwise_id: id })), splitwise_review: [] },
+  });
+  err = null;
+  await syncUser(refused.deps, conn({ last_full_check_at: null }), { preview: false }).catch((e) => (err = e));
+  assertEquals([err instanceof SplitwiseAuthError, refused.applies().length], [true, 0]);
 });
 
 // H230 (review): sync-splitwise deployed before its migration (20270121000000) ordered by a

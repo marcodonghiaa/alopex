@@ -25,8 +25,9 @@ export interface PairRow {
 }
 export type Pair = { out: PairRow; in: PairRow };
 
-const sideKey = (r: { account_uid: string; entry_reference: string }) => `${r.account_uid}:${r.entry_reference}`;
-export const pairKey = (out: PairRow, inn: PairRow) => `${sideKey(out)}>${sideKey(inn)}`;
+type SideRef = { account_uid: string; entry_reference: string };
+const sideKey = (r: SideRef) => `${r.account_uid}:${r.entry_reference}`;
+export const pairKey = (out: SideRef, inn: SideRef) => `${sideKey(out)}>${sideKey(inn)}`;
 
 const days = (a: PairRow, b: PairRow) => Math.abs(Date.parse(a.booking_date) - Date.parse(b.booking_date)) / DAY_MS;
 
@@ -151,7 +152,7 @@ export async function pairTransfers(db: Db, timeLeft: () => boolean = () => true
   for (const p of existing) {
     const out = { account_uid: p.out_account_uid, entry_reference: p.out_ref };
     const inn = { account_uid: p.in_account_uid, entry_reference: p.in_ref };
-    if (p.status === "rejected") rejected.add(`${sideKey(out)}>${sideKey(inn)}`);
+    if (p.status === "rejected") rejected.add(pairKey(out, inn));
     else taken.add(sideKey(out)).add(sideKey(inn));
   }
   const candidates = (await fetchCandidates(db)).filter((r) => !taken.has(sideKey(r)));

@@ -120,3 +120,14 @@ Deno.test("a failed alias key update logs the code only", async () => {
   const db = memoryDb({ transactions: [], merchant_aliases: [alias("Lidl 4521", "A", "2026-01-01")] }, "update");
   assertEquals(await logsOf(() => fillMerchantKeys(db, always)), ["Failed to key an alias: XX000"]);
 });
+
+// H256: one unpaged read of every user's aliases, so past PostgREST's 1000-row cap the oldest
+// aliases were never keyed.
+Deno.test("keys aliases past the first 1000, across users", async () => {
+  const aliases = Array.from({ length: 1500 }, (_, i) =>
+    alias(`Shop ${i}`, `My shop ${i}`, `2026-01-01T00:${String(Math.floor(i / 60) % 60).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}Z`, { user_id: `u${i % 4}` })
+  );
+  const db = memoryDb({ transactions: [], merchant_aliases: aliases }, undefined, 1000);
+  assertEquals((await fillMerchantKeys(db, always)).aliases, 1500);
+  assertEquals(db.tables.merchant_aliases.filter((a) => a.merchant_key === null).length, 0);
+});

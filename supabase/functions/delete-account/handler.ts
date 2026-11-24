@@ -1,15 +1,13 @@
 // The delete-account request handler, apart from Deno.serve so it can be tested.
 import type { Reply } from "../_shared/origins.ts";
 import { errorTag } from "../_shared/log-safe.ts";
-import { mfaRefusal, type RpcClient } from "../_shared/mfa.ts";
+import { type CallerDeps, callerOrReply } from "../_shared/caller.ts";
 
 type Answer<T> = PromiseLike<{ data: T; error: unknown }>;
 
-export type DeleteAccountDeps = {
-  // The caller's own client (their JWT): who they are, and the two-step check.
-  asUser(authorization: string): RpcClient & {
-    auth: { getUser(): Answer<{ user: { id: string; email?: string } | null }> };
-  };
+export type DeleteAccountDeps = CallerDeps & {
+  // The signed-in user's email, for the password check (service role).
+  user(userId: string): Answer<{ user: { email?: string } | null }>;
   // A fresh sign-in with the typed password, kept apart from the caller's session.
   signIn(email: string, password: string): Answer<{ user: { id: string } | null }>;
   rpc(fn: string, args: Record<string, unknown>): Answer<unknown>; // service role
@@ -21,12 +19,8 @@ export type DeleteAccountDeps = {
 export const deleteAccountHandler = (deps: DeleteAccountDeps) => async (req: Request, json: Reply): Promise<Response> => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const asUser = deps.asUser(req.headers.get("Authorization")!);
-  const { data: userData, error: userError } = await asUser.auth.getUser();
-  if (userError || !userData.user) return json({ error: "Not signed in" }, 401);
-  const mfa = await mfaRefusal(asUser);
-  if (mfa) return json(mfa.body, mfa.status);
-  const userId = userData.user.id;
+  const userId = await callerOrReply(req, deps, json, "delete-account");
+  if (userId instanceof Response) return userId;
 
   const body = await req.json().catch(() => null);
   if (body?.confirm !== "DELETE") return json({ error: "Type DELETE to confirm" }, 400);
@@ -34,7 +28,12 @@ export const deleteAccountHandler = (deps: DeleteAccountDeps) => async (req: Req
   if (typeof password !== "string" || !password || password.length > 1024) {
     return json({ error: "Enter your password to confirm" }, 400);
   }
-  const email = userData.user.email;
+  const { data: userData, error: userError } = await deps.user(userId);
+  if (userError) {
+    console.error(`delete-account: user not read: ${errorTag(userError)}`);
+    return json({ error: "Couldn't delete the account, please try again" }, 500);
+  }
+  const email = userData.user?.email;
   if (!email) return json({ error: "This account has no password to confirm with" }, 400);
   const { data: signedIn, error: passwordError } = await deps.signIn(email, password);
   if (passwordError || signedIn.user?.id !== userId) {

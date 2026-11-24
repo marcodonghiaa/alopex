@@ -50,10 +50,5 @@ const SOURCES: Record<string, string> = {
 const offenders = (pattern: RegExp) => Object.keys(SOURCES).filter((f) => pattern.test(SOURCES[f]));
 
 Deno.test("the sign-in and two-step check is callerOrReply's alone (_shared/caller.ts)", () => {
-  // Not yet moved: the same check, copied (H067).
-  assertEquals(offenders(/auth\.getUser\(|mfaRefusal\(/), [
-    "add-holding/index.ts",
-    "delete-account/handler.ts",
-    "parse-statement/index.ts",
-  ]);
+  assertEquals(offenders(/auth\.getUser\(|mfaRefusal\(/), []);
 });

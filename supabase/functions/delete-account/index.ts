@@ -9,7 +9,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
-import { asUser } from "../_shared/clients.ts";
+import { userCaller } from "../_shared/clients.ts";
 import { closeSessions } from "../_shared/eb-sessions.ts";
 import { deleteAccountHandler } from "./handler.ts";
 
@@ -17,7 +17,8 @@ const url = Deno.env.get("SUPABASE_URL")!;
 const service = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
 Deno.serve(serveWithCors(deleteAccountHandler({
-  asUser,
+  ...userCaller,
+  user: (userId) => service.auth.admin.getUserById(userId),
   signIn: (email, password) =>
     createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { auth: { persistSession: false, autoRefreshToken: false } })
       .auth.signInWithPassword({ email, password }),

@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
     console.log(`post-sync: ${JSON.stringify(result)}`);
     // After a first sync, rounds follow each other until nothing is left (_shared/catch-up.ts).
     const round = Number((await req.json().catch(() => ({})))?.catch_up) || 0;
-    const next = nextCatchUp(round, { ...result, splitwise: result.splitwise ?? 0 });
+    const next = nextCatchUp(round, result);
     if (next) {
       const { error } = await supabase.rpc("queue_edge_job", { job: next.job, round: next.round });
       if (error) console.error(`catch-up round ${round + 1} not queued: ${errorTag(error)}`);

@@ -251,21 +251,25 @@ Deno.test("the minimum is in euros: a small charge in another currency isn't pro
   assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["huf-big", "eur", "no-rate"]);
 });
 
-// H233: new VAPID keys (setup.sh with no old .env) make the push service refuse every old
-// subscription with 403, for good. The rows stayed, so the dashboard kept saying notifications
-// were on and never offered to turn them on again.
-Deno.test("a subscription refused with 403 (made with other push keys) is removed; a 5xx or 400 is kept", async () => {
+// H233 (review): a 403 is the push service refusing this server's VAPID signature (keys that
+// don't match the ones the device subscribed with, a bad private key or subject; Apple's
+// BadJwtToken), not a gone subscription (404/410). Deleting on 403 let one misconfigured key wipe
+// every user's devices for good, so the row stays and the log says what to check.
+Deno.test("a subscription refused with 403 (this server's push keys) is kept and logged; 404/410 are removed", async () => {
   const deleted: string[] = [];
   const db = { from: () => ({ delete: () => ({ eq: async (_: string, id: string) => (deleted.push(id), { error: null }) }) }) };
   const sub = (id: string): Subscription => ({ id, endpoint: `https://push.example.com/${id}`, p256dh: "k", auth: "a" });
-  const status: Record<string, number> = { other_keys: 403, busy: 503, bad: 400 };
+  const status: Record<string, number> = { other_keys: 403, busy: 503, bad: 400, gone: 410, missing: 404 };
+  const logs: string[] = [];
   const error = console.error;
-  console.error = () => {};
+  console.error = (m: string) => logs.push(m);
   try {
-    const delivered = await sendToAllSubscriptions(db, [sub("other_keys"), sub("busy"), sub("bad")], {}, async (s) => {
+    const delivered = await sendToAllSubscriptions(db, ["other_keys", "busy", "bad", "gone", "missing"].map(sub), {}, async (s) => {
       throw Object.assign(new Error("refused"), { statusCode: status[s.id] });
     });
-    assertEquals([delivered, deleted], [false, ["other_keys"]]);
+    assertEquals([delivered, deleted], [false, ["gone", "missing"]]);
+    assertEquals(logs.filter((l) => l.includes("HTTP 403")).length, 1);
+    assertEquals(logs.some((l) => l.includes("HTTP 403") && l.includes("VAPID")), true);
   } finally {
     console.error = error;
   }

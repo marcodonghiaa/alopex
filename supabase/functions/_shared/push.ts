@@ -49,11 +49,15 @@ export async function sendToAllSubscriptions(db: Db, subscriptions: Subscription
       delivered = true;
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410 || status === 403) {
-        // subscription dead (uninstalled, permission revoked), or made with other push keys (403:
-        // the VAPID keys were regenerated, H233): stop trying it, so the dashboard offers to turn
-        // notifications on again. The cost of a 403 for another reason: turning them on once more.
+      if (status === 404 || status === 410) {
+        // subscription dead (uninstalled, permission revoked): stop trying it
         await db.from("push_subscriptions").delete().eq("id", sub.id);
+      } else if (status === 403) {
+        // The push service refused this server's VAPID signature, not the subscription (H233
+        // review): keys other than the ones the device subscribed with, a bad private key or
+        // subject (Apple: BadJwtToken). Kept, so fixing the keys brings every device back; a
+        // delete here would let one bad key wipe every user's devices.
+        console.error(`Push refused for subscription ${i + 1}/${subscriptions.length}: HTTP 403, check that VAPID_* are the keys the devices subscribed with`);
       } else {
         console.error(`Push failed for subscription ${i + 1}/${subscriptions.length}: ${status ? `HTTP ${status}` : errorTag(err)}`);
       }

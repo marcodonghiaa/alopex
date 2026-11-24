@@ -12,10 +12,10 @@
 
 import { EB_KEY_INVALID, signEnableBankingJwt } from "../_shared/enable-banking.ts";
 import { serveWithCors } from "../_shared/origins.ts";
-import { asUser } from "../_shared/clients.ts";
+import { asUser, userCaller } from "../_shared/clients.ts";
+import { callerOrReply } from "../_shared/caller.ts";
 import { isBankName, isCountryCode, MAX_OPEN_CONSENTS } from "../_shared/validate.ts";
 import { CONSENT_WINDOW_MS } from "../_shared/consent-claim.ts";
-import { mfaRefusal } from "../_shared/mfa.ts";
 import { consentEnd, requestConsentUrl } from "../_shared/bank-info.ts";
 
 Deno.serve(serveWithCors(async (req, json, origin) => {
@@ -23,13 +23,9 @@ Deno.serve(serveWithCors(async (req, json, origin) => {
     return json({ error: "Method not allowed" }, 405);
   }
 
+  const userId = await callerOrReply(req, userCaller, json, "start-bank-consent");
+  if (userId instanceof Response) return userId;
   const supabase = asUser(req.headers.get("Authorization")!);
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError || !userData.user) {
-    return json({ error: "Not signed in" }, 401);
-  }
-  const mfa = await mfaRefusal(supabase);
-  if (mfa) return json(mfa.body, mfa.status);
 
   let body: { bankName?: string; country?: string };
   try {
@@ -68,7 +64,7 @@ Deno.serve(serveWithCors(async (req, json, origin) => {
   const { data: pending, error: pendingError } = await supabase
     .from("pending_bank_consents")
     // The dashboard that started the link: the callback sends the browser back to this origin.
-    .insert({ user_id: userData.user.id, origin })
+    .insert({ user_id: userId, origin })
     .select("id")
     .single();
   if (pendingError || !pending) {

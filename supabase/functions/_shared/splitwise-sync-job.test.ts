@@ -232,7 +232,8 @@ Deno.test("cron: an API error keeps its safe message; out of time leaves the res
 
 Deno.test("cron: the connection list can't be read → one failure, nothing synced", async () => {
   const s = setup();
-  const broken = { from: () => ({ select: () => ({ in: () => ({ order: () => ({ limit: () => Promise.resolve({ data: null, error: { code: "57014" } }) }) }) }) }) };
+  const failed = { limit: () => Promise.resolve({ data: null, error: { code: "57014" } }) };
+  const broken = { from: () => ({ select: () => ({ in: () => ({ order: () => ({ order: () => failed }) }) }) }) };
   assertEquals((await runAllUsers({ ...s.deps, db: broken }, () => true)).failed, 1);
 });
 
@@ -336,4 +337,29 @@ Deno.test("handler: a failed preview keeps the status, except a refused key", as
   const real = setup({ connections: [conn({ last_synced_at: null })], expenses: new SplitwiseApiError("Splitwise answered HTTP 500", 500) });
   await call(handler(real), user({}));
   assertEquals(real.db.tables.splitwise_connections[0].status, "error", "a real sync still records it");
+});
+
+// H230: the cron ordered by last_synced_at, set only on success. A user whose run was killed by
+// the wall clock kept the oldest time and went first every run, so a user who always overran
+// starved everyone after them. Each try is now stamped first, and the order follows the stamp.
+Deno.test("cron: the user tried longest ago goes first, and each try is stamped before it starts", async () => {
+  const s = setup({
+    connections: [
+      { ...conn({ user_id: "killed", last_synced_at: "2026-11-01T00:00:00Z" }), last_attempt_at: "2026-11-17T06:00:00Z" } as Connection,
+      { ...conn({ user_id: "waiting", last_synced_at: "2026-11-10T00:00:00Z" }), last_attempt_at: "2026-11-10T00:00:00Z" } as Connection,
+    ],
+  });
+  const order: string[] = [];
+  const stampedBefore: unknown[] = [];
+  const rpc = s.deps.rpc;
+  s.deps.rpc = (fn, args) => {
+    if (fn === "splitwise_read_key") {
+      order.push(args.p_user as string);
+      stampedBefore.push(s.db.tables.splitwise_connections.find((c) => c.user_id === args.p_user)?.last_attempt_at);
+    }
+    return rpc(fn, args);
+  };
+  await runAllUsers(s.deps, () => true);
+  assertEquals(order, ["waiting", "killed"]);
+  assertEquals(stampedBefore, [new Date(NOW).toISOString(), new Date(NOW).toISOString()]);
 });

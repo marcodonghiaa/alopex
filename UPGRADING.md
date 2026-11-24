@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Splitwise: a sync that never finishes no longer holds up everyone after it
+- **Migration:** `20270121000000_splitwise_last_attempt`. Apply it with `supabase db push --linked` **before** `supabase functions deploy` (sync-splitwise): the new function orders by the new column, and its scheduled run fails until the column exists.
+- What changes: the scheduled Splitwise sync now notes when it last tried each connection and starts with the one tried longest ago. Before, a user whose sync was cut off by the time limit stayed first on every run, so if it always ran out of time, connections after it never synced. Nothing changes for a sync that finishes.
+- **Roll back:** deploy the previous sync-splitwise, then run `supabase/rollbacks/20270121000000_splitwise_last_attempt.down.sql`, then `supabase migration repair --status reverted 20270121000000 --linked`.
+
 ### Sturdier account deletion, origin check and installer
 - **Deploy:** `supabase functions deploy` (delete-account, and every dashboard-facing function for the origin check). No migration of its own. The installer changes reach you with the next `npx create-alopex@latest`.
 - What changes: deleting your account no longer leaves behind the extra session its password check opened when the delete is refused or fails. A failed lookup of the dashboard addresses is logged with its error code only, never the message. The installer now asks for a login password of at least 12 characters and raises Supabase Auth's minimum password length to 12 when it is lower (a higher one you set stays), so a reset or change can't go shorter (your current password keeps working, whatever its length). It unpacks each release in a private temporary folder and installs the backend packages without running install scripts.

@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Category names and bank-link origins have a length cap
+- **Migration:** `20270117000000_user_text_length_caps`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: a category you set on a transaction can be at most 100 characters, as for manual transactions already (checked only when you set or change it; a longer one stored before stays, and the sync and your rules are never refused). An unfinished bank link whose stored origin is longer than 300 characters (only possible by writing to the database directly) is deleted, and new ones are capped at 300.
+- **Roll back:** run `supabase/rollbacks/20270117000000_user_text_length_caps.down.sql`, then `supabase migration repair --status reverted 20270117000000 --linked`.
+
 ### Trades refuse impossible numbers
 - **Migration:** `20270116000000_holding_trades_finite`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: a trade's shares, price and fee must be real numbers; `NaN` and `Infinity` are refused, as holdings already refuse them. Trades you stored before are not checked; one with such a number has to be fixed or deleted before you can edit it again.

@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### One euro rate lookup for views and functions
+- **Migration:** `20270106000000_fx_rate_to_eur`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. It adds `fx_rate_to_eur(currency, date)` (the latest rate on or before the date, 1 for EUR), which views and functions switch to as they are next replaced.
+- **Roll back:** run `supabase/rollbacks/20270106000000_fx_rate_to_eur.down.sql` (after rolling back any later migration that uses it), then `supabase migration repair --status reverted 20270106000000 --linked`.
+
 ### Rules match the same way in the sync and the dashboard
 - **No migration, deploy functions:** `supabase functions deploy`. The sync now ignores accents and apostrophes in rule text, like the dashboard already did: a rule "cafe" now also sorts "CAFÉ ROMA". An apostrophe is no longer a word break, so a whole-word rule "mcdonald" stops matching "McDonald's" in the sync (the dashboard already worked this way); write the rule as "mcdonalds" or use "contains".
 

@@ -10,6 +10,12 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Investment returns no longer read the old price history
+- **Migration:** `20270107000000_holding_performance_no_price_history`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: investment returns use only your own price snapshots. Nothing has filled `price_history` since `backfill-price-history.js` left the sync, so on most installs nothing changes. If you ran that script back then, a range that starts before a holding's first snapshot now shows "since" (from the first snapshot) instead of a price from those old rows.
+- `price_history` and its rows stay, marked deprecated; a later release drops the table.
+- **Roll back:** run `supabase/rollbacks/20270107000000_holding_performance_no_price_history.down.sql`, then `supabase migration repair --status reverted 20270107000000 --linked`.
+
 ### One euro rate lookup for views and functions
 - **Migration:** `20270106000000_fx_rate_to_eur`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: nothing you can see. It adds `fx_rate_to_eur(currency, date)` (the latest rate on or before the date, 1 for EUR), which views and functions switch to as they are next replaced.
@@ -427,7 +433,7 @@ If you use your own PostgREST pre-request hook, read "Two-step sign-in" before s
 
 ### Past prices for price returns (backfill)
 - **No migration of its own; needs `20261107000000_price_history_and_holding_performance`.** Apply that with `supabase db push --linked` first. Until then the new step prints `price_history not found: apply the latest migration` and does nothing; the rest of the sync is unaffected.
-- New `backfill-price-history.js`: fetches up to a year of past daily prices (Yahoo for stocks and funds, CoinGecko for coins) into `price_history`, only for holdings that have little of it. It runs as the last step of the daily sync, so a holding you add gets its history on the next sync. To fill everything now, run `node backfill-price-history.js` once (`--force` refetches all). Safe to re-run.
+- New `backfill-price-history.js` (removed again later; see above): fetches up to a year of past daily prices (Yahoo for stocks and funds, CoinGecko for coins) into `price_history`, only for holdings that have little of it. It runs as the last step of the daily sync, so a holding you add gets its history on the next sync. To fill everything now, run `node backfill-price-history.js` once (`--force` refetches all). Safe to re-run.
 - A symbol Yahoo or CoinGecko will not answer for is counted as failed (`Price history: N filled, M failed, K already complete`) and retried next sync; the dashboard shows "since <date>" for it. CoinGecko's free tier is slow and rate limited (about 8 seconds between coins). An optional free demo key in `COINGECKO_DEMO_API_KEY` (see `.env.example`) helps.
 - Nothing is written to `portfolio_snapshots` or `crypto_snapshots`, so net worth history is unchanged.
 - **Roll back:** revert the code. The table stays until you run the migration's rollback.

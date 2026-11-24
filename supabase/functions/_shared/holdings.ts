@@ -92,6 +92,13 @@ export function parseYahooSearch(data: Json): Array<Candidate> {
 }
 
 // Rejects a missing or zero price so a holding is never stored without a value. London quotes come in pence (GBp).
+// Yahoo's daily chart (latest quote) and CoinGecko's USD price for comma-separated ids, used by
+// add-holding and sync-prices.
+export const yahooChartUrl = (symbol: string) =>
+  `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+export const coingeckoPriceUrl = (ids: string) =>
+  `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
+
 export function parseYahooChart(data: Json, symbol: string): Quote {
   const result = ((data.chart as Json | undefined)?.result as Array<Json> | undefined)?.[0];
   if (!result) throw new HoldingError(`No quote for ${symbol}`);

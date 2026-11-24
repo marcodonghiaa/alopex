@@ -16,6 +16,7 @@ import { errorTag } from "../_shared/log-safe.ts";
 import { fetchRateToEur } from "../_shared/fx-rates.ts";
 import {
   AlreadyHeld,
+  coingeckoPriceUrl,
   HoldingError,
   type HoldingRequest,
   parseCoinGeckoPrice,
@@ -25,6 +26,7 @@ import {
   parseYahooSearch,
   refuseHeldElsewhere,
   upstreamMessage,
+  yahooChartUrl,
 } from "../_shared/holdings.ts";
 
 type AddRequest = Extract<HoldingRequest, { action: "add" }>;
@@ -93,7 +95,7 @@ async function addStock(userClient: any, userId: string, req: AddRequest): Promi
   // Already held under another key (by ticker, now by ISIN, or the reverse): one holding, not two.
   await refuseHeldElsewhere(userClient, userId, req.id, key);
   const quote = parseYahooChart(
-    await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(req.id)}?interval=1d&range=1d`),
+    await getJson(yahooChartUrl(req.id)),
     req.id,
   );
   const rate = await rateToEur(quote.currency);
@@ -125,7 +127,7 @@ async function addStock(userClient: any, userId: string, req: AddRequest): Promi
 // deno-lint-ignore no-explicit-any
 async function addCoin(userClient: any, userId: string, req: AddRequest): Promise<boolean> {
   const priceUsd = parseCoinGeckoPrice(
-    await getJson(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(req.id)}&vs_currencies=usd`),
+    await getJson(coingeckoPriceUrl(req.id)),
     req.id,
   );
   const rate = await rateToEur("USD");

@@ -1,7 +1,7 @@
 // Exchange rates, then stock/ETF and coin prices, run by sync-prices.
 // No bank calls: Frankfurter (rates), Yahoo (stock/ETF prices) and CoinGecko (coin prices).
 import { fxRows } from "./fx-rates.ts";
-import { parseYahooChart } from "./holdings.ts";
+import { coingeckoPriceUrl, parseYahooChart, yahooChartUrl } from "./holdings.ts";
 import { errorTag } from "./log-safe.ts";
 import { readPages } from "./batch-update.ts";
 
@@ -156,7 +156,7 @@ export async function syncPortfolio(db: Db, get: GetJson, today: string, timeLef
     holdings,
     async (symbol) =>
       parseYahooChart(
-        await get(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`, {
+        await get(yahooChartUrl(symbol), {
           "User-Agent": "Mozilla/5.0",
         }),
         symbol,
@@ -223,7 +223,7 @@ export async function syncCrypto(db: Db, get: GetJson, today: string): Promise<n
   const prices: Record<string, { usd?: number }> = {};
   for (let i = 0; i < ids.length; i += 100) {
     const batch = ids.slice(i, i + 100).join(",");
-    Object.assign(prices, await get(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(batch)}&vs_currencies=usd`, {
+    Object.assign(prices, await get(coingeckoPriceUrl(batch), {
       Accept: "application/json",
     }));
   }

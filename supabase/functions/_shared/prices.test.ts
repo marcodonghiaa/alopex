@@ -167,3 +167,16 @@ Deno.test("crypto: every holding past row 1000 is priced, and CoinGecko is asked
   assertEquals(urls.every((u) => decodeURIComponent(new URL(u).searchParams.get("ids")!).split(",").length <= 100), true);
   assertEquals(urls.length, 3);
 });
+
+// H186: every holding asked the database for its currency's rate, one round trip per holding.
+Deno.test("asks for each currency's rate once per run, and the values stay the same", async () => {
+  const asked: string[] = [];
+  const { rows } = await priceHoldings(
+    [holding({ isin: "A", yahoo_symbol: "A" }), holding({ isin: "B", yahoo_symbol: "B" }), holding({ isin: "C", yahoo_symbol: "C" })],
+    async (symbol) => ({ price: 10, currency: symbol === "C" ? "GBP" : "USD", assetType: "ETF" }),
+    async (currency) => (asked.push(currency), currency === "USD" ? 0.9 : 1.2),
+    "2026-11-06",
+  );
+  assertEquals(asked, ["USD", "GBP"]);
+  assertEquals(rows.map((r) => [r.isin, r.value_eur]), [["A", 18], ["B", 18], ["C", 24]]);
+});

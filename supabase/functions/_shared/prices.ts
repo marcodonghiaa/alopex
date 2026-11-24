@@ -75,7 +75,7 @@ export interface Holding {
 }
 
 // One snapshot per holding, each under its own user. A symbol held by several users is fetched
-// once. A holding that can't be priced is skipped and logged by position only.
+// once, and each currency's rate is read once. A holding that can't be priced is skipped and logged by position only.
 export async function priceHoldings(
   holdings: Holding[],
   getQuote: (symbol: string) => Promise<{ price: number; currency: string; assetType: string }>,
@@ -88,6 +88,12 @@ export async function priceHoldings(
     if (!quotes.has(symbol)) quotes.set(symbol, getQuote(symbol));
     return quotes.get(symbol)!;
   };
+  // One rate lookup per currency, not one database round trip per holding (H186).
+  const rates = new Map<string, Promise<number>>();
+  const rateOf = (currency: string) => {
+    if (!rates.has(currency)) rates.set(currency, getRate(currency));
+    return rates.get(currency)!;
+  };
   const rows = [];
   const typeUpdates = [];
   for (const [i, holding] of holdings.entries()) {
@@ -98,7 +104,7 @@ export async function priceHoldings(
     try {
       const { price, currency, assetType } = await quoteOf(holding.yahoo_symbol);
       const valueNative = price * holding.shares;
-      const valueEur = valueNative * (await getRate(currency));
+      const valueEur = valueNative * (await rateOf(currency));
       // A NaN, infinite or huge quantity would fail the one save for every user.
       if (!Number.isFinite(valueEur)) {
         console.error(`Holding ${i + 1}/${holdings.length} has an unusable quantity, skipped.`);

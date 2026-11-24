@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Some Vercel dashboard addresses were refused
+- **Migration:** `20270109000000_dashboard_origin_hosts`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: a dashboard address like `https://alopex-christina-projects.vercel.app` (any 9-letter part, common with Vercel's `<name>s-projects` addresses) was mistaken for a one-off deployment address and never allowed, so bank linking failed with a CORS error. It is now accepted on your next sign-in. One-off deployment addresses (a 9-character code mixing letters and digits) and branch addresses (`-git-`) are still refused.
+- **Roll back:** run `supabase/rollbacks/20270109000000_dashboard_origin_hosts.down.sql`, then `supabase migration repair --status reverted 20270109000000 --linked`.
+
 ### The export leaves out an always-empty column
 - **No migration, update the dashboard.** `net_worth.csv` in Settings -> Your data no longer has the `eur_equivalent` column: nothing ever wrote `net_worth_snapshots.eur_equivalent`, so it was always empty (euro values are in `v_net_worth_eur.amount_eur`). The column stays in the database, deprecated, and is still in `data.json`; a later release drops it.
 

@@ -54,7 +54,7 @@ function selectAll(db: Db, table: string, columns: string, order: string[]) {
   });
 }
 
-async function latestRate(db: Db, currency: string): Promise<number> {
+export async function latestRate(db: Db, currency: string): Promise<number> {
   if (currency === "EUR") return 1;
   const { data, error } = await db
     .from("fx_rates").select("rate_to_eur").eq("currency", currency).order("date", { ascending: false }).limit(1);

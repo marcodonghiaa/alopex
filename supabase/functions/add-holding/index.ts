@@ -14,6 +14,7 @@ import { asUser, serviceClient, userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { fetchRateToEur } from "../_shared/fx-rates.ts";
+import { latestRate } from "../_shared/prices.ts";
 import {
   AlreadyHeld,
   coingeckoPriceUrl,
@@ -56,15 +57,9 @@ const admin = serviceClient();
 // Latest stored rate, or today's from Frankfurter when fx-sync hasn't stored this currency yet.
 // Throws when there is none: a holding with no value in EUR would show as 0 and never heal.
 async function rateToEur(currency: string): Promise<number> {
-  if (currency === "EUR") return 1;
-  const { data } = await admin
-    .from("fx_rates")
-    .select("rate_to_eur")
-    .eq("currency", currency)
-    .order("date", { ascending: false })
-    .limit(1);
-  const stored = data?.[0]?.rate_to_eur;
-  if (stored != null) return stored;
+  try {
+    return await latestRate(admin, currency);
+  } catch { /* none stored yet, or the read failed: ask Frankfurter */ }
 
   const found = await fetchRateToEur(currency).catch((err) => {
     console.error(`fx lookup failed: ${errorTag(err)}`);

@@ -1,5 +1,5 @@
-import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { cryptoRows, type GetJson, type Holding, nextAssetType, priceHoldings, pricingOrder, syncCrypto, syncFx, syncPortfolio } from "./prices.ts";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { cryptoRows, type GetJson, type Holding, latestRate, nextAssetType, priceHoldings, pricingOrder, syncCrypto, syncFx, syncPortfolio } from "./prices.ts";
 
 const holding = (over: Partial<Holding> = {}): Holding => ({ user_id: "u1", isin: "IE00", yahoo_symbol: "VWCE.DE", shares: 2, asset_type: null, ...over });
 const quiet = async <T>(run: () => Promise<T>) => {
@@ -224,4 +224,18 @@ Deno.test("portfolio: a run cut short leaves its tail first for the next run; wi
   asked.length = 0;
   await syncPortfolio(db, get, "2026-11-06");
   assertEquals(snapshots.map((r) => [r.isin, r.value_eur]), [["A", 10], ["B", 10], ["C", 10]]);
+});
+
+// add-holding falls back to Frankfurter when this throws, so it must throw on no row and on a failed read.
+Deno.test("latestRate: 1 for EUR, the newest stored rate, throws when there is none or the read fails", async () => {
+  const db = (data: unknown, error: unknown = null) => ({
+    from: () => {
+      const q = { select: () => q, eq: () => q, order: () => q, limit: () => Promise.resolve({ data, error }) };
+      return q;
+    },
+  });
+  assertEquals(await latestRate(db(null), "EUR"), 1);
+  assertEquals(await latestRate(db([{ rate_to_eur: 0.9 }]), "USD"), 0.9);
+  await assertRejects(() => latestRate(db([]), "USD"));
+  await assertRejects(() => latestRate(db(null, new Error("down")), "USD"));
 });

@@ -22,7 +22,7 @@ const LEAKS = [
 const ERROR_TAG_ONLY_PATHS = [
   'supabase/functions/_shared/bank-sync.ts',
   'supabase/functions/_shared/transfer-pairs.ts',
-  'supabase/functions/sync-bank/index.ts',
+  'supabase/functions/sync-bank/handler.ts',
   'supabase/functions/bank-consent-callback/index.ts',
   'supabase/functions/complete-bank-consent/index.ts',
   'supabase/functions/delete-account/handler.ts',

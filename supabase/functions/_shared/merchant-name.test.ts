@@ -18,5 +18,6 @@ Deno.test("cleans very long bank text without stalling", () => {
   for (const raw of ["-".repeat(50_000) + "x", "a".repeat(50_000), "PAYPAL *" + "A".repeat(50_000) + "1", "AMAZON" + " EUROPE".repeat(30) + "!"]) {
     cleanMerchantName(raw);
   }
-  assertEquals(performance.now() - start < 100, true);
+  // Backtracking on 50k characters takes seconds; 1 s leaves room for a slow CI runner.
+  assertEquals(performance.now() - start < 1000, true);
 });

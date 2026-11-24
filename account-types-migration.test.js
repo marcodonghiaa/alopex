@@ -5,7 +5,6 @@ const fs = require('node:fs');
 const strip = (p) => fs.readFileSync(p, 'utf8').replace(/--.*$/gm, '');
 const up = strip('supabase/migrations/20261130000000_account_types.sql');
 const down = strip('supabase/rollbacks/20261130000000_account_types.down.sql');
-const fn = (name) => up.slice(up.indexOf(`create function public.${name}`)).split('$$;')[0];
 const view = up.slice(up.indexOf('create or replace view public.v_net_worth_daily'), up.indexOf('v_bank_accounts_latest'));
 
 test('the type check replaces any existing one', () => {
@@ -36,29 +35,7 @@ test('the accounts list appends account_type and manual, and shows manual accoun
   assert.match(up, /where not a\.manual or e\.snapshot_date is not null/);
 });
 
-for (const [name, sig] of [['set_account_type', 'uuid, text'], ['set_manual_balance', 'uuid, numeric'], ['add_manual_debt', 'text, numeric, text'], ['delete_manual_debt', 'uuid']]) {
-  test(`${name} acts for the signed-in user only`, () => {
-    const body = fn(name);
-    assert.match(body, /security definer set search_path = (public|'')/);
-    assert.match(body, /v_uid uuid := auth\.uid\(\)/);
-    assert.match(body, /if v_uid is null then\s+raise exception 'not signed in'/);
-    const re = (s) => s.replace(/[()]/g, '\\$&');
-    assert.match(up, new RegExp(re(`revoke execute on function public.${name}(${sig}) from public, anon;`)));
-    assert.match(up, new RegExp(re(`grant execute on function public.${name}(${sig}) to authenticated;`)));
-  });
-}
-
-test('set_account_type and set_manual_balance check the owner', () => {
-  assert.match(fn('set_account_type'), /where uid = p_account and user_id = v_uid;\s+if not found then\s+raise exception 'account not found'/);
-  assert.match(fn('set_manual_balance'), /where uid = p_account and user_id = v_uid;\s+if not found then\s+raise exception 'account not found'/);
-  assert.match(fn('set_manual_balance'), /if not v_account\.manual then\s+raise exception 'not a manual account'/);
-});
-
-test('add_manual_debt creates a manual loan with a balance for the caller', () => {
-  const body = fn('add_manual_debt');
-  assert.match(body, /values \(v_account, v_uid, v_currency, v_name, true, 'loan'\)/);
-  assert.match(body, /values \(v_account, v_uid, v_currency, p_amount, current_date\)/);
-});
+// The RPCs' behaviour (owner only, debts only, bounds) is checked on a real database in user-rpcs-db.test.js.
 
 test('rollback drops the RPCs, typed-in balances and the column, and restores the views', () => {
   for (const name of ['delete_manual_debt', 'add_manual_debt', 'set_manual_balance', 'set_account_type']) {
@@ -79,29 +56,4 @@ test('add_manual_transaction never picks a debt account; rollback restores the o
   const old = down.slice(down.indexOf('create or replace function public.add_manual_transaction')).split('$$;')[0];
   assert.match(old, /a\.currency = v_currency;/);
   assert.ok(down.indexOf('add_manual_transaction') < down.indexOf('drop column if exists account_type'));
-});
-
-test('delete_manual_debt removes only the caller\'s manual debt and its balances', () => {
-  const body = fn('delete_manual_debt');
-  assert.match(body, /set search_path = ''/);
-  assert.match(body, /where uid = p_account and user_id = v_uid;\s+if not found then\s+raise exception 'account not found'/);
-  assert.match(body, /if not v_account\.manual or coalesce\(v_account\.account_type, ''\) not in \('credit_card', 'loan'\) then\s+raise exception 'not a manual debt'/);
-  assert.match(body, /delete from public\.net_worth_snapshots where account_uid = v_account\.uid and user_id = v_uid;\s+delete from public\.accounts where uid = v_account\.uid and user_id = v_uid;/);
-  assert.doesNotMatch(body, /delete from public\.transactions/);
-});
-
-test('a manual account can only be typed as a debt', () => {
-  assert.match(fn('set_account_type'), /if v_manual and coalesce\(p_type, ''\) not in \('credit_card', 'loan'\) then\s+raise exception 'manual accounts can only be debts'/);
-});
-
-test('typed-in amounts are bounded', () => {
-  for (const name of ['add_manual_debt', 'set_manual_balance']) {
-    assert.match(fn(name), /if p_amount = 'NaN'::numeric or abs\(p_amount\) > 1e12 then\s+raise exception 'amount is out of range'/, name);
-  }
-});
-
-test('delete_manual_debt refuses an account with transactions', () => {
-  const body = fn('delete_manual_debt');
-  assert.match(body, /if exists \(select 1 from public\.transactions where account_uid = v_account\.uid\) then\s+raise exception 'account has transactions'/);
-  assert.ok(body.indexOf('account has transactions') < body.indexOf('delete from public.net_worth_snapshots'));
 });

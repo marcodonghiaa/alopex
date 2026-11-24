@@ -10,6 +10,10 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Changing the password asks the server to check the current one
+- **One setting to turn on (no migration, no function change):** in your Supabase project, **Authentication -> Sign In / Providers -> Email**, turn on *Require current password when changing password*, then update the dashboard. The dashboard now sends the current password with every change; with the setting on, Supabase refuses a change without it, so a copied login token alone can't set a new password. A password-reset link still works without it. Leave *Secure password change* (reauthentication) as it is: the dashboard has no step for its emailed code.
+- **Roll back:** turn the setting off.
+
 ### Undo of a removed subscription brings it back as it was
 - **Migration:** `20270105000000_stream_undo_keeps_status`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
 - What changes: Undo or Restore of a subscription you had confirmed brings it back to your subscriptions, not to "To review" (or nowhere). Subscriptions removed before this update are restored as before.

@@ -50,13 +50,14 @@ async function getJson(url: string): Promise<Record<string, unknown>> {
   return await res.json();
 }
 
-const admin = () => serviceClient();
+// One service client per instance, like refresh-recurring.
+const admin = serviceClient();
 
 // Latest stored rate, or today's from Frankfurter when fx-sync hasn't stored this currency yet.
 // Throws when there is none: a holding with no value in EUR would show as 0 and never heal.
 async function rateToEur(currency: string): Promise<number> {
   if (currency === "EUR") return 1;
-  const { data } = await admin()
+  const { data } = await admin
     .from("fx_rates")
     .select("rate_to_eur")
     .eq("currency", currency)
@@ -70,7 +71,7 @@ async function rateToEur(currency: string): Promise<number> {
     return null;
   });
   if (!found) throw new HoldingError(`No exchange rate for ${currency}, can't value this holding`);
-  const { error } = await admin().from("fx_rates").upsert(found.rows, { onConflict: "date,currency" });
+  const { error } = await admin.from("fx_rates").upsert(found.rows, { onConflict: "date,currency" });
   if (error) console.error(`fx seed failed: ${errorTag(error)}`);
   return found.rate;
 }
@@ -111,7 +112,7 @@ async function addStock(userClient: any, userId: string, req: AddRequest): Promi
   if (error) throw error;
 
   const valueNative = quote.price * req.quantity;
-  const { error: snapError } = await admin().from("portfolio_snapshots").upsert({
+  const { error: snapError } = await admin.from("portfolio_snapshots").upsert({
     user_id: userId,
     isin: key,
     snapshot_date: new Date().toISOString().slice(0, 10),
@@ -143,7 +144,7 @@ async function addCoin(userClient: any, userId: string, req: AddRequest): Promis
   if (error) throw error;
 
   const valueUsd = priceUsd * req.quantity;
-  const { error: snapError } = await admin().from("crypto_snapshots").upsert({
+  const { error: snapError } = await admin.from("crypto_snapshots").upsert({
     user_id: userId,
     asset_symbol: req.symbol.toUpperCase(),
     source: "Manual",

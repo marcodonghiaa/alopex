@@ -266,3 +266,15 @@ Deno.test("description, group and person names are cut by characters, emoji on t
   }], ME, labels);
   assertEquals(rows.find((r) => !r.is_me)?.person, `${"p".repeat(99)}😀`);
 });
+
+// H231: two groups with the same name were labelled in API order, so when Splitwise listed them
+// the other way round, new shares of one landed under the other's label.
+Deno.test("groupLabels: same-named groups get the same labels whatever order Splitwise lists them in", () => {
+  const a = { id: 40, name: "Trip", members: [] };
+  const b = { id: 7, name: "Trip", members: [] };
+  const c = { id: 12, name: "Flat", members: [] };
+  const one = groupLabels([a, b, c]);
+  const other = groupLabels([c, b, a]);
+  assertEquals([...one].sort(), [...other].sort());
+  assertEquals([one.get(7), one.get(40), one.get(12)], ["Trip", "Trip (40)", "Flat"]);
+});

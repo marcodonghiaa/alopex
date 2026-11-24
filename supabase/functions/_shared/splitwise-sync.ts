@@ -76,11 +76,13 @@ const cut = (s: string, n: number) => [...s.replace(UNSTORABLE, "")].slice(0, n)
 const fullName = (u: SwUser | undefined, id: number) =>
   cut([u?.first_name, u?.last_name].filter((p) => p && p.trim()).map((p) => p!.trim()).join(" ") || `Splitwise user ${id}`, MAX_GROUP);
 
-/** Group id → the name shown in Alopex: Splitwise's own, made unique and short enough. */
+/** Group id → the name shown in Alopex: Splitwise's own, made unique and short enough. Among
+ *  same-named groups the oldest (lowest id) keeps the plain name, whatever order the API lists
+ *  them in (H231). */
 export function groupLabels(groups: SwGroup[]): Map<number, string> {
   const out = new Map<number, string>();
   const used = new Set<string>();
-  for (const g of groups) {
+  for (const g of [...groups].sort((a, b) => a.id - b.id)) {
     let name = g.id === 0 ? NON_GROUP : cut((g.name ?? "").trim(), MAX_GROUP) || `Splitwise group ${g.id}`;
     if (used.has(name)) name = `${cut(name, MAX_GROUP - ` (${g.id})`.length)} (${g.id})`;
     used.add(name);

@@ -39,7 +39,7 @@ and commit the updated lock.
   `verify_jwt: true`.
 - **refresh-recurring** — the Subscriptions page calls it when it opens: runs the
   detect-recurring detection for the caller only, so a renamed transaction, one marked One-time,
-  recategorized or deleted shows there at once instead of after the next 6-hour run. The JWT
+  recategorized or deleted shows there at once instead of after the next scheduled run. The JWT
   identifies the user; reads and the save use the service key scoped to that user.
   `verify_jwt: true`.
 - **parse-statement** — reads the transactions out of a bank statement PDF with Gemini
@@ -109,11 +109,9 @@ Functions → Secrets). Never committed anywhere:
 
 - `ENABLE_BANKING_APP_ID`
 - `ENABLE_BANKING_PRIVATE_KEY` (the full PEM)
-- `GEMINI_API_KEY` (for parse-statement). Optional
-  `GEMINI_MODEL`.
 - `GEMINI_API_KEY`, optional `GEMINI_MODEL` (default `gemini-3.5-flash-lite`) —
-  used by `post-sync` to categorize; without them only your rules and past
-  choices categorize.
+  used by `post-sync` to categorize (without them only your rules and past
+  choices categorize) and by `parse-statement`.
 - `COINBASE_API_KEY_NAME`, `COINBASE_API_PRIVATE_KEY`, `COINBASE_USER_ID` —
   optional, for `sync-prices` to sync one user's Coinbase balances (the user id
   is whose holdings they are).

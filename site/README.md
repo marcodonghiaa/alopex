@@ -1,6 +1,6 @@
 # site
 
-Static landing page for Alopex. Plain HTML, no build step, no JavaScript.
+Static landing page for Alopex. Plain HTML, no build step; one small script (`copy.js`) for the copy buttons.
 
 - Preview: `npx serve site` (or open `index.html`).
 - Deploy: import the repo on Vercel with root directory `./`; the root `vercel.json` serves `site/` as output with no build.

@@ -1,5 +1,6 @@
 // Reading a bank statement PDF with Gemini, for parse-statement. Free of Deno APIs so the test
 // runs anywhere. The PDF is sent to Gemini and never stored.
+import { geminiText } from "./gemini.ts";
 
 // About 6 MB of PDF once decoded: a few months of statement. Bigger is likely the wrong file.
 export const MAX_PDF_BASE64 = 8_000_000;
@@ -77,8 +78,7 @@ export function geminiRefusal(response: unknown): string | null {
 
 /** The rows in Gemini's answer that are well formed; anything else is dropped. */
 export function parseGeminiRows(response: unknown): StatementRow[] {
-  const text = (response as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })
-    ?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const text = geminiText(response);
   if (!text) return [];
   let raw: unknown;
   try {

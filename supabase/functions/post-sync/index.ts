@@ -18,7 +18,7 @@ import { classifyFlows, markRefunds } from "../_shared/flow.ts";
 import { pairTransfers } from "../_shared/transfer-pairs.ts";
 import { categorize, type Classify } from "../_shared/categorize.ts";
 import { buildCategorizePrompt } from "../_shared/categorize-prompt.ts";
-import { type Ask, classifyWithGemini } from "../_shared/gemini.ts";
+import { type Ask, classifyWithGemini, DEFAULT_GEMINI_MODEL } from "../_shared/gemini.ts";
 import { classifyTypes } from "../_shared/classify-type.ts";
 import { categorizeSplitwise } from "../_shared/splitwise.ts";
 import { nextCatchUp } from "../_shared/catch-up.ts";
@@ -31,7 +31,7 @@ const supabase = serviceClient();
 
 // Without GEMINI_API_KEY only your rules and past choices categorize; the rest waits for a key.
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
+const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
 const ask: Ask | null = GEMINI_API_KEY
   ? (prompt, resultKey, resultEnum) =>
     classifyWithGemini({ prompt, resultKey, resultEnum, apiKey: GEMINI_API_KEY, model: GEMINI_MODEL })

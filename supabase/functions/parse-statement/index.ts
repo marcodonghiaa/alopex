@@ -14,6 +14,7 @@ import { asUser } from "../_shared/clients.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { geminiRequest, geminiRefusal, parseGeminiRows, parseStatementRequest } from "../_shared/statement-pdf.ts";
 import { mfaRefusal } from "../_shared/mfa.ts";
+import { DEFAULT_GEMINI_MODEL, geminiFetch } from "../_shared/gemini.ts";
 
 const TIMEOUT_MS = 90_000;
 
@@ -40,15 +41,10 @@ Deno.serve(serveWithCors(async (req, json) => {
   const parsed = parseStatementRequest(body);
   if (typeof parsed === "string") return json({ error: parsed }, 400);
 
-  const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
+  const model = Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
   let res: Response;
   try {
-    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify(geminiRequest(parsed.pdf)),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    res = await geminiFetch(geminiRequest(parsed.pdf), apiKey, model, TIMEOUT_MS);
   } catch (err) {
     console.error(`Gemini did not answer: ${errorTag(err)}`);
     return json({ error: "The AI didn't answer in time, try a shorter statement" }, 504);

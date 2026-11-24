@@ -11,7 +11,7 @@
 import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { matchRefunds, type RefundRow, WINDOW_DAYS } from "./refunds.ts";
-import { matchRule, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
+import { fetchRules, matchRule, type Rule } from "./rules.ts";
 
 export const BATCH_SIZE = 200;
 const TRANSFER_CODES = new Set(["EXCHANGE", "TOPUP"]);
@@ -43,17 +43,6 @@ export function resolveFlow(row: FlowRow, rules: FlowRule[] = []): { flow_type: 
   if (row.own_counterparty === true) return { flow_type: "transfer", flow_source: "own_account" };
   if (TRANSFER_CODES.has(row.bank_transaction_code ?? "")) return { flow_type: "transfer", flow_source: "bank" };
   return { flow_type: direction(row), flow_source: "default" };
-}
-
-async function fetchFlowRules(db: Db): Promise<FlowRule[]> {
-  const { data, error } = await db
-    .from("category_rules")
-    .select(`${RULE_MATCH_COLUMNS}, set_flow_type`)
-    .not("set_flow_type", "is", null)
-    .order("priority", { ascending: true })
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return data;
 }
 
 // Classifies batches until none is left or the time is up. The same batch coming back means its
@@ -123,7 +112,7 @@ async function reresolveDefaults(db: Db, rules: FlowRule[], timeLeft: () => bool
 }
 
 export async function classifyFlows(db: Db, timeLeft: () => boolean = () => true) {
-  const rules = await fetchFlowRules(db);
+  const rules = await fetchRules<FlowRule>(db, "set_flow_type");
   const result = await classifyAll<FlowRow>(
     async () => {
       const { data, error } = await db

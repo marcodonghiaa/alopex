@@ -6,7 +6,7 @@ import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
 import { CATEGORIES, categoriesFor } from "./categories.ts";
 import { applyLearned, fetchLearned, learnedUpdate, planRelearn } from "./learned-categories.ts";
 import { errorTag } from "./log-safe.ts";
-import { applyRules, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
+import { applyRules, fetchRules, type Rule } from "./rules.ts";
 import { aiBatches, aiRefs, walkNullRows } from "./user-batch.ts";
 import type { CategorizeRow } from "./categorize-prompt.ts";
 
@@ -17,17 +17,6 @@ const RELEARN_DAYS = 120;
 type Row = Record<string, any>;
 /** Sends one user's rows to the AI and returns [{entry_reference, category}]. */
 export type Classify = (rows: CategorizeRow[], categories: string[]) => Promise<Array<Record<string, string>>>;
-
-async function fetchRules(db: Db): Promise<Rule[]> {
-  const { data, error } = await db
-    .from("category_rules")
-    .select(`${RULE_MATCH_COLUMNS}, set_category, set_transaction_type`)
-    .not("set_category", "is", null)
-    .order("priority", { ascending: true })
-    .order("created_at", { ascending: true }); // every rule has priority 100: oldest first, as listed
-  if (error) throw error;
-  return data;
-}
 
 // The user's own list (see user_categories); the built-in list if it can't be read.
 async function fetchUserCategories(db: Db, userId: string): Promise<string[]> {
@@ -154,7 +143,7 @@ function applyRulesOnly(db: Db, rules: Rule[], timeLeft: () => boolean): Promise
 
 /** classify: null when there is no AI key. Returns how many rows each path looked at. */
 export async function categorize(db: Db, classify: Classify | null, timeLeft: () => boolean = () => true) {
-  const rules = await fetchRules(db);
+  const rules = await fetchRules(db, "set_category");
   if (!classify) return { categorized: 0, relearned: 0, byRules: await applyRulesOnly(db, rules, timeLeft), aiFailed: false };
   try {
     const categorized = await categorizeWithAi(db, rules, classify, timeLeft);

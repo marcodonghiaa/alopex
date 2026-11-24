@@ -125,3 +125,15 @@ Deno.test("an AI that answers nothing stops once the same batch comes back: that
     console.warn = warn;
   }
 });
+
+Deno.test("only rules that set a category categorize; the lowest priority, then the oldest, wins", async () => {
+  const rule = (set_category: string | null, priority: number, created_at: string) =>
+    ({ user_id: "u1", match_field: "creditor_name", match_text: "shop", match_mode: "contains", set_category, set_transaction_type: null, priority, created_at });
+  const db = memoryDb({
+    transactions: [tx("s", "SHOP")],
+    category_rules: [rule(null, 1, "2026-01-01"), rule("Groceries", 100, "2026-03-01"), rule("Others", 100, "2026-02-01"), rule("Housing", 200, "2026-01-01")],
+    user_categories: [],
+  });
+  await categorize(db, null);
+  assertEquals(byRef(db, "s").category, "Others");
+});

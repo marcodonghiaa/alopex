@@ -4,7 +4,7 @@
 import { applyGroupedUpdates, type Db } from "./batch-update.ts";
 import { type Ask, UNTRUSTED_TEXT_NOTE } from "./gemini.ts";
 import { errorTag } from "./log-safe.ts";
-import { applyRules, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
+import { applyRules, fetchRules, type Rule } from "./rules.ts";
 import { aiBatches, aiRefs, walkNullRows } from "./user-batch.ts";
 
 const BATCH_SIZE = 40;
@@ -19,18 +19,6 @@ export function isTransferCode(code?: string | null): boolean {
   if (!code) return false;
   const c = code.toLowerCase();
   return c === "transfer" || c.includes("bonifico");
-}
-
-// Rules that set only a type ("spotify -> Subscription") are applied here, before the AI.
-async function fetchTypeRules(db: Db): Promise<Rule[]> {
-  const { data, error } = await db
-    .from("category_rules")
-    .select(`${RULE_MATCH_COLUMNS}, set_transaction_type`)
-    .not("set_transaction_type", "is", null)
-    .order("priority", { ascending: true })
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return data;
 }
 
 const setType = (db: Db, items: Array<{ row: Row; type: string }>) =>
@@ -118,7 +106,7 @@ function applyDeterministicOnly(db: Db, rules: Rule[], timeLeft: () => boolean):
 
 /** ask: null when there is no AI key. */
 export async function classifyTypes(db: Db, ask: Ask | null, timeLeft: () => boolean = () => true) {
-  const rules = await fetchTypeRules(db);
+  const rules = await fetchRules(db, "set_transaction_type");
   if (!ask) return { typed: 0, typedByRules: await applyDeterministicOnly(db, rules, timeLeft), typeAiFailed: false };
   try {
     return { typed: await classifyWithAi(db, rules, ask, timeLeft), typedByRules: 0, typeAiFailed: false };

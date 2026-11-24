@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Undo of a removed subscription brings it back as it was
+- **Migration:** `20270105000000_stream_undo_keeps_status`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
+- What changes: Undo or Restore of a subscription you had confirmed brings it back to your subscriptions, not to "To review" (or nowhere). Subscriptions removed before this update are restored as before.
+- **Roll back:** run `supabase/rollbacks/20270105000000_stream_undo_keeps_status.down.sql`, then `supabase migration repair --status reverted 20270105000000 --linked`.
+
 ### "Make a rule" uses the bank's name
 - **Migration:** `20270104000000_transactions_bank_name`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
 - What changes: on a row you renamed, "Make a rule" now fills in the name the bank sends (for example "AMZN Mktp DE*123", not "Amazon"), so the rule matches that row and the next ones.

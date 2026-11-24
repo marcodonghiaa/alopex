@@ -25,7 +25,7 @@ const ERROR_TAG_ONLY_PATHS = [
   'supabase/functions/sync-bank/index.ts',
   'supabase/functions/bank-consent-callback/index.ts',
   'supabase/functions/complete-bank-consent/index.ts',
-  'supabase/functions/delete-account/index.ts',
+  'supabase/functions/delete-account/handler.ts',
   'supabase/functions/_shared/link-accounts.ts',
   'supabase/functions/_shared/first-sync.ts',
   'supabase/functions/_shared/eb-sessions.ts',

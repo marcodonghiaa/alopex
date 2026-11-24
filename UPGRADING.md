@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### The unused deposits view is removed
+- **Migration:** `20270108000000_drop_v_cd_holdings`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
+- What changes: nothing you can see. Deposits (CDs) left the app in v0.2; the `v_cd_holdings` view nothing read is dropped (a view holds no data). The `cd_holdings` table and your rows stay, marked deprecated, and are still in Settings -> Your data. A later release drops the table, so download your data if you still want those rows.
+- **Roll back:** run `supabase/rollbacks/20270108000000_drop_v_cd_holdings.down.sql`, then `supabase migration repair --status reverted 20270108000000 --linked`.
+
 ### Investment returns no longer read the old price history
 - **Migration:** `20270107000000_holding_performance_no_price_history`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: investment returns use only your own price snapshots. Nothing has filled `price_history` since `backfill-price-history.js` left the sync, so on most installs nothing changes. If you ran that script back then, a range that starts before a holding's first snapshot now shows "since" (from the first snapshot) instead of a price from those old rows.

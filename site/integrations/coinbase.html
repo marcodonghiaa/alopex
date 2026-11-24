@@ -28,7 +28,7 @@
   {
    "@type": "TechArticle",
    "headline": "Track your Coinbase balances in your net worth",
-   "description": "Alopex reads your Coinbase balances with a read-only API key and adds them to your net worth, next to your bank accounts and portfolio. Balances update with the price sync every 6 hours, and every coin is priced in your currency. The key can only read: Alopex cannot trade, send or withdraw.",
+   "description": "Alopex reads your Coinbase balances with a read-only API key and adds them to your net worth, next to your bank accounts and portfolio. Balances update with the price sync four times a day, and every coin is priced in your currency. The key can only read: Alopex cannot trade, send or withdraw.",
    "dateModified": "2026-11-10",
    "author": {
     "@type": "Person",
@@ -460,11 +460,11 @@ ol.steps li::before{margin:0;grid-row:span 2}
 <p class="crumbs"><a href="/">Alopex</a> / <a href="/integrations">Integrations</a> / Coinbase</p>
 <span class="lg"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#0052FF"/><text x="12" y="16.2" text-anchor="middle" font-family="Geist,system-ui,sans-serif" font-size="13" font-weight="600" fill="#fff">C</text></svg></span>
 <h1>Track your Coinbase balances in your net worth</h1>
-<p class="answer">Alopex reads your Coinbase balances with a read-only API key and adds them to your net worth, next to your bank accounts and portfolio. Balances update with the price sync every 6 hours, and every coin is priced in your currency. The key can only read: Alopex cannot trade, send or withdraw.</p>
+<p class="answer">Alopex reads your Coinbase balances with a read-only API key and adds them to your net worth, next to your bank accounts and portfolio. Balances update with the price sync four times a day, and every coin is priced in your currency. The key can only read: Alopex cannot trade, send or withdraw.</p>
 <p class="meta">Investments and crypto · Updated <time datetime="2026-11-10">10 November 2026</time> · By Marco D'Onghia</p>
 </section>
 <section class="ibody">
-<div><h2>What it does</h2><ul><li>Your Coinbase balances, updated with the price sync every 6 hours.</li><li>Coin prices from CoinGecko, so crypto counts in your daily net worth.</li><li>Coins you hold elsewhere (a hardware wallet, another exchange) next to Coinbase: add them by hand on the Crypto page.</li></ul></div>
+<div><h2>What it does</h2><ul><li>Your Coinbase balances, updated with the price sync four times a day.</li><li>Coin prices from CoinGecko, so crypto counts in your daily net worth.</li><li>Coins you hold elsewhere (a hardware wallet, another exchange) next to Coinbase: add them by hand on the Crypto page.</li></ul></div>
 <div><h2>What it can't do</h2><ul><li>Trade, send or withdraw: the key is read-only.</li><li>Sync more than one Coinbase account per install: the sync runs for one user, the owner.</li><li>Sync other exchanges yet. More brokers are planned.</li></ul></div>
 <div class="full"><h2>Set it up</h2><ol><li>In Coinbase, create an API key with view-only permission. Keep the key name and private key.</li><li>In your Supabase project, add the Edge Function secrets <code>COINBASE_API_KEY_NAME</code>, <code>COINBASE_API_PRIVATE_KEY</code> and <code>COINBASE_USER_ID</code> (your Alopex user id).</li><li>Wait for the next price sync. Your coins appear on the Crypto page.</li></ol></div>
 <div class="full"><h2>Questions</h2><details><summary>Can Alopex sell or move my crypto?</summary><p>No. The key only has view permission, so Alopex can read balances and nothing else.</p></details><details><summary>Is Coinbase sync free?</summary><p>Yes. Alopex is free and open source, and reading your own balances with an API key costs nothing.</p></details><details><summary>Which other brokers will sync?</summary><p>Coinbase came first because it has a read-only key. Other brokers will follow where a read-only API exists.</p></details></div>

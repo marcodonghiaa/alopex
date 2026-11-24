@@ -1,4 +1,4 @@
-// The cron syncs banks every 6 hours, so a bank linked just after a run showed no transactions
+// The cron syncs banks four times a day, so a bank linked just after a run showed no transactions
 // for hours. Right after a link, ask sync-bank (the same function the cron calls, with the same
 // secret key) to sync each new account once. Best effort: a failure waits for the next cron run.
 import { errorTag } from "./log-safe.ts";

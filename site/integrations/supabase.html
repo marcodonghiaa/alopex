@@ -456,7 +456,7 @@ ol.steps li::before{margin:0;grid-row:span 2}
 <p class="meta">Database and sync · Updated <time datetime="2026-11-10">10 November 2026</time> · By Marco D'Onghia</p>
 </section>
 <section class="ibody">
-<div><h2>What it does</h2><ul><li>Holds your accounts, transactions, holdings and daily net worth.</li><li>Runs the bank sync, the price sync and subscription detection every 6 hours.</li><li>Keeps sync secrets in Supabase Vault and protects rows with row-level security.</li></ul></div>
+<div><h2>What it does</h2><ul><li>Holds your accounts, transactions, holdings and daily net worth.</li><li>Runs the bank sync, the price sync and subscription detection four times a day.</li><li>Keeps sync secrets in Supabase Vault and protects rows with row-level security.</li></ul></div>
 <div><h2>What it can't do</h2><ul><li>Run without a Supabase project: it holds your data and runs the sync.</li><li>Promise the free plan's limits: Supabase can change them.</li></ul></div>
 <div class="full"><h2>Set it up</h2><ol><li>Create a free Supabase account.</li><li>Run <code>npx create-alopex</code>. It sets up the database, the Edge Functions and the schedule for you.</li><li>To update later, run <code>npx create-alopex@latest</code> in the same folder.</li></ol></div>
 <div class="full"><h2>Questions</h2><details><summary>Who can see my data?</summary><p>Only you, and whoever you give access to your Supabase project. Alopex has no server and never receives your data.</p></details><details><summary>Can I export my data?</summary><p>Yes. It is your Postgres database, and the dashboard also exports to CSV.</p></details></div>

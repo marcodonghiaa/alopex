@@ -82,3 +82,21 @@ Deno.test("reply carries the status and a JSON body", async () => {
     assertEquals(res.headers.get("Content-Type"), "application/json");
   });
 });
+
+// H240: the lookup failure was logged with its raw message, against log-safe's rule.
+Deno.test("a failed lookup logs only the error's code, never its message", async () => {
+  const logged: unknown[][] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => void logged.push(args);
+  try {
+    await withLegacy(undefined, async () => {
+      const serve = serveWithCors(async (_req, reply) => reply({}), async () => {
+        throw Object.assign(new Error("secret detail"), { code: "42P01" });
+      });
+      await serve(new Request("https://f.test/x", { method: "POST", headers: { Origin: A } }));
+    });
+  } finally {
+    console.error = original;
+  }
+  assertEquals(logged.map((args) => args.join(" ")), ["dashboard_origins lookup failed: 42P01"]);
+});

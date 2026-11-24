@@ -4,6 +4,7 @@
 // budgets and cash flow, and the Splitwise import refused it (e2e #8, #11). Frankfurter (ECB
 // rates, the source sync-prices uses) answers a date range in one call per currency.
 import { errorTag } from "./log-safe.ts";
+import { FRANKFURTER } from "./fx-rates.ts";
 
 type Get = (url: string) => Promise<unknown>;
 type Gap = { currency: string; from_date: string; to_date: string };
@@ -20,7 +21,7 @@ export async function backfillFx(db: Db, get: Get): Promise<number> {
   for (const gap of (data ?? []) as Gap[]) {
     try {
       // A week earlier, so a weekend or holiday booking has the last working day's rate.
-      const url = `https://api.frankfurter.dev/v1/${weekBefore(gap.from_date)}..${gap.to_date}?base=EUR&symbols=${gap.currency}`;
+      const url = `${FRANKFURTER}/${weekBefore(gap.from_date)}..${gap.to_date}?base=EUR&symbols=${gap.currency}`;
       const body = (await get(url)) as { rates?: Record<string, Record<string, unknown>> };
       const rows = Object.entries(body.rates ?? {}).flatMap(([date, rates]) => {
         const units = rates[gap.currency];

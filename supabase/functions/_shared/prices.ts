@@ -1,6 +1,6 @@
 // Exchange rates, then stock/ETF and coin prices, run by sync-prices.
 // No bank calls: Frankfurter (rates), Yahoo (stock/ETF prices) and CoinGecko (coin prices).
-import { fxRows } from "./fx-rates.ts";
+import { FRANKFURTER, fxRows } from "./fx-rates.ts";
 import { coingeckoPriceUrl, parseYahooChart, yahooChartUrl } from "./holdings.ts";
 import { errorTag } from "./log-safe.ts";
 import { readPages } from "./batch-update.ts";
@@ -33,12 +33,12 @@ export async function syncFx(db: Db, get: GetJson): Promise<number> {
   if (error) throw error;
   let rows = 0;
   if (data.length === 0) {
-    const series = await get(`https://api.frankfurter.dev/v1/${daysAgo(HISTORY_DAYS)}..?base=EUR`);
+    const series = await get(`${FRANKFURTER}/${daysAgo(HISTORY_DAYS)}..?base=EUR`);
     const history = Object.entries(series.rates as Record<string, Record<string, number>>).flatMap(([d, r]) => fxRows(d, r));
     await upsertFx(db, history);
     rows += history.length;
   }
-  const latest = await get("https://api.frankfurter.dev/v1/latest?base=EUR");
+  const latest = await get(`${FRANKFURTER}/latest?base=EUR`);
   const today = fxRows(latest.date as string, latest.rates as Record<string, number>);
   await upsertFx(db, today);
   return rows + today.length;

@@ -87,3 +87,17 @@ Deno.test("the same reference on two accounts: each row gets its own type", asyn
   await classifyTypes(db, ask);
   assertEquals(db.tables.transactions.map((r) => [r.account_uid, r.transaction_type]), [["a1", "Subscription"], ["a2", "One-time"]]);
 });
+
+Deno.test("an AI that answers nothing stops once the same batch comes back: that user is skipped", async () => {
+  const db = memoryDb({ transactions: [tx("a", "SHOP A"), tx("b", "SHOP B", { user_id: "u2" })], category_rules: [] });
+  const asked: string[] = [];
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const result = await classifyTypes(db, async (prompt) => (asked.push(prompt.includes('"a"') ? "a" : "b"), []));
+    assertEquals(asked, ["a", "b"]);
+    assertEquals(result, { typed: 2, typedByRules: 0, typeAiFailed: false });
+  } finally {
+    console.warn = warn;
+  }
+});

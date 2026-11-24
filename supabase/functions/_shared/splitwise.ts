@@ -5,8 +5,7 @@ import type { Db } from "./batch-update.ts";
 import { CATEGORIES, guideFor } from "./categories.ts";
 import { type Ask, UNTRUSTED_TEXT_NOTE } from "./gemini.ts";
 import { errorTag } from "./log-safe.ts";
-import { createStallGuard } from "./stall-guard.ts";
-import { fetchBatchForOneUser } from "./user-batch.ts";
+import { aiBatches } from "./user-batch.ts";
 
 const BATCH_SIZE = 40;
 // A share is shared everyday spending, so income, transfer and tax buckets are not offered.
@@ -74,26 +73,13 @@ async function applyPlan(db: Db, plan: Array<{ id: string; user_id: string; cate
 /** ask: null when there is no AI key. Returns how many shares were looked at. */
 export async function categorizeSplitwise(db: Db, ask: Ask | null, timeLeft: () => boolean = () => true) {
   if (!ask) return { splitwise: 0, splitwiseAiFailed: false };
-  let looked = 0;
-  const stalls = createStallGuard();
+  let looked = 0; // kept here, not returned by aiBatches, so a failed run still reports it
   try {
-    while (timeLeft()) {
-      const rows = await fetchBatchForOneUser(db, {
-        table: "splitwise_expenses",
-        select: "id, description",
-        nullColumn: "category",
-        limit: BATCH_SIZE,
-        excludeUserIds: stalls.stuckUserIds,
-      }) as Share[];
-      if (rows.length === 0) break;
-      // The stall guard keys on account_uid + entry_reference; a share has neither.
-      if (stalls.isStalled(rows.map((r) => ({ user_id: r.user_id, account_uid: "splitwise", entry_reference: r.id })))) {
-        console.warn("No progress for one user, skipping them for this run.");
-        continue;
-      }
-      await applyPlan(db, planSplitwiseUpdates(await ask(buildSplitwisePrompt(rows), "category", SPLITWISE_CATEGORIES), rows));
+    await aiBatches(db, { table: "splitwise_expenses", select: "id, description", nullColumn: "category", limit: BATCH_SIZE }, timeLeft, async (rows) => {
+      const shares = rows as Share[];
+      await applyPlan(db, planSplitwiseUpdates(await ask(buildSplitwisePrompt(shares), "category", SPLITWISE_CATEGORIES), shares));
       looked += rows.length;
-    }
+    }, (r) => ({ user_id: r.user_id, account_uid: "splitwise", entry_reference: r.id })); // a share has no account_uid or entry_reference
     return { splitwise: looked, splitwiseAiFailed: false };
   } catch (err) {
     console.error(`Splitwise categorization failed: ${errorTag(err)}`);

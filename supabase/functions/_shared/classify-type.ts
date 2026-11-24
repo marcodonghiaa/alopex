@@ -5,8 +5,7 @@ import { applyGroupedUpdates, type Db } from "./batch-update.ts";
 import { type Ask, UNTRUSTED_TEXT_NOTE } from "./gemini.ts";
 import { errorTag } from "./log-safe.ts";
 import { applyRules, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
-import { createStallGuard } from "./stall-guard.ts";
-import { aiRefs, fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
+import { aiBatches, aiRefs, walkNullRows } from "./user-batch.ts";
 
 const BATCH_SIZE = 40;
 export const TYPES = ["Subscription", "One-time"];
@@ -93,29 +92,18 @@ async function applyTypes(db: Db, results: Array<Record<string, string>>, byRef:
   await setType(db, items);
 }
 
-async function classifyWithAi(db: Db, rules: Rule[], ask: Ask, timeLeft: () => boolean) {
-  let total = 0;
-  const stalls = createStallGuard();
-  while (timeLeft()) {
-    const rows = await fetchBatchForOneUser(db, {
-      select: "entry_reference, account_uid, creditor_name, remittance_info, amount, currency, credit_debit_indicator, category, bank_transaction_code",
-      nullColumn: "transaction_type",
-      limit: BATCH_SIZE,
-      excludeUserIds: stalls.stuckUserIds,
-    });
-    if (rows.length === 0) break;
-    if (stalls.isStalled(rows as Array<{ user_id: string; account_uid: string; entry_reference: string }>)) {
-      console.warn("No progress for one user, skipping them for this run.");
-      continue;
-    }
+function classifyWithAi(db: Db, rules: Rule[], ask: Ask, timeLeft: () => boolean) {
+  return aiBatches(db, {
+    select: "entry_reference, account_uid, creditor_name, remittance_info, amount, currency, credit_debit_indicator, category, bank_transaction_code",
+    nullColumn: "transaction_type",
+    limit: BATCH_SIZE,
+  }, timeLeft, async (rows) => {
     const forAi = await applyDeterministic(db, rows, rules);
     if (forAi.length > 0) {
       const { sent, byRef } = aiRefs(forAi as Array<Row & { account_uid: string; entry_reference: string }>);
       await applyTypes(db, await ask(buildTypePrompt(sent), "transaction_type", TYPES), byRef);
     }
-    total += rows.length;
-  }
-  return total;
+  });
 }
 
 // Type rules and transfers over every unclassified row (no AI key, or the AI failed).

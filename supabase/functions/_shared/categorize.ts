@@ -7,8 +7,7 @@ import { CATEGORIES, categoriesFor } from "./categories.ts";
 import { applyLearned, fetchLearned, learnedUpdate, planRelearn } from "./learned-categories.ts";
 import { errorTag } from "./log-safe.ts";
 import { applyRules, RULE_MATCH_COLUMNS, type Rule } from "./rules.ts";
-import { createStallGuard } from "./stall-guard.ts";
-import { aiRefs, fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
+import { aiBatches, aiRefs, walkNullRows } from "./user-batch.ts";
 import type { CategorizeRow } from "./categorize-prompt.ts";
 
 const BATCH_SIZE = 40;
@@ -84,21 +83,12 @@ async function applyCategories(db: Db, results: Array<Record<string, string>>, b
   await applyGroupedUpdates(db, items);
 }
 
-async function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeLeft: () => boolean) {
-  let total = 0;
-  const stalls = createStallGuard();
-  while (timeLeft()) {
-    const rows = await fetchBatchForOneUser(db, {
-      select: "entry_reference, account_uid, creditor_name, debtor_name, remittance_info, amount, currency, credit_debit_indicator",
-      nullColumn: "category",
-      limit: BATCH_SIZE,
-      excludeUserIds: stalls.stuckUserIds,
-    });
-    if (rows.length === 0) break;
-    if (stalls.isStalled(rows as Array<{ user_id: string; account_uid: string; entry_reference: string }>)) {
-      console.warn("No progress for one user, skipping them for this run.");
-      continue;
-    }
+function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeLeft: () => boolean) {
+  return aiBatches(db, {
+    select: "entry_reference, account_uid, creditor_name, debtor_name, remittance_info, amount, currency, credit_debit_indicator",
+    nullColumn: "category",
+    limit: BATCH_SIZE,
+  }, timeLeft, async (rows) => {
     const { matched, unmatched: afterRules } = applyRules(rows, rules);
     await applyRuleMatches(db, matched);
     const unmatched = await learnFrom(db, afterRules);
@@ -107,9 +97,7 @@ async function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeL
       const { sent, byRef } = aiRefs(unmatched as Array<Row & { account_uid: string; entry_reference: string }>);
       await applyCategories(db, await classify(sent as CategorizeRow[], categories), byRef, categories);
     }
-    total += rows.length;
-  }
-  return total;
+  });
 }
 
 // Recent AI rows whose merchant you later categorized by hand take your category, so one

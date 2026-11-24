@@ -2,6 +2,7 @@
 // an LLM. Mixing users in one batch lets text one user receives (a payer controls the payment
 // reference) influence how other users' rows are labelled, so each batch is scoped to one user.
 import type { Db } from "./batch-update.ts";
+import { createStallGuard } from "./stall-guard.ts";
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
@@ -24,6 +25,31 @@ export async function fetchBatchForOneUser(
   const { data, error } = await pending(`user_id, ${select}`).eq("user_id", first[0].user_id).limit(limit);
   if (error) throw error;
   return data;
+}
+
+// One user's batch at a time for `handle` (the AI step) until none is left or time runs out. A
+// batch that comes back unchanged is a stall: that user is skipped for the rest of the run.
+// Returns how many rows were handled. stallKey: the row as the stall guard keys it.
+export async function aiBatches(
+  db: Db,
+  query: { table?: string; select: string; nullColumn: string; limit: number },
+  timeLeft: () => boolean,
+  handle: (rows: Row[]) => Promise<void>,
+  stallKey: (r: Row) => { user_id: string; account_uid: string; entry_reference: string } = (r) => r as never,
+): Promise<number> {
+  let total = 0;
+  const stalls = createStallGuard();
+  while (timeLeft()) {
+    const rows = await fetchBatchForOneUser(db, { ...query, excludeUserIds: stalls.stuckUserIds });
+    if (rows.length === 0) break;
+    if (stalls.isStalled(rows.map(stallKey))) {
+      console.warn("No progress for one user, skipping them for this run.");
+      continue;
+    }
+    await handle(rows);
+    total += rows.length;
+  }
+  return total;
 }
 
 // Walks every transaction whose `nullColumn` is still null, for deterministic work that sends

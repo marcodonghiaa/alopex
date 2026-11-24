@@ -33,6 +33,7 @@ const as = (q) => psql(dbUrl(), ['-c', `begin; set local role authenticated; set
 const accountsEur = () => as(`select amount_eur::numeric(12,2) from public.v_bank_accounts_latest where uid = '${MAN}'`);
 const netWorthEur = () => as(`select bank_total_eur::numeric(12,2) from public.v_net_worth_daily order by snapshot_date desc limit 1`);
 const spend = () => as(`select coalesce(string_agg(month || ' ' || s::numeric(12,2), ',' order by month), '') from (select month, sum(spend_eur) s from public.v_spend_by_category_monthly group by month) x`);
+const expenses = () => as(`select coalesce(string_agg(month || ' ' || expenses_eur::numeric(12,2), ',' order by month), '') from public.v_income_vs_expenses_monthly`);
 const columns = (v) => admin(`select string_agg(attname || ' ' || format_type(atttypid, atttypmod), ',' order by attnum) from pg_attribute where attrelid = 'public.${v}'::regclass and attnum > 0`);
 
 test('net worth numbers agree', { skip }, async (t) => {
@@ -66,8 +67,15 @@ test('net worth numbers agree', { skip }, async (t) => {
     assert.strictEqual(netWorthEur(), '800.00');
   });
 
+  await t.test('a rate dated after today is not used yet, like net worth', () => {
+    admin(`insert into public.fx_rates (date, currency, rate_to_eur) values (current_date + 1, 'USD', 0.50)`);
+    assert.strictEqual(accountsEur(), '800.00');
+    admin(`delete from public.fx_rates where date > current_date`);
+  });
+
   await t.test("an imported month stays until it has real bank spend", () => {
     assert.strictEqual(spend(), '2026-03-01 300.00');
+    assert.strictEqual(expenses(), '2026-03-01 300.00'); // Income vs expenses follows Spending
     admin(`insert into public.transactions (entry_reference, account_uid, user_id, amount, currency, credit_debit_indicator, booking_date, category)
       values ('real', '${ACC}', '${A}', 25, 'EUR', 'DBIT', '2026-03-12', 'Groceries');
       update public.transactions set flow_type = 'spend' where entry_reference = 'real';`);
@@ -80,7 +88,9 @@ test('net worth numbers agree', { skip }, async (t) => {
     for (const v of ['v_bank_accounts_latest', 'v_spend_by_category_monthly']) {
       assert.match(admin(`select array_to_string(reloptions, ',') from pg_class where oid = 'public.${v}'::regclass`), /security_invoker=true/);
     }
+    admin(`delete from public.transactions where entry_reference = 'real'`);
     applySql(`supabase/rollbacks/${NAME}.down.sql`);
     assert.strictEqual(accountsEur(), '900.00');
+    assert.strictEqual(spend(), ''); // the zero share hides the import again
   });
 });

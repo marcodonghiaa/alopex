@@ -14,7 +14,7 @@ create or replace view public.v_bank_accounts_latest with (security_invoker = tr
     e.snapshot_date, e.amount,
     case when a.manual then e.amount * coalesce(
         (select r.rate_to_eur from public.fx_rates r
-         where r.currency = e.currency order by r.date desc limit 1),
+         where r.currency = e.currency and r.date <= current_date order by r.date desc limit 1),
         case when e.currency = 'EUR' then 1::numeric end)
       else e.amount_eur end as amount_eur,
     a.bank_name, a.bank_logo, a.bank_country,

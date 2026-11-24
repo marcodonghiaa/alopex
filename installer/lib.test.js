@@ -212,3 +212,14 @@ test('doneLine: an update is ready to use, a first install still connects a bank
   assert.equal(lib.doneLine('https://a.vercel.app', 'me@example.com', true), 'Updated! https://a.vercel.app , sign in as me@example.com.');
   assert.match(lib.doneLine('https://a.vercel.app', 'me@example.com', false), /^Done! .*then Accounts -> Connect a bank\.$/);
 });
+
+// H214: the release tarball went to a fixed name in the shared temp folder (alopex-<pid>-...), which
+// another local user could pre-create as a symlink, and npm ran the backend packages' install
+// scripts. fails_when=the download leaves its own mkdtemp folder or npm ci runs install scripts
+test('the download unpacks from a private temp folder and npm ci runs no install scripts', () => {
+  const src = require('node:fs').readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  const download = src.slice(src.indexOf('async function download('), src.indexOf('async function main('));
+  assert.doesNotMatch(download, /os\.tmpdir\(\)/, 'no fixed path in the shared temp folder');
+  assert.match(download, /withTempFile\(/);
+  assert.match(src, /'ci', '--omit=dev', '--ignore-scripts'/);
+});

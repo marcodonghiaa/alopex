@@ -96,12 +96,11 @@ async function download(repo, dir, localDir) {
   }
   const res = await fetch(lib.tarballUrl(repo, REF));
   if (!res.ok) die(`Could not download ${repo} at ${REF} (HTTP ${res.status}).`);
-  const file = path.join(os.tmpdir(), `alopex-${process.pid}-${path.basename(dir)}.tar.gz`);
-  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+  const archive = Buffer.from(await res.arrayBuffer());
   fs.mkdirSync(dir, { recursive: true });
   // Extracting over an existing install updates the code and leaves .env (not in the archive).
-  must('tar', ['-xzf', file, '-C', dir, '--strip-components=1'], {}, `Could not unpack ${repo}.`);
-  fs.rmSync(file, { force: true });
+  // The archive sits in a private mkdtemp folder, never at a name another local user could guess.
+  withTempFile(archive, (file) => must('tar', ['-xzf', file, '-C', dir, '--strip-components=1'], {}, `Could not unpack ${repo}.`));
 }
 
 async function main() {
@@ -131,7 +130,8 @@ async function main() {
   step('Downloading the app');
   await download(BACKEND_REPO, backend, process.env.ALOPEX_BACKEND_DIR);
   await download(DASHBOARD_REPO, dashboard, process.env.ALOPEX_DASHBOARD_DIR);
-  must('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: backend }, 'Could not install the backend packages.');
+  // No install scripts: none of the backend's packages need one, so none can run code here.
+  must('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: backend }, 'Could not install the backend packages.');
   // The backend's own helpers: .env merging, login creation, Enable Banking check.
   const { mergeEnv, parseEnv } = require(path.join(backend, 'env-file.js'));
   const envFile = path.join(backend, '.env');

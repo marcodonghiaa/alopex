@@ -37,6 +37,9 @@ test('authConfigToml closes sign-ups and adds the site URL only when known', () 
   const plain = lib.authConfigToml();
   assert.match(plain, /enable_signup = false/);
   assert.doesNotMatch(plain, /site_url/);
+  // H217: the server refuses a new password under 12 characters too (sign-in with an older,
+  // shorter one keeps working: the length is checked only when a password is set).
+  assert.match(plain, /^minimum_password_length = 12$/m);
   const withSite = lib.authConfigToml({ siteUrl: 'https://x.vercel.app' });
   assert.match(withSite, /site_url = "https:\/\/x\.vercel\.app"/);
   assert.match(withSite, /additional_redirect_urls = \["https:\/\/x\.vercel\.app\/reset-password"\]/);
@@ -183,9 +186,10 @@ test('orgAfterCreate lists the orgs again: create answers in plain text, not JSO
 test('loginProblem refuses an empty or malformed email and a short password (e2e #5)', () => {
   assert.match(lib.loginProblem('', 'secret1'), /email/i);
   assert.match(lib.loginProblem('marco', 'secret1'), /email/i);
-  assert.match(lib.loginProblem('a@b.co', '12345'), /6/);
-  assert.strictEqual(lib.loginProblem('a@b.co', '123456'), null);
-  assert.strictEqual(lib.loginProblem(' a@b.co ', '123456'), null);
+  // H217: an internet-facing finance login: 12 characters, not Supabase's default 6.
+  assert.match(lib.loginProblem('a@b.co', '12345678901'), /12/);
+  assert.strictEqual(lib.loginProblem('a@b.co', '123456789012'), null);
+  assert.strictEqual(lib.loginProblem(' a@b.co ', '123456789012'), null);
 });
 
 test('banner names the installer version, so a user can tell which release runs (e2e #2)', () => {

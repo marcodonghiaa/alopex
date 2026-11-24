@@ -219,7 +219,7 @@ async function main() {
     let password = '';
     for (;;) {
       email = (await ask('Email')).trim();
-      password = await askHidden('Password (6+ characters, not shown)');
+      password = await askHidden('Password (12+ characters, not shown)');
       const problem = lib.loginProblem(email, password);
       if (!problem) break;
       console.log(problem);

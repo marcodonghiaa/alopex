@@ -38,8 +38,11 @@ function vaultSql(secrets) {
 }
 
 // Only the keys declared here are pushed, so every other remote auth setting stays as it is.
+// Shortest password the installer and Supabase Auth accept for a new password.
+const MIN_PASSWORD = 12;
 function authConfigToml({ siteUrl } = {}) {
-  const lines = ['project_id = "installer"', '', '[auth]', 'enable_signup = false'];
+  // The login guards every linked bank's data and the dashboard is public: 12 characters, not 6.
+  const lines = ['project_id = "installer"', '', '[auth]', 'enable_signup = false', `minimum_password_length = ${MIN_PASSWORD}`];
   if (siteUrl) {
     lines.push(`site_url = "${siteUrl}"`, `additional_redirect_urls = ["${siteUrl}/reset-password"]`);
   }
@@ -173,7 +176,7 @@ function orgsAfterCreate(run, name) {
 // used to answer the Email question with nothing (e2e #5).
 function loginProblem(email, password) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return 'That is not an email address. Type the one you will sign in with.';
-  if (password.length < 6) return 'The password needs at least 6 characters.';
+  if (password.length < MIN_PASSWORD) return `The password needs at least ${MIN_PASSWORD} characters.`;
   return null;
 }
 

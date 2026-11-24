@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### PDF import has a per-user limit
+- **Migration:** `20270113000000_statement_attempts`. Apply it with `supabase db push --linked` first, then `supabase functions deploy parse-statement`. No dashboard change.
+- What changes: each user can import up to 10 PDF statements per 10 minutes; the 11th answers "Too many PDF imports. Wait 10 minutes and try again." This stops one account (or a stolen session) from spending your Gemini quota in a loop.
+- **Roll back:** deploy the previous `parse-statement` first, then run `supabase/rollbacks/20270113000000_statement_attempts.down.sql`, then `supabase migration repair --status reverted 20270113000000 --linked`.
+
 ### Bank linking and sync are sturdier
 - **Deploy:** `supabase functions deploy` (sync-bank, complete-bank-consent, start-bank-consent, list-banks, delete-account). No migration, no dashboard change.
 - What changes: when one account of a bank link can't be saved, the others are still linked and synced right away, instead of the whole link failing. A bank whose account details never carry an identification hash is no longer asked for them on every sync. A bank that keeps sending the same next-page key stops the sync at once with `PAGING_LOOP` (pages read are saved, the next sync tries again) instead of running into `TIMEOUT`. A first sync that ran out of time but saved transactions gets them categorised right away. An expired bank link's code is closed at Enable Banking. Enable Banking calls while linking, and the bank list, give up after 15 seconds. Deleting your account also closes bank sessions only your accounts remembered. New transactions keep only the other party's name in the stored bank payload (no address, ids, bank or ultimate parties); rows stored before keep theirs.

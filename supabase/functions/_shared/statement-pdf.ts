@@ -1,6 +1,22 @@
 // Reading a bank statement PDF with Gemini, for parse-statement. Free of Deno APIs so the test
 // runs anywhere. The PDF is sent to Gemini and never stored.
 import { geminiText } from "./gemini.ts";
+import { errorTag } from "./log-safe.ts";
+
+type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
+
+/**
+ * Claims one PDF read for the user (10 per 10 minutes, splitwise_attempt kind 'statement') before
+ * Gemini is asked: null when allowed, else the reply. A failed check refuses rather than skips.
+ */
+export async function statementAttemptRefusal(rpc: Rpc, userId: string): Promise<{ status: number; error: string } | null> {
+  const { data, error } = await rpc("splitwise_attempt", { p_user: userId, p_kind: "statement", p_max: 10, p_window: "10 minutes" });
+  if (error) {
+    console.error(`parse-statement: attempt check failed: ${errorTag(error)}`);
+    return { status: 503, error: "Couldn't start the PDF import right now. Try again later." };
+  }
+  return data === true ? null : { status: 429, error: "Too many PDF imports. Wait 10 minutes and try again." };
+}
 
 // About 6 MB of PDF once decoded: a few months of statement. Bigger is likely the wrong file.
 export const MAX_PDF_BASE64 = 8_000_000;

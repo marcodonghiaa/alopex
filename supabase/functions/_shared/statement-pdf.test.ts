@@ -5,6 +5,7 @@ import {
   MAX_PDF_BASE64,
   parseGeminiRows,
   parseStatementRequest,
+  statementAttemptRefusal,
 } from "./statement-pdf.ts";
 
 Deno.test("a request needs a base64 PDF within the size limit", () => {
@@ -66,4 +67,24 @@ Deno.test("a cut-off or blocked answer is reported, a finished one is not", () =
   assertEquals(geminiRefusal(done("MAX_TOKENS"))?.includes("too long"), true);
   assertEquals(typeof geminiRefusal(done("SAFETY")), "string");
   assertEquals(typeof geminiRefusal({ promptFeedback: { blockReason: "OTHER" } }), "string");
+});
+
+// H241: each PDF read claims an attempt first, so one user can't loop PDFs into the Gemini quota.
+Deno.test("10 statement reads per 10 minutes per user, claimed before Gemini is asked", async () => {
+  const calls: unknown[] = [];
+  const rpc = (answer: { data: unknown; error: unknown }) => (fn: string, args: Record<string, unknown>) => {
+    calls.push([fn, args]);
+    return Promise.resolve(answer);
+  };
+  assertEquals(await statementAttemptRefusal(rpc({ data: true, error: null }), "u1"), null);
+  assertEquals(calls, [["splitwise_attempt", { p_user: "u1", p_kind: "statement", p_max: 10, p_window: "10 minutes" }]]);
+  assertEquals(await statementAttemptRefusal(rpc({ data: false, error: null }), "u1"), {
+    status: 429,
+    error: "Too many PDF imports. Wait 10 minutes and try again.",
+  });
+  // The check itself failed: don't call Gemini unchecked.
+  assertEquals(await statementAttemptRefusal(rpc({ data: null, error: { code: "42883" } }), "u1"), {
+    status: 503,
+    error: "Couldn't start the PDF import right now. Try again later.",
+  });
 });

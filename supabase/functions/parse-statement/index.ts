@@ -6,17 +6,25 @@
 // written here: the dashboard shows the rows, leaves out ones already imported, and adds the
 // rest with add_manual_transaction once you confirm.
 //
-// Requires a signed-in user, or this is an open proxy to Gemini on your key.
+// Requires a signed-in user, or this is an open proxy to Gemini on your key, and allows each
+// user 10 PDF reads per 10 minutes.
 // Secret: GEMINI_API_KEY (and optionally GEMINI_MODEL).
 
 import { serveWithCors } from "../_shared/origins.ts";
-import { userCaller } from "../_shared/clients.ts";
+import { serviceClient, userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { errorTag } from "../_shared/log-safe.ts";
-import { geminiRequest, geminiRefusal, parseGeminiRows, parseStatementRequest } from "../_shared/statement-pdf.ts";
+import {
+  geminiRefusal,
+  geminiRequest,
+  parseGeminiRows,
+  parseStatementRequest,
+  statementAttemptRefusal,
+} from "../_shared/statement-pdf.ts";
 import { DEFAULT_GEMINI_MODEL, geminiFetch } from "../_shared/gemini.ts";
 
 const TIMEOUT_MS = 90_000;
+const service = serviceClient();
 
 Deno.serve(serveWithCors(async (req, json) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -37,6 +45,9 @@ Deno.serve(serveWithCors(async (req, json) => {
   }
   const parsed = parseStatementRequest(body);
   if (typeof parsed === "string") return json({ error: parsed }, 400);
+  // Counted only for well-formed requests, right before the Gemini call (migration 20270113000000).
+  const limited = await statementAttemptRefusal((fn, args) => service.rpc(fn, args), userId);
+  if (limited) return json({ error: limited.error }, limited.status);
 
   const model = Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
   let res: Response;

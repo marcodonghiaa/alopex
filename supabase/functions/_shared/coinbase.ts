@@ -43,16 +43,30 @@ export const COINGECKO_ID_MAP: Record<string, string> = {
 };
 
 // Holding rows to upsert, plus the symbols that now report exactly zero (sold down) so a stale
-// amount isn't priced. A missing or unparseable balance is skipped, never read as zero.
+// amount isn't priced. Each currency's holding is available_balance plus hold (funds tied up in
+// open orders) over all its accounts. A missing or unparseable balance (or a present but
+// unparseable hold) leaves that whole currency alone, never read as zero or partly summed.
 export function planHoldings(accounts: Json[], userId: string) {
-  const rows = [];
-  const zeroed: string[] = [];
-  const unmapped: string[] = [];
+  const totals = new Map<string, { amount: number; name: string }>();
+  const bad = new Set<string>();
   for (const account of accounts) {
     const symbol = account.currency;
     const raw = account.available_balance?.value;
-    const amount = raw == null ? NaN : parseFloat(raw);
-    if (Number.isNaN(amount)) continue;
+    const held = account.hold?.value;
+    const amount = (raw == null ? NaN : parseFloat(raw)) + (held == null ? 0 : parseFloat(held));
+    if (Number.isNaN(amount)) {
+      bad.add(symbol);
+      continue;
+    }
+    const seen = totals.get(symbol);
+    if (seen) seen.amount += amount;
+    else totals.set(symbol, { amount, name: account.name || symbol });
+  }
+  const rows = [];
+  const zeroed: string[] = [];
+  const unmapped: string[] = [];
+  for (const [symbol, { amount, name }] of totals) {
+    if (bad.has(symbol)) continue;
     const coingeckoId = COINGECKO_ID_MAP[symbol];
     if (amount === 0) {
       if (coingeckoId) zeroed.push(symbol);
@@ -62,7 +76,7 @@ export function planHoldings(accounts: Json[], userId: string) {
       unmapped.push(symbol);
       continue;
     }
-    rows.push({ user_id: userId, asset_symbol: symbol, name: account.name || symbol, amount, source: "Coinbase", coingecko_id: coingeckoId });
+    rows.push({ user_id: userId, asset_symbol: symbol, name, amount, source: "Coinbase", coingecko_id: coingeckoId });
   }
   return { rows, zeroed, unmapped };
 }

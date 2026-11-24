@@ -65,3 +65,30 @@ Deno.test("the common Coinbase coins are priced, each under its CoinGecko id", (
   assertEquals(rows.find((r) => r.asset_symbol === "SOL")?.coingecko_id, "solana");
   assertEquals(rows.find((r) => r.asset_symbol === "EURC")?.coingecko_id, "euro-coin");
 });
+
+// H185: Coinbase reports funds tied up in open orders as `hold`, and two accounts can share a
+// currency. The holding is their sum; a symbol is zeroed only when its total is zero.
+Deno.test("adds available and hold across accounts of one currency; a zero account no longer wipes a funded one", () => {
+  const { rows, zeroed } = planHoldings([
+    account("BTC", "0.5", { hold: { value: "0.25" } }),
+    account("BTC", "0", { name: "BTC Vault" }),
+    account("ETH", "0", { hold: { value: "1" } }),
+    account("SOL", "0", { hold: { value: "0" } }),
+  ], "u1");
+  assertEquals(rows.map((r) => [r.asset_symbol, r.amount, r.name]), [["BTC", 0.75, "BTC Wallet"], ["ETH", 1, "ETH Wallet"]]);
+  assertEquals(zeroed, ["SOL"]);
+});
+
+Deno.test("one account per currency with no hold keeps exactly the amount it had before", () => {
+  const { rows } = planHoldings([account("USDC", "12.5"), account("BTC", "0.123456789", { hold: { value: "0" } })], "u1");
+  assertEquals(rows.map((r) => r.amount), [12.5, 0.123456789]);
+});
+
+Deno.test("an unreadable balance or hold leaves that currency untouched, never partly summed or zeroed", () => {
+  const { rows, zeroed } = planHoldings([
+    account("BTC", "1"),
+    account("BTC", "oops"),
+    account("ETH", "0", { hold: { value: "x" } }),
+  ], "u1");
+  assertEquals([rows, zeroed], [[], []]);
+});

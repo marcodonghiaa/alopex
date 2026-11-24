@@ -3,8 +3,7 @@
 // Powers the bank picker on the Accounts page -- given a country, returns
 // Enable Banking's real list of supported banks (ASPSPs) so the user picks
 // from a dropdown instead of typing a bank name that has to match exactly.
-// Same JWT-signing as start-bank-consent/bank-consent-callback; no writes,
-// read-only lookup.
+// Read-only lookup, no writes.
 //
 // Requires a signed-in user -- otherwise this is an unauthenticated proxy to
 // the operator's Enable Banking credentials/quota. verify_jwt is also set in

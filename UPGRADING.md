@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### New transaction columns are server-only by default
+- **Migration:** `20270110000000_transactions_update_allowlist`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. The guard on transactions now lists what a signed-in user may change (category, name, flow, split, note, tags and the like, plus amount, date and name on manual accounts) instead of what they may not, so a column a later release adds can only be written by the sync until it is allowed on purpose. Every column that exists today keeps its old rule.
+- **Roll back:** run `supabase/rollbacks/20270110000000_transactions_update_allowlist.down.sql`, then `supabase migration repair --status reverted 20270110000000 --linked`.
+
 ### Some Vercel dashboard addresses were refused
 - **Migration:** `20270109000000_dashboard_origin_hosts`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: a dashboard address like `https://alopex-christina-projects.vercel.app` (any 9-letter part, common with Vercel's `<name>s-projects` addresses) was mistaken for a one-off deployment address and never allowed, so bank linking failed with a CORS error. It is now accepted on your next sign-in. One-off deployment addresses (a 9-character code mixing letters and digits) and branch addresses (`-git-`) are still refused.

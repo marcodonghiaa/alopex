@@ -10,6 +10,12 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Sturdier account deletion, origin check and installer
+- **Deploy:** `supabase functions deploy` (delete-account, and every dashboard-facing function for the origin check). No migration of its own. The installer changes reach you with the next `npx create-alopex@latest`.
+- What changes: deleting your account no longer leaves behind the extra session its password check opened when the delete is refused or fails. A failed lookup of the dashboard addresses is logged with its error code only, never the message. The installer now asks for a login password of at least 12 characters and sets Supabase Auth's minimum password length to 12, so a reset or change can't go shorter (your current password keeps working, whatever its length). It unpacks each release in a private temporary folder and installs the backend packages without running install scripts.
+- **Optional, the scheduled sync's own key:** in Supabase, Project Settings -> API Keys, add a secret key named `cron`, then run `npx create-alopex@latest` again. The sync then stores that key in Vault instead of your main secret key, so you can revoke or rotate it alone. By hand: put it in the Vault secret `sync_bank_secret_key` (see `20261117000000_sync_all_banks.sql`).
+- **Roll back:** deploy the previous functions.
+
 ### Undoing a payback puts back what it changed
 - **Migration:** `20270120000000_payback_undo_restores`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: when you undo an "Is this Anna?" answer and also unlink the payer, a link that answer had replaced (the payer was linked to someone else before) comes back instead of being deleted. A payment you had marked as income by hand is income again after the undo; one the app had classified goes back to the app, as before. A payment reference stored on a settled bill can be at most 1000 characters (a longer one, which can't be a bank reference, is cleared; the bill stays settled). Paybacks recorded before this release undo as before.

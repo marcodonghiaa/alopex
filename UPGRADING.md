@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Merchant names for older transactions are chosen by the database
+- **Migration:** `20270112000000_merchant_alias_on_key_update`. Apply it with `supabase db push --linked` first, then `supabase functions deploy post-sync`. No dashboard change.
+- What changes: nothing you can see. When post-sync fills in the merchant of a transaction stored before the sync did that, the name you gave that merchant now comes from the same database rule as for new transactions (your name for that exact bank name first, else your newest name for the merchant, never by merchant for PayPal, Apple or Google) instead of a copy of it in the function. Apple, PayPal and Google names given for one price now also follow that price on these rows, as they already did on new ones.
+- **Roll back:** run `supabase/rollbacks/20270112000000_merchant_alias_on_key_update.down.sql`, then `supabase migration repair --status reverted 20270112000000 --linked`, and deploy the previous `post-sync`.
+
 ### The bank sync cron shares one Edge Function caller
 - **Migration:** `20270111000000_sync_all_banks_uses_call_edge_function`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: nothing you can see. `sync_all_banks` sends each bank account through `call_edge_function`, like the other cron jobs, instead of keeping its own copy of the Vault secrets, headers and timeout. It still stops with "Set the Vault secrets ..." when they are missing.

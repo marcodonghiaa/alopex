@@ -19,13 +19,15 @@ Deno.test("fills keys for rows without one", async () => {
   assertEquals(result.keys, 2);
 });
 
-Deno.test("applies an existing alias to a newly keyed row", async () => {
+// The alias is the database trigger's job when merchant_key is set (20270112000000, tested on a
+// real Postgres in merchant-alias-on-key-db.test.js): the backfill writes the key alone.
+Deno.test("writes merchant_key only, never custom_name", async () => {
   const db = memoryDb({
     transactions: [tx("r1", "LIDL 4521 MILANO IT"), tx("named", "Lidl 4521", { custom_name: "Mine" })],
     merchant_aliases: [alias("Lidl 4521", "Lidl", "2026-01-01", { merchant_key: "lidl" })],
   });
   await fillMerchantKeys(db, always);
-  assertEquals(byRef(db, "r1").custom_name, "Lidl");
+  assertEquals([byRef(db, "r1").custom_name, byRef(db, "r1").merchant_key], [null, "lidl"]);
   assertEquals([byRef(db, "named").custom_name, byRef(db, "named").merchant_key], ["Mine", "lidl"]);
 });
 
@@ -48,15 +50,6 @@ Deno.test("keeps aliases with different text sharing a key", async () => {
   assertEquals(db.tables.merchant_aliases.map((a) => [a.alias, a.merchant_key]), [["Acme Pro", "acme"], ["Acme Credits", "acme"]]);
 });
 
-Deno.test("exact source name beats key", async () => {
-  const db = memoryDb({
-    transactions: [tx("exact", "ACME* Pro Sub"), tx("other", "ACME 4521")],
-    merchant_aliases: [alias("ACME* Pro Sub", "Acme Pro", "2026-01-01"), alias("Acme", "Acme Credits", "2026-06-01")],
-  });
-  await fillMerchantKeys(db, always);
-  assertEquals([byRef(db, "exact").custom_name, byRef(db, "other").custom_name], ["Acme Pro", "Acme Credits"]);
-});
-
 Deno.test("same created_at: the first source_name wins, like the SQL", async () => {
   const db = memoryDb({
     transactions: [],
@@ -64,15 +57,6 @@ Deno.test("same created_at: the first source_name wins, like the SQL", async () 
   });
   await fillMerchantKeys(db, always);
   assertEquals(db.tables.merchant_aliases.map((a) => a.source_name), ["Lidl 4521"]);
-});
-
-Deno.test("a PayPal row does not get another PayPal payee's alias", async () => {
-  const db = memoryDb({
-    transactions: [tx("pp", "PAYPAL *P1A2B3C4D5")],
-    merchant_aliases: [alias("PAYPAL *P9F8E7D6C5", "Gym", "2026-01-01")],
-  });
-  await fillMerchantKeys(db, always);
-  assertEquals([byRef(db, "pp").merchant_key, byRef(db, "pp").custom_name], ["paypal", null]);
 });
 
 Deno.test("two PayPal-source aliases both survive, unkeyed", async () => {

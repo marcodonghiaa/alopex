@@ -2,7 +2,9 @@
 -- rule. It refused any host with a 9-character dash-separated segment, which also hit real production
 -- aliases such as <project>-<user>s-projects.vercel.app for an 8-letter user name, so the owner's
 -- dashboard never reached CORS. A deployment hash mixes letters and digits; a name segment of only
--- letters (or only digits) is now accepted. Branch (-git-) hosts are still refused.
+-- letters (or only digits), or one right before -projects.vercel.app (a user name with digits),
+-- is now accepted. Branch (-git-) hosts are still refused. A deployment hash of letters only is
+-- not told apart from a name and is accepted: it is still a deployment of your own project.
 create or replace function public.register_dashboard_origin()
 returns text
 language plpgsql
@@ -22,7 +24,7 @@ begin
 
   if length(hdr) > 255
      or not (hdr ~ '^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$' or hdr ~ '^http://localhost:[0-9]{1,5}$')
-     or hdr ~ '-(?=[a-z]*[0-9])(?=[0-9]*[a-z])[a-z0-9]{9}-[a-z0-9-]+\.vercel\.app(:[0-9]+)?$'
+     or hdr ~ '-(?=[a-z]*[0-9])(?=[0-9]*[a-z])[a-z0-9]{9}-(?!projects\.vercel\.app)[a-z0-9-]+\.vercel\.app(:[0-9]+)?$'
      or hdr ~ '-git-[a-z0-9-]+\.vercel\.app(:[0-9]+)?$' then
     return 'rejected';
   end if;

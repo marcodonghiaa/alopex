@@ -23,6 +23,13 @@ test('register_dashboard_origin hosts', { skip }, async (t) => {
     admin('delete from public.dashboard_origins');
     assert.strictEqual(reg('https://alopex-christina-projects.vercel.app'), 'added');
     assert.strictEqual(reg('https://alopex-ab12cd-marcellos-projects.vercel.app'), 'added');
+    // Review: a user name with digits makes a 9-character mixed segment right before -projects.
+    admin('delete from public.dashboard_origins');
+    assert.strictEqual(reg('https://alopex-jdoe2024s-projects.vercel.app'), 'added');
+    assert.strictEqual(reg('https://alopex-a1b2c3d4e-jdoe2024s-projects.vercel.app'), 'rejected');
+    admin('delete from public.dashboard_origins');
+    assert.strictEqual(reg('https://alopex-christina-projects.vercel.app'), 'added');
+    assert.strictEqual(reg('https://alopex-ab12cd-marcellos-projects.vercel.app'), 'added');
   });
 
   await t.test('deployment and branch hosts, http and garbage are still refused', () => {

@@ -53,3 +53,20 @@ Deno.test("first sync: a failing catch-up start is logged, never thrown", async 
   const { fn } = recorder(200);
   assertEquals(await startFirstSync("https://x", "k", ["a1"], fn, () => Promise.reject(new Error("db down"))), 1);
 });
+
+// H164: a first sync that saved rows but ran out of time (502, upserted > 0) skipped the catch-up,
+// so the new rows waited up to 6 h for categories and transfer pairs.
+Deno.test("first sync: a partial sync that saved rows still starts the catch-up", async () => {
+  const fn = (() => Promise.resolve(Response.json({ upserted: 120, error: "TIMEOUT" }, { status: 502 }))) as unknown as typeof fetch;
+  let started = 0;
+  const silence = console.error;
+  console.error = () => {};
+  try {
+    assertEquals(await startFirstSync("https://x", "k", ["a1"], fn, async () => { started++; }), 0);
+    const nothing = (() => Promise.resolve(Response.json({ upserted: 0, error: "TIMEOUT" }, { status: 502 }))) as unknown as typeof fetch;
+    await startFirstSync("https://x", "k", ["a1"], nothing, async () => { started++; });
+  } finally {
+    console.error = silence;
+  }
+  assertEquals(started, 1);
+});

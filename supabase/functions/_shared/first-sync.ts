@@ -19,16 +19,21 @@ export async function startFirstSync(
         headers: { "Content-Type": "application/json", apikey: secretKey },
         body: JSON.stringify({ account_uid: uid }),
       });
-      await res.body?.cancel();
-      if (!res.ok) console.error(`first sync failed: ${errorTag({ status: res.status })}`);
-      return res.ok;
+      if (res.ok) {
+        await res.body?.cancel();
+        return { ok: true, saved: true };
+      }
+      console.error(`first sync failed: ${errorTag({ status: res.status })}`);
+      // A run that hit the deadline still saved the pages it read (H164): sort those now too.
+      const body = await res.json().catch(() => null);
+      return { ok: false, saved: typeof body?.upserted === "number" && body.upserted > 0 };
     } catch (err) {
       console.error(`first sync failed: ${errorTag(err)}`);
-      return false;
+      return { ok: false, saved: false };
     }
   }));
-  const synced = results.filter(Boolean).length;
-  if (synced > 0 && catchUp) {
+  const synced = results.filter((r) => r.ok).length;
+  if (results.some((r) => r.saved) && catchUp) {
     try {
       await catchUp();
     } catch (err) {

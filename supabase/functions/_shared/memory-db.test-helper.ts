@@ -5,7 +5,8 @@
 type Row = Record<string, any>;
 
 // failWrite: make every delete or update return a DB error without applying it.
-export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "update") {
+// maxRows: answer at most this many rows per read, like PostgREST's max-rows (1000 by default).
+export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "update", maxRows = Infinity) {
   return {
     tables,
     from(table: string) {
@@ -67,7 +68,7 @@ export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "
             for (const [c, asc] of orders) if (a[c] !== b[c]) return (a[c] < b[c] ? -1 : 1) * (asc ? 1 : -1);
             return 0;
           });
-          const data = rows.slice(window[0], window[1] + 1).map((r) => ({ ...r }));
+          const data = rows.slice(window[0], Math.min(window[1] + 1, window[0] + maxRows)).map((r) => ({ ...r }));
           resolve({ data: single ? data[0] ?? null : data, error: null });
         },
       };

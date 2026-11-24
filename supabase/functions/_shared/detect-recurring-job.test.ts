@@ -67,7 +67,8 @@ Deno.test("a read failure counts as failed for that user only", async () => {
 });
 
 Deno.test("accounts read failure is reported, not thrown", async () => {
-  const db = { from: () => ({ select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: null, error: { code: "XX000" } }) }) }) }) };
+  const failed = { range: () => Promise.resolve({ data: null, error: { code: "XX000" } }) };
+  const db = { from: () => ({ select: () => ({ order: () => ({ order: () => failed }) }) }) };
   assertEquals(await runDetection(db, recorder().rpc, "2026-10-20", always), { users: 0, streams: 0, failed: 1, skipped: 0 });
 });
 
@@ -244,4 +245,13 @@ Deno.test("S1b: a stream you confirmed is sent even when it is the oldest", asyn
   assertEquals(await detectUser(db, rpc, "u1", "2026-10-20"), 2000);
   const keys = sentKeys(calls[0]);
   assertEquals([keys.size, keys.has("m2000")], [2000, true]);
+});
+
+// H250: accounts were read with one .limit(1000), so on an instance with more accounts the users
+// after row 1000 never got subscription detection.
+Deno.test("every user is detected, even past 1000 accounts", async () => {
+  const accounts = Array.from({ length: 1500 }, (_, i) => ({ uid: `a${String(i).padStart(4, "0")}`, user_id: `u${String(Math.floor(i / 2)).padStart(4, "0")}` }));
+  const db = memoryDb({ accounts, v_transactions_eur: [] }, undefined, 1000);
+  const result = await runDetection(db, recorder().rpc, "2026-10-20", always);
+  assertEquals([result.users, result.failed], [750, 0]);
 });

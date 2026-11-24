@@ -1,4 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
+import { memoryDb } from "./memory-db.test-helper.ts";
 import { applyRules, fetchRules, matchRule, planRuleReapply, type Rule } from "./rules.ts";
 import cases from "./rules.cases.json" with { type: "json" };
 
@@ -122,6 +123,7 @@ Deno.test("fetchRules: the match columns plus the action, rules that set it, old
         eq: (c: string, v: string) => (asked.push(["eq", c, v]), q),
         not: (c: string, op: string, v: null) => (asked.push(["not", c, op, v]), q),
         order: (c: string, o: { ascending: boolean }) => (asked.push(["order", c, o.ascending]), q),
+        range: (a: number, b: number) => (asked.push(["range", a, b]), q),
         then: (ok: (r: unknown) => void) => ok({ data: [{ id: 1 }], error: null }),
       };
       return q;
@@ -135,8 +137,22 @@ Deno.test("fetchRules: the match columns plus the action, rules that set it, old
     ["not", "set_category", "is", null],
     ["order", "priority", true],
     ["order", "created_at", true],
+    ["order", "id", true],
+    ["range", 0, 999],
   ]);
   asked.length = 0;
   await fetchRules(db, "set_flow_type");
   assertEquals(asked.slice(1, 3), [["select", "user_id, match_field, match_text, match_mode, set_flow_type"], ["not", "set_flow_type", "is", null]]);
+});
+
+// H250: one unpaged read, so on an instance with more than 1000 rules (all users together)
+// PostgREST's row cap silently dropped the newest ones from sync categorization, type and flow.
+Deno.test("fetchRules reads every page: rule 1001 and on still apply, in the same order", async () => {
+  const rules = Array.from({ length: 2500 }, (_, i) => ({
+    id: String(i).padStart(5, "0"), user_id: `u${i % 3}`, match_field: "any", match_text: `m${i}`,
+    set_category: "Others", priority: 100, created_at: `2026-01-01T00:00:${String(i % 60).padStart(2, "0")}Z`,
+  }));
+  const got = await fetchRules<{ id: string }>(memoryDb({ category_rules: rules }, undefined, 1000), "set_category");
+  const expected = [...rules].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)).map((r) => r.id);
+  assertEquals(got.map((r) => r.id), expected);
 });

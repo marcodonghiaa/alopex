@@ -2,7 +2,7 @@
 // Per user: spend rows from transactions, their EUR share from v_transactions_eur (applies
 // personal_amount and the fx fallback), merged in memory by account_uid + entry_reference.
 // Logs counts and error tags only, never merchant names.
-import { type Db, PAGE_SIZE, readPages } from "./batch-update.ts";
+import { type Db, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { type Charge, detectStreams } from "./recurring.ts";
 
@@ -62,13 +62,15 @@ export async function runDetection(
   today: string,
   timeLeft: () => boolean,
 ): Promise<{ users: number; streams: number; failed: number; skipped: number }> {
-  const { data, error } = await db.from("accounts").select("user_id").order("user_id").limit(PAGE_SIZE);
-  if (error) {
+  // Every page (H250): one .limit(1000) left the users after account 1000 undetected.
+  let data: Row[];
+  try {
+    data = await readPages<Row>((from, to) => db.from("accounts").select("user_id").order("user_id").order("uid").range(from, to));
+  } catch (error) {
     console.error(`detect-recurring: accounts read failed: ${errorTag(error)}`);
     return { users: 0, streams: 0, failed: 1, skipped: 0 };
   }
-  // shortcut: one page of accounts (1000), plenty for a handful of users.
-  const ids = [...new Set((data as Row[]).map((r) => r.user_id as string))];
+  const ids = [...new Set(data.map((r) => r.user_id as string))];
   let users = 0, streams = 0, failed = 0, skipped = 0;
   for (const [i, user] of ids.entries()) {
     if (!timeLeft()) {

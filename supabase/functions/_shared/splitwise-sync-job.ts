@@ -90,6 +90,7 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
       // (H232). A few missing ids are read again one by one: one that is still there is written
       // as usual, a 404 or a deleted one goes, and one Splitwise won't answer for is kept.
       // A refused key or a rate limit stops the sync as anywhere else.
+      // A timeout or 5xx keeps the rest unasked: ten 20 s timeouts would outlast the wall clock.
       const found: SwExpense[] = [];
       for (const id of missing) {
         try {
@@ -99,6 +100,7 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
         } catch (err) {
           if (err instanceof SplitwiseAuthError || err instanceof SplitwiseRateLimitError || !(err instanceof SplitwiseApiError)) throw err;
           console.error(`sync-splitwise: a missing expense couldn't be checked, kept: ${errorTag(err)}`);
+          if (err.status === null || err.status >= 500) break;
         }
       }
       const again = planSync(found, me, labels);

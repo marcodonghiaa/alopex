@@ -439,3 +439,23 @@ Deno.test("cron: without the last_attempt_at column, users still sync in the old
     console.error = error;
   }
 });
+
+// H232 (review): each re-read can wait 20 s. Ten that time out are 200 s, past the 150 s wall
+// clock, so the run was killed before any write and the full check came back every run. Once
+// Splitwise doesn't answer (timeout or 5xx), the rest are kept without asking.
+Deno.test("the full check's re-read stops at the first timeout or 5xx and keeps the rest", async () => {
+  const s = setup({
+    expenses: [expense(1)],
+    reread: { 7: new SplitwiseApiError("Splitwise did not answer in time"), 9: new SplitwiseApiError("Splitwise answered HTTP 502", 502) },
+    tables: { splitwise_expenses: [1, 7, 8, 9].map((id) => ({ user_id: "u1", splitwise_id: id })), splitwise_review: [] },
+  });
+  const error = console.error;
+  console.error = () => {};
+  try {
+    await syncUser(s.deps, conn({ last_full_check_at: null }), { preview: false });
+  } finally {
+    console.error = error;
+  }
+  assertEquals(s.reread, [7]);
+  assertEquals(s.applies()[0].p_deleted, []);
+});

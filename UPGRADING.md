@@ -10,6 +10,12 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### The bank-field guard can't be switched off by a session
+- **Migration:** `20270119000000_broker_flag_definer_only`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. The guard that stops a signed-in user from rewriting bank fields, and the marks for categories and flows you set by hand, stood aside whenever the session setting `alopex.broker_match` was on. That setting now counts only inside the database's own broker matching and category move, never when a user's session sets it itself.
+- **If you redefined `restrict_transaction_updates`, `mark_manual_category` or `flow_source_user` in a migration of your own**, start from the versions in this migration: they no longer check the setting themselves (the triggers do).
+- **Roll back:** run `supabase/rollbacks/20270119000000_broker_flag_definer_only.down.sql`, then `supabase migration repair --status reverted 20270119000000 --linked`.
+
 ### Push subscriptions must be real browser endpoints
 - **Migration:** `20270118000000_push_subscription_checks`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: a push subscription saved straight into the database (older dashboards did that) must now pass the same checks as turning check-ins on in the current dashboard: an `https://` endpoint and well-formed keys. A stored one that fails them could never receive a notification and is deleted; if that was yours, turn purchase check-ins on again.

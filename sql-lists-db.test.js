@@ -27,4 +27,11 @@ test('SQL lists match the TypeScript ones', { skip }, async (t) => {
       for (const list of lists) assert.deepEqual(list, aggregators, fn);
     }
   });
+
+  // H277: move_category tells the built-in categories from the user's own ones.
+  await t.test("move_category's built-in categories match categories.ts CATEGORIES", () => {
+    const builtin = source('move_category').match(/builtin constant text\[\] := array\[([^\]]*)\]/);
+    assert.ok(builtin, 'move_category has no builtin list');
+    assert.deepEqual(sqlStrings(builtin[1]), tsList('supabase/functions/_shared/categories.ts', 'CATEGORIES'));
+  });
 });

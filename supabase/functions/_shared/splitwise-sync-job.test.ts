@@ -407,3 +407,35 @@ Deno.test("a refused key or a rate limit during the re-read stops the sync and r
   assertEquals(err instanceof SplitwiseRateLimitError, true);
   assertEquals(s.applies().length, 0);
 });
+
+// H230 (review): sync-splitwise deployed before its migration (20270121000000) ordered by a
+// column that isn't there yet, so every cron run failed between the two deploy steps. It now
+// falls back to the old order and stamps nothing until the column exists.
+Deno.test("cron: without the last_attempt_at column, users still sync in the old order and nothing is stamped", async () => {
+  const s = setup({ connections: [conn({ user_id: "late", last_synced_at: "2026-11-10T00:00:00Z" }), conn({ user_id: "early", last_synced_at: "2026-11-01T00:00:00Z" })] });
+  const from = s.db.from.bind(s.db);
+  const updates: unknown[] = [];
+  const db = {
+    ...s.db,
+    from: (t: string) => {
+      // deno-lint-ignore no-explicit-any
+      const q: any = from(t);
+      const order = q.order;
+      q.order = (c: string, o?: { ascending?: boolean }) =>
+        c === "last_attempt_at" ? { order: () => ({ limit: () => Promise.resolve({ data: null, error: { code: "42703" } }) }) } : order(c, o);
+      const update = q.update;
+      q.update = (v: Record<string, unknown>) => ("last_attempt_at" in v && updates.push(v), update(v));
+      return q;
+    },
+  };
+  const order: string[] = [];
+  const rpc = s.deps.rpc;
+  const error = console.error;
+  console.error = () => {};
+  try {
+    const result = await runAllUsers({ ...s.deps, db, rpc: (fn, args) => (fn === "splitwise_read_key" && order.push(args.p_user as string), rpc(fn, args)) }, () => true);
+    assertEquals([result.users, result.failed, order, updates.length], [2, 0, ["early", "late"], 0]);
+  } finally {
+    console.error = error;
+  }
+});

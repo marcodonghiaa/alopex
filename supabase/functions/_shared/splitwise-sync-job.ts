@@ -157,13 +157,20 @@ async function markFailure(db: Db, user: string, err: unknown): Promise<Outcome>
 
 export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
   const result = { users: 0, failed: 0, needsReconnect: 0, skipped: 0, rateLimited: false, new: 0, adopted: 0, review: 0, deleted: 0 };
-  const { data, error } = await deps.db.from("splitwise_connections").select(CONNECTION_COLS)
-    .in("status", ["ok", "error"])
+  const read = (byAttempt: boolean) => {
+    let q = deps.db.from("splitwise_connections").select(CONNECTION_COLS).in("status", ["ok", "error"]);
     // Longest since the last try first (H230): a run the wall clock killed never reaches
     // markFailure or last_synced_at, so ordering by success alone put that user first forever.
-    .order("last_attempt_at", { ascending: true, nullsFirst: true })
-    .order("last_synced_at", { ascending: true, nullsFirst: true })
-    .limit(PAGE_SIZE);
+    if (byAttempt) q = q.order("last_attempt_at", { ascending: true, nullsFirst: true });
+    return q.order("last_synced_at", { ascending: true, nullsFirst: true }).limit(PAGE_SIZE);
+  };
+  let { data, error } = await read(true);
+  // Functions deployed before migration 20270121000000: the old order, no stamps, until it's applied.
+  const noColumn = (error as { code?: string } | null)?.code === "42703";
+  if (noColumn) {
+    console.error("sync-splitwise: last_attempt_at missing, run supabase db push; ordered by last sync");
+    ({ data, error } = await read(false));
+  }
   if (error) {
     console.error(`sync-splitwise: connections read failed: ${errorTag(error)}`);
     return { ...result, failed: 1 };
@@ -175,8 +182,10 @@ export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
       result.skipped = list.length - i;
       break;
     }
-    const stamp = await deps.db.from("splitwise_connections").update({ last_attempt_at: new Date(deps.now()).toISOString() }).eq("user_id", c.user_id);
-    if (stamp.error) console.error(`sync-splitwise: attempt time not saved: ${errorTag(stamp.error)}`);
+    if (!noColumn) {
+      const stamp = await deps.db.from("splitwise_connections").update({ last_attempt_at: new Date(deps.now()).toISOString() }).eq("user_id", c.user_id);
+      if (stamp.error) console.error(`sync-splitwise: attempt time not saved: ${errorTag(stamp.error)}`);
+    }
     try {
       const counts = await syncUser(deps, c, { preview: false });
       result.users++;

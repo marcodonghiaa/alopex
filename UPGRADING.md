@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Bank linking and sync are sturdier
+- **Deploy:** `supabase functions deploy` (sync-bank, complete-bank-consent, start-bank-consent, list-banks, delete-account). No migration, no dashboard change.
+- What changes: when one account of a bank link can't be saved, the others are still linked and synced right away, instead of the whole link failing. A bank whose account details never carry an identification hash is no longer asked for them on every sync. A bank that keeps sending the same next-page key stops the sync at once with `PAGING_LOOP` (pages read are saved, the next sync tries again) instead of running into `TIMEOUT`. A first sync that ran out of time but saved transactions gets them categorised right away. An expired bank link's code is closed at Enable Banking. Enable Banking calls while linking, and the bank list, give up after 15 seconds. Deleting your account also closes bank sessions only your accounts remembered. New transactions keep only the other party's name in the stored bank payload (no address, ids, bank or ultimate parties); rows stored before keep theirs.
+- **Roll back:** deploy the previous functions.
+
 ### Edge Functions share one sign-in check and one key choice
 - **Deploy:** `supabase functions deploy` (all functions). No migration of its own.
 - What changes: when Supabase Auth itself is unreachable, linking a bank, the bank list, finishing a bank link, deleting the account, PDF import and adding a holding now answer 503 "Sign-in check is unavailable, please try again" instead of 401 "Not signed in". Every function now picks the project's secret key and publishable key first and falls back to the legacy service_role and anon keys, so turning the legacy keys off no longer breaks bank linking, Splitwise connect, account deletion, rules, subscription refresh or the dashboard origin check.

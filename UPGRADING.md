@@ -669,5 +669,5 @@ If you use your own PostgREST pre-request hook, read "Two-step sign-in" before s
 - `merchant_aliases` (`20261027000000`) and `net_worth_daily_bonds` (`20261028000000`) were added to this repo. If you already created them by hand or from the frontend repo, `supabase db push --linked` fails with `Found local migration files to be inserted before the last migration on remote database` and suggests `--include-all`. Do not use `--include-all`: it would re-run the `create table` and fail with "already exists". Mark them applied instead: `supabase migration repair --status applied 20261027000000 20261028000000`, then `supabase db push --linked` again. (Tested on a local Supabase: after the repair, push reports the database is up to date.)
 
 ## Known limits
-- Portfolio, crypto and notification scripts are single-user (`USER_ID`). Bank sync is multi-user.
+- Only the Coinbase balance sync is single-user (`COINBASE_USER_ID`). Everything else covers every user.
 - Nothing trims old data. Daily net worth snapshots, FX rates and transactions are kept forever. The dashboard reads at most 1000 rows per query, which daily net worth would reach after about 2.6 years of daily snapshots.

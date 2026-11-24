@@ -31,6 +31,15 @@ test('schema invariants', { skip }, async (t) => {
     assert.deepEqual(list(admin(`select string_agg(relname, ',') from pg_class where ${pub} and relkind in ('r', 'p') and not relrowsecurity`)), []);
   });
 
+  // H268: a server-only table (RLS on, no policy) relied on RLS alone; one `disable row level
+  // security` would have opened it. It must also grant nothing to anon or authenticated.
+  await t.test('a table with no policy grants nothing to anon or authenticated', () => {
+    assert.deepEqual(list(admin(`select string_agg(c.relname, ',') from pg_class c where c.${pub} and c.relkind in ('r', 'p')
+      and not exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = c.relname)
+      and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger')
+        or has_table_privilege('authenticated', c.oid, 'select,insert,update,delete,truncate,references,trigger'))`)), []);
+  });
+
   await t.test("every policy is tied to the caller's auth.uid(), except shared reference tables", () => {
     assert.deepEqual(list(admin(`select string_agg(tablename || '.' || policyname, ',') from pg_policies
       where schemaname = 'public' and tablename not in ${inList(SHARED_TABLES)}

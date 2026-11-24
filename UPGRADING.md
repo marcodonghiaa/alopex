@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Sync cursors are server-only
+- **Migration:** `20270114000000_sync_cursors_server_only`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. `sync_cursors` (where each account's sync got to) no longer carries Supabase's default grants to `anon` and `authenticated`, like the other server-only tables, so it stays closed even if row level security is ever turned off. The sync uses the service role and is not affected.
+- **Roll back:** run `supabase/rollbacks/20270114000000_sync_cursors_server_only.down.sql`, then `supabase migration repair --status reverted 20270114000000 --linked`.
+
 ### PDF import has a per-user limit
 - **Migration:** `20270113000000_statement_attempts`. Apply it with `supabase db push --linked` first, then `supabase functions deploy parse-statement`. No dashboard change.
 - What changes: each user can import up to 10 PDF statements per 10 minutes; the 11th answers "Too many PDF imports. Wait 10 minutes and try again." This stops one account (or a stolen session) from spending your Gemini quota in a loop.

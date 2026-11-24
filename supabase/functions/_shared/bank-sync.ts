@@ -190,10 +190,11 @@ export async function syncAccountTransactions(
   // Later syncs re-fetch an overlap before the cursor: banks post transactions days after their
   // booking_date, so a cursor of "today" would skip them forever. Upsert dedupes.
   // A first sync that ran out of time last run would restart longest from page 1 every run (the
-  // continuation key dies with the run): fall back to the last 90 days instead.
+  // continuation key dies with the run): fall back to the last 90 days instead. Same for one
+  // stopped by PAGING_LOOP, which would stop at the same page every run.
   const dateFrom = lastSynced
     ? new Date(Date.parse(lastSynced) - OVERLAP_DAYS * DAY_MS).toISOString().slice(0, 10)
-    : account.sync_error === "TIMEOUT"
+    : account.sync_error === "TIMEOUT" || account.sync_error === "PAGING_LOOP"
     ? new Date(Date.parse(today) - FALLBACK_FIRST_SYNC_DAYS * DAY_MS).toISOString().slice(0, 10)
     : null;
   const transactions: EbTransaction[] = [];

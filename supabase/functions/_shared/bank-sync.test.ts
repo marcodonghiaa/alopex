@@ -524,6 +524,19 @@ Deno.test("transactions: a first sync that timed out falls back to the last 90 d
   assertEquals(params.get("date_from"), "2026-07-29"); // TODAY 2026-10-27 minus 90 days
 });
 
+// H163 review: a first sync stopped by PAGING_LOOP (500 pages of a long history, or a bank that
+// repeats its key on longest) would ask for longest again every run and never set a cursor.
+Deno.test("transactions: a first sync stopped by PAGING_LOOP falls back to the last 90 days", async () => {
+  const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [TX] } } });
+  const { supabase } = fakeSupabase();
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account({ sync_error: "PAGING_LOOP" }), null, TODAY);
+
+  const params = new URL(urls[0]).searchParams;
+  assertEquals(params.has("strategy"), false);
+  assertEquals(params.get("date_from"), "2026-07-29");
+});
+
 Deno.test("transactions: a first sync after another error still asks for the longest history", async () => {
   const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [] } } });
   const { supabase } = fakeSupabase();

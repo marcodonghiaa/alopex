@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### "Make a rule" uses the bank's name
+- **Migration:** `20270104000000_transactions_bank_name`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
+- What changes: on a row you renamed, "Make a rule" now fills in the name the bank sends (for example "AMZN Mktp DE*123", not "Amazon"), so the rule matches that row and the next ones.
+- **Roll back:** run `supabase/rollbacks/20270104000000_transactions_bank_name.down.sql`, then `supabase migration repair --status reverted 20270104000000 --linked`.
+
 ### Accounts and net worth show the same numbers
 - **Migration:** `20270103000000_net_worth_numbers_agree`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
 - What changes:

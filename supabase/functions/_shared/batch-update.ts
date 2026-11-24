@@ -18,6 +18,11 @@ export interface RowUpdate {
 
 export const PAGE_SIZE = 1000; // PostgREST caps a response at 1000 rows
 
+/** Whether a text value can go in a postgrest-js in() list as it is: it quotes a value with a
+ *  comma or a bracket but leaves a double quote or backslash inside it unescaped, so a name like
+ *  `ROSSI, "X"` breaks the filter or splits into two values (H253). Leave such values out. */
+export const inListSafe = (value: string) => !/["\\]/.test(value);
+
 /** Every row of a query, page by page: `page(from, to)` reads rows from..to (inclusive). Order it. */
 export async function readPages<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
   const out: T[] = [];

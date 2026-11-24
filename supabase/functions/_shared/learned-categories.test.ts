@@ -107,3 +107,19 @@ Deno.test("a choice made on money out doesn't spread to money in from the same n
   ], learned);
   assertEquals(plan, []);
 });
+
+// H253: postgrest-js quotes an in() value that has a comma or a bracket but leaves a double quote
+// inside it as it is, so a payer-chosen name like `ROSSI, "X"` broke or split the filter.
+Deno.test("fetchLearned leaves names with a double quote or backslash out of the in() list", async () => {
+  const lists: unknown[][] = [];
+  const q = {
+    select: () => q, eq: () => q, not: () => q, is: () => q, order: () => q, range: () => q,
+    in: (_: string, v: unknown[]) => (lists.push(v), q),
+    then: (ok: (r: unknown) => void) => ok({ data: [], error: null }),
+  };
+  await fetchLearned({ from: () => q }, "u1", ["ROSSI, \"X\"", "A\\B", "PLAIN, SHOP"]);
+  assertEquals(lists, [["PLAIN, SHOP"]]);
+  lists.length = 0;
+  await fetchLearned({ from: () => q }, "u1", ["\"only\""]);
+  assertEquals(lists, [], "no query at all when nothing is left");
+});

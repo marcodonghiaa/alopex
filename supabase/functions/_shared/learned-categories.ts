@@ -1,7 +1,7 @@
 // What you set by hand is the best guess for the next
 // transaction from the same merchant: before the AI, a new row takes the category you most
 // recently chose for that merchant's other rows (category_source 'manual'). Rules still come first.
-import { type Db, PAGE_SIZE as PAGE } from "./batch-update.ts";
+import { type Db, inListSafe, PAGE_SIZE as PAGE } from "./batch-update.ts";
 
 const CHUNK_SIZE = 50; // keeps the `in (...)` request URL well under proxy limits, as in batch-update.ts
 
@@ -12,7 +12,8 @@ export const learnedKey = (name: string | null | undefined, direction: string | 
 // Most recent hand-set category per merchant, for one user and the merchants in `names`.
 // ponytail: pages through every matching hand-set row with no time check; one batch's merchants.
 export async function fetchLearned(db: Db, userId: string, names: Array<string | null | undefined>) {
-  const unique = [...new Set(names.filter(Boolean))];
+  // A name that can't go in an in() list as it is learns nothing (its row goes to the AI).
+  const unique = [...new Set(names.filter((n): n is string => !!n && inListSafe(n)))];
   const learned = new Map<string, string>();
   // Each name is in one chunk only, so newest first within a chunk is newest per name.
   for (let i = 0; i < unique.length; i += CHUNK_SIZE) {

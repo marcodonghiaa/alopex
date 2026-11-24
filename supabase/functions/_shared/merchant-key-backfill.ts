@@ -4,7 +4,7 @@
 // (apply_merchant_alias, migration 20270112000000), so the alias is chosen in one place.
 // Aggregator keys (PayPal, Apple, Google) span unrelated payees: rows store them, and aliases
 // named after them stay unkeyed and are never merged.
-import { applyGroupedUpdates, type Db, PAGE_SIZE, readPages } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, inListSafe, PAGE_SIZE, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { normalizeMerchant } from "./merchant-key.ts";
 
@@ -36,7 +36,10 @@ async function keyAliases(db: Db): Promise<number> {
     const id = `${a.user_id}|${key}`;
     const newest = byKey.get(id);
     // Only an exact repeat of the newest text is redundant; a different alias is the user's and stays.
-    if (newest && same(newest.alias, a.alias)) losers.set(a.user_id, [...(losers.get(a.user_id) ?? []), a.source_name]);
+    // A repeat whose name can't go in the delete's in() list as it is stays (H253): harmless.
+    if (newest && same(newest.alias, a.alias)) {
+      if (inListSafe(a.source_name)) losers.set(a.user_id, [...(losers.get(a.user_id) ?? []), a.source_name]);
+    }
     else {
       if (!newest) byKey.set(id, { ...a, merchant_key: key });
       if (!a.merchant_key) toKey.push({ ...a, merchant_key: key });

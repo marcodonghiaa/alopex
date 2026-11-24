@@ -131,3 +131,27 @@ Deno.test("keys aliases past the first 1000, across users", async () => {
   assertEquals((await fillMerchantKeys(db, always)).aliases, 1500);
   assertEquals(db.tables.merchant_aliases.filter((a) => a.merchant_key === null).length, 0);
 });
+
+// H253: the alias delete is an in() list of names; one with a double quote could split into two
+// values and delete another alias. Such a repeat is kept (it is harmless), the others still go.
+Deno.test("a repeated alias whose name has a double quote is kept; plain repeats still go", async () => {
+  const db = memoryDb({
+    transactions: [],
+    merchant_aliases: [
+      alias("Lidl", "Lidl", "2026-06-01", { merchant_key: "lidl" }),
+      alias("LIDL \"4521\", X", "Lidl", "2026-01-01"),
+      alias("LIDL 4521", "Lidl", "2026-01-02"),
+    ],
+  });
+  const names: unknown[][] = [];
+  const from = db.from.bind(db);
+  const spy = { ...db, from: (t: string) => {
+    const q = from(t);
+    const original = q.in;
+    q.in = (c: string, v: unknown[]) => (names.push(v), original(c, v));
+    return q;
+  } };
+  await fillMerchantKeys(spy, always);
+  assertEquals(names, [["LIDL 4521"]]);
+  assertEquals(db.tables.merchant_aliases.map((a) => a.source_name).sort(), ["LIDL \"4521\", X", "Lidl"]);
+});

@@ -16,6 +16,7 @@
 import type { Db } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import type { Reply } from "./origins.ts";
+import { type CallerDeps, callerOrReply } from "./caller.ts";
 import { type SplitwiseClient, SplitwiseApiError, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 import { balancesFrom, groupLabels, planSync } from "./splitwise-sync.ts";
 
@@ -173,10 +174,8 @@ export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
   return result;
 }
 
-export type HandlerDeps = JobDeps & {
+export type HandlerDeps = JobDeps & CallerDeps & {
   isServer(req: Request): boolean; // the project secret key on apikey (pg_cron)
-  userIdFor(authorization: string): Promise<string | null>;
-  mfaRefusal(authorization: string): Promise<{ body: object; status: number } | null>;
   timeLeft(): boolean;
 };
 
@@ -188,18 +187,8 @@ export const syncNowHandler = (deps: HandlerDeps) => async (req: Request, json: 
     return json(result, result.failed > 0 ? 500 : 200);
   }
 
-  const authorization = req.headers.get("Authorization");
-  let userId: string | null;
-  let refusal: { body: object; status: number } | null = null;
-  try {
-    userId = authorization ? await deps.userIdFor(authorization) : null;
-    if (userId) refusal = await deps.mfaRefusal(authorization!);
-  } catch (err) {
-    console.error(`sync-splitwise: sign-in check failed: ${errorTag(err)}`);
-    return json({ error: "Sign-in check is unavailable, please try again" }, 503);
-  }
-  if (!userId) return json({ error: "Not signed in" }, 401);
-  if (refusal) return json(refusal.body, refusal.status);
+  const userId = await callerOrReply(req, deps, json, "sync-splitwise");
+  if (userId instanceof Response) return userId;
 
   const body = await req.json().catch(() => null);
   const preview = body?.preview === true;

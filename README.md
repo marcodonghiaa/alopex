@@ -138,7 +138,7 @@ SETUP_EMAIL="$SETUP_EMAIL" SETUP_PASSWORD="$SETUP_PASSWORD" node --env-file=.env
 
 ## 🗄️ Data model
 
-Every table is Row Level Security scoped to `auth.uid() = user_id`.
+Every per-user table is Row Level Security scoped to `auth.uid() = user_id`. `fx_rates` is shared, read-only reference data; server-only tables (such as `splitwise_connections`) have no client access.
 
 | Area | Tables |
 |---|---|

@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import {
+  geminiRefusal,
   geminiRequest,
   MAX_PDF_BASE64,
   parseGeminiRows,
@@ -55,4 +56,14 @@ Deno.test("an unreadable answer is no rows, not a crash", () => {
   assertEquals(parseGeminiRows({}), []);
   assertEquals(parseGeminiRows({ candidates: [{ content: { parts: [{ text: "not json" }] } }] }), []);
   assertEquals(parseGeminiRows(reply({ not: "an array" })), []);
+});
+
+// H065: a cut-off or blocked answer read as "No transactions found in this PDF".
+Deno.test("a cut-off or blocked answer is reported, a finished one is not", () => {
+  const done = (finishReason?: string) => ({ candidates: [{ finishReason, content: { parts: [{ text: "[" }] } }] });
+  assertEquals(geminiRefusal(done("STOP")), null);
+  assertEquals(geminiRefusal(done(undefined)), null);
+  assertEquals(geminiRefusal(done("MAX_TOKENS"))?.includes("too long"), true);
+  assertEquals(typeof geminiRefusal(done("SAFETY")), "string");
+  assertEquals(typeof geminiRefusal({ promptFeedback: { blockReason: "OTHER" } }), "string");
 });

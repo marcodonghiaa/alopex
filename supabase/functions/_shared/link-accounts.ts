@@ -4,7 +4,7 @@
 
 import { EB_NO_ACCOUNTS, signEnableBankingJwt } from "./enable-banking.ts";
 import { errorTag } from "./log-safe.ts";
-import { accountType, matchAccount, matchPatch, pickBalance, type StoredAccount } from "./account-match.ts";
+import { accountType, matchAccount, matchPatch, type StoredAccount } from "./account-match.ts";
 import { bankLogo, type BankInfo, fetchAspsps } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
@@ -21,7 +21,7 @@ interface EnableBankingAccount {
   cash_account_type?: string | null;
 }
 
-export type LinkResult = { params: Record<string, string>; newAccountUids: string[] } | { error: string };
+export type LinkResult = { params: Record<string, string>; syncUids: string[] } | { error: string };
 
 // deno-lint-ignore no-explicit-any
 export async function linkAccounts(supabase: any, userId: string, code: string): Promise<LinkResult> {
@@ -67,7 +67,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
         .upsert({ session_id: sessionId, user_id: userId, bank_name: bankName }, { onConflict: "session_id" });
       if (sessionError) console.error(`bank session not stored: ${errorTag(sessionError)}`);
     }
-    const savedRows: Array<{ uid: string; ebUid: string; label: string | null; currency: string }> = [];
+    const savedRows: Array<{ uid: string; label: string | null; currency: string }> = [];
 
     // uid is the PK (transactions, snapshots and sync_cursors reference it), so an existing row's uid
     // never changes. eb_account_uid follows the session: EB account ids die with their session, so a
@@ -83,8 +83,8 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     // Which session each account reads from, so a renewal can close the one it replaced.
     const sessionPatch = relinkPatch(sessionId);
     let stored: StoredAccount[] = storedRows ?? [];
+    const raced = new Set<string>(); // inserted by a concurrent callback, which syncs it itself
 
-    const newUids: string[] = []; // first-synced right away; relinked ones wait for the cron
     for (const a of accounts) {
       const iban = a.account_id?.iban ?? null;
       const identificationHash = a.identification_hash ?? null;
@@ -109,8 +109,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
         });
         if (!error) {
           stored = [...stored, { uid: a.uid, iban, currency: a.currency, identification_hash: identificationHash, account_type: type }];
-          savedRows.push({ uid: a.uid, ebUid: a.uid, label, currency: a.currency });
-          newUids.push(a.uid);
+          savedRows.push({ uid: a.uid, label, currency: a.currency });
           continue;
         }
         // A concurrent callback inserted the same pocket first (unique user_id + identification_hash).
@@ -125,6 +124,7 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
         const racedRow: StoredAccount = raced;
         stored = [...stored, racedRow];
         uid = racedRow.uid;
+        raced.add(uid);
       }
 
       // The type only fills a gap: a type the user corrected stays.
@@ -146,47 +146,13 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
           ? { ...s, iban: iban ?? s.iban, currency: a.currency, identification_hash: identificationHash ?? s.identification_hash }
           : s
       );
-      savedRows.push({ uid, ebUid: a.uid, label, currency: a.currency });
+      savedRows.push({ uid, label, currency: a.currency });
       relinked.add(uid);
     }
 
     // A renewal leaves the old session open at Enable Banking until it expires: close it once
     // no account reads from it.
     if (sessionId) await closeReplaced(supabase, userId, sessionsBefore, relinked, sessionId);
-
-    // Fetch an immediate balance for each linked account instead of leaving
-    // it invisible until the next scheduled sync (up to 6 hours away) --
-    // same /accounts/{id}/balances call the bank sync makes on its
-    // batch schedule, just run once here for the accounts that just linked.
-    // Best-effort: a failure here doesn't fail the link, the batch job
-    // catches it up at the next sync regardless.
-    // New accounts skip it: complete-bank-consent starts their first sync (balance included)
-    // right away, and a second balance call would spend one of the bank's few daily calls.
-    const today = new Date().toISOString().slice(0, 10);
-    for (const row of savedRows.filter((r) => !newUids.includes(r.uid))) {
-      try {
-        const balRes = await fetch(
-          `https://api.enablebanking.com/accounts/${row.ebUid}/balances`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (!balRes.ok) continue;
-        const balData = await balRes.json();
-        const balance = pickBalance(balData.balances);
-        if (!balance) continue;
-        await supabase.from("net_worth_snapshots").upsert(
-          {
-            account_uid: row.uid,
-            user_id: userId,
-            currency: balance.balance_amount.currency,
-            amount: parseFloat(balance.balance_amount.amount),
-            snapshot_date: today,
-          },
-          { onConflict: "account_uid,snapshot_date" },
-        );
-      } catch {
-        // best-effort, batch sync will catch up
-      }
-    }
 
     // A fresh instance has no fx_rates until the first sync, and v_net_worth_eur counts a currency
     // with no rate as 0. Seed the latest rates now. Best-effort, sync-prices keeps them current.
@@ -202,7 +168,10 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
 
     return {
       params: linkedParams(savedRows.length, bank.bank_name, savedRows.map((r) => r.currency)),
-      newAccountUids: newUids,
+      // H038: renewed accounts too, while the bank still allows a long read right after consent.
+      // sync-bank reads each balance first, so no separate balance call is spent here.
+      // Once each: two shared accounts can match one stored account, and one sync is enough.
+      syncUids: [...new Set(savedRows.map((r) => r.uid))].filter((uid) => !raced.has(uid)),
     };
   } catch (err) {
     return fail(err);

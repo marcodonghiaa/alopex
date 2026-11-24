@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { bankChoices, bankLogo, consentEnd, consentValidUntil, fetchAspsps } from "./bank-info.ts";
+import { bankChoices, bankLogo, consentEnd, consentValidUntil, fetchAspsps, requestConsentUrl } from "./bank-info.ts";
 
 const aspsps = [
   { name: "Fineco", logo: "https://enablebanking.com/brands/IT/Fineco/" },
@@ -83,4 +83,29 @@ Deno.test("bankChoices keeps beta banks, flagged, A to Z (a bank linked in Enabl
     { name: "Fineco", logo: null, beta: false },
     { name: "Trade Republic", logo: "https://x/tr.png", beta: true },
   ]);
+});
+
+// H037: a failed /auth call must not leave its pending row, or a few retries hit the 5-open cap.
+const CONSENT = { token: "tok", bankName: "B", country: "IT", validUntil: "2027-01-01", state: "s1", redirectUrl: "https://x/cb" };
+const answer = (status: number, body: unknown) =>
+  (() => Promise.resolve(Response.json(body, { status }))) as unknown as typeof fetch;
+for (const [name, fetchFn] of [
+  ["a refused call", answer(500, {})],
+  ["a reply with no url", answer(200, {})],
+  ["a network failure", (() => Promise.reject(new TypeError("offline"))) as unknown as typeof fetch],
+] as const) {
+  Deno.test(`requestConsentUrl: ${name} discards the pending row and says why`, async () => {
+    let discarded = 0;
+    const result = await requestConsentUrl({ ...CONSENT, discard: async () => { discarded++; }, fetchFn });
+    assertEquals(discarded, 1);
+    assertEquals("error" in result && result.status >= 500, true);
+  });
+}
+Deno.test("requestConsentUrl: a good reply keeps the row and returns the bank's url", async () => {
+  let discarded = 0;
+  const result = await requestConsentUrl({
+    ...CONSENT, discard: async () => { discarded++; }, fetchFn: answer(200, { url: "https://bank/consent" }),
+  });
+  assertEquals(result, { url: "https://bank/consent" });
+  assertEquals(discarded, 0);
 });

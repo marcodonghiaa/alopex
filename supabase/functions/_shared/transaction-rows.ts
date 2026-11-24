@@ -113,7 +113,8 @@ function mapToRow(tx: EbTransaction, accountUid: string, userId: string, entryRe
     merchant_key: normalizeMerchant(creditorName).key,
     debtor_name: tx.debtor?.name || null,
     remittance_info: (tx.remittance_information || []).join(" "),
-    booking_date: tx.booking_date,
+    // H040: some banks send no booking_date; the key above still uses the raw one.
+    booking_date: tx.booking_date ?? tx.value_date ?? tx.transaction_date ?? null,
     value_date: tx.value_date,
     bank_transaction_code: tx.bank_transaction_code?.code || null,
     // Left out when the user's IBANs are unknown, so a failed read keeps what was stored.

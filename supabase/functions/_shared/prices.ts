@@ -43,6 +43,20 @@ export async function syncFx(db: Db, get: GetJson): Promise<number> {
   return rows + today.length;
 }
 
+// Every row of a holdings table, read in 1000-row pages (PostgREST's cap) in a stable order (H048).
+const PAGE = 1000;
+async function selectAll(db: Db, table: string, columns: string, order: string[]) {
+  const all = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = db.from(table).select(columns);
+    for (const c of order) q = q.order(c);
+    const { data, error } = await q.range(from, from + PAGE - 1);
+    if (error) throw error;
+    all.push(...(data ?? []));
+    if (!data || data.length < PAGE) return all;
+  }
+}
+
 async function latestRate(db: Db, currency: string): Promise<number> {
   if (currency === "EUR") return 1;
   const { data, error } = await db
@@ -112,8 +126,7 @@ export async function priceHoldings(
 }
 
 export async function syncPortfolio(db: Db, get: GetJson, today: string, timeLeft?: () => boolean): Promise<number> {
-  const { data: holdings, error } = await db.from("portfolio_holdings").select("user_id, isin, yahoo_symbol, shares, asset_type");
-  if (error) throw error;
+  const holdings = await selectAll(db, "portfolio_holdings", "user_id, isin, yahoo_symbol, shares, asset_type", ["user_id", "isin"]);
   const { rows, typeUpdates } = await priceHoldings(
     holdings,
     async (symbol) =>
@@ -176,14 +189,20 @@ export function cryptoRows(holdings: CoinHolding[], prices: Record<string, { usd
 }
 
 export async function syncCrypto(db: Db, get: GetJson, today: string): Promise<number> {
-  const { data: holdings, error } = await db.from("crypto_holdings").select("user_id, asset_symbol, amount, source, coingecko_id");
-  if (error) throw error;
+  const holdings: CoinHolding[] = await selectAll(
+    db, "crypto_holdings", "user_id, asset_symbol, amount, source, coingecko_id", ["user_id", "asset_symbol", "source"],
+  );
   if (holdings.length === 0) return 0;
-  const ids = [...new Set(holdings.map((h: CoinHolding) => h.coingecko_id))].join(",");
-  const prices = await get(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`, {
-    Accept: "application/json",
-  });
-  const rows = cryptoRows(holdings, prices as Record<string, { usd?: number }>, await latestRate(db, "USD"), today);
+  // Batches of 100 ids: one URL with every user's ids grows past what CoinGecko accepts (H048).
+  const ids = [...new Set(holdings.map((h) => h.coingecko_id))];
+  const prices: Record<string, { usd?: number }> = {};
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100).join(",");
+    Object.assign(prices, await get(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(batch)}&vs_currencies=usd`, {
+      Accept: "application/json",
+    }));
+  }
+  const rows = cryptoRows(holdings, prices, await latestRate(db, "USD"), today);
   if (rows.length > 0) {
     const { error } = await db.from("crypto_snapshots").upsert(rows, { onConflict: "user_id,asset_symbol,source,snapshot_date" });
     if (error) throw error;

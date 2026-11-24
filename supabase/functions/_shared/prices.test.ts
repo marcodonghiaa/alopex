@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { cryptoRows, type GetJson, type Holding, nextAssetType, priceHoldings, syncFx } from "./prices.ts";
+import { cryptoRows, type GetJson, type Holding, nextAssetType, priceHoldings, syncCrypto, syncFx } from "./prices.ts";
 
 const holding = (over: Partial<Holding> = {}): Holding => ({ user_id: "u1", isin: "IE00", yahoo_symbol: "VWCE.DE", shares: 2, asset_type: null, ...over });
 const quiet = async <T>(run: () => Promise<T>) => {
@@ -127,4 +127,43 @@ Deno.test("crypto rows: a holding with a NaN or infinite amount is skipped, the 
     )
   );
   assertEquals(rows.map((r) => [r.user_id, r.value_eur]), [["good", 50]]);
+});
+
+// H048: one unordered select (PostgREST answers at most 1000 rows) and one CoinGecko URL with
+// every user's ids, so a few users with many coins left everyone after row 1000 unpriced.
+function cappedDb(tables: Record<string, Array<Record<string, unknown>>>) {
+  const upserts: unknown[][] = [];
+  const db = {
+    from: (table: string) => {
+      let window: [number, number] = [0, 999];
+      const q = {
+        select: () => q,
+        eq: () => q,
+        order: () => q,
+        limit: (n: number) => ((window = [0, n - 1]), q),
+        range: (a: number, b: number) => ((window = [a, Math.min(b, a + 999)]), q),
+        upsert: async (rows: unknown[]) => (upserts.push(rows), { error: null }),
+        then: (resolve: (v: unknown) => void) =>
+          resolve({ data: (tables[table] ?? []).slice(window[0], window[1] + 1), error: null }),
+      };
+      return q;
+    },
+  };
+  return { db, upserts };
+}
+Deno.test("crypto: every holding past row 1000 is priced, and CoinGecko is asked in batches", async () => {
+  const holdings = Array.from({ length: 1500 }, (_, i) => ({
+    user_id: `u${i % 7}`, asset_symbol: `C${i}`, amount: 1, source: "Manual", coingecko_id: `coin-${i % 250}`,
+  }));
+  const { db, upserts } = cappedDb({ crypto_holdings: holdings, fx_rates: [{ rate_to_eur: 0.9 }] });
+  const urls: string[] = [];
+  const get: GetJson = async (url) => {
+    urls.push(url);
+    const ids = decodeURIComponent(new URL(url).searchParams.get("ids")!).split(",");
+    return Object.fromEntries(ids.map((id) => [id, { usd: 2 }]));
+  };
+  assertEquals(await syncCrypto(db, get, "2026-11-23"), 1500);
+  assertEquals(upserts.flat().length, 1500);
+  assertEquals(urls.every((u) => decodeURIComponent(new URL(u).searchParams.get("ids")!).split(",").length <= 100), true);
+  assertEquals(urls.length, 3);
 });

@@ -83,3 +83,35 @@ Deno.test("linkAccounts: a new account shared by the renewal reads from the new 
   }
   assertEquals(db.tables.accounts.find((a) => a.uid === "eb-usd")?.bank_session_id, "new");
 });
+
+// H038: a renewed account was left for the next cron (up to 6 h), missing the first hour after
+// consent when banks still allow a long history read. Now every linked account syncs right away,
+// and no separate balance call is spent (sync-bank reads the balance first).
+Deno.test("linkAccounts: renewed and new accounts are all synced right away, with no extra balance call", async () => {
+  const db = memoryDb(stored());
+  const added = { uid: "eb-usd", currency: "USD", identification_hash: "h2", account_id: { iban: IBAN } };
+  const eb = fakeEb({ session_id: "new", accounts: [ebAccount, added], access: { valid_until: "2027-05-01T00:00:00Z" } });
+  let result;
+  try {
+    result = await linkAccounts(db, "u", "code");
+  } finally {
+    eb.restore();
+  }
+  assertEquals("syncUids" in result! ? [...result.syncUids].sort() : result, ["acc1", "eb-usd"]);
+  assertEquals(eb.calls.some((c) => c.includes("/balances")), false, eb.calls.join("\n"));
+});
+
+// Review of H038: two shared accounts that match one stored account must not start two
+// concurrent syncs of it (each costs the bank's few daily calls).
+Deno.test("linkAccounts: an account matched twice in one consent is synced once", async () => {
+  const db = memoryDb(stored());
+  const twin = (uid: string) => ({ uid, currency: "EUR", account_id: { iban: IBAN } });
+  const eb = fakeEb({ session_id: "new", accounts: [twin("eb-a"), twin("eb-b")], access: { valid_until: "2027-05-01T00:00:00Z" } });
+  let result;
+  try {
+    result = await linkAccounts(db, "u", "code");
+  } finally {
+    eb.restore();
+  }
+  assertEquals("syncUids" in result! ? result.syncUids : result, ["acc1"]);
+});

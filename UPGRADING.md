@@ -10,6 +10,24 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Bank sync, prices, Splitwise and reminders hold up better
+- **Migrations:** `20270101000000_holding_id_checks` and `20270102000000_splitwise_switch_account`. Apply them with `supabase db push --linked`.
+- **Functions:** run `supabase functions deploy` (start-bank-consent, complete-bank-consent, sync-bank, sync-prices, notify, parse-statement and post-sync changed). Update the dashboard too, for the new bank-key message.
+- What changes:
+  - A failed bank-link start no longer counts toward the 5 links in progress.
+  - A broken Enable Banking key now shows on the account instead of the sync going quiet.
+  - A renewed bank syncs right away. That spends one more bank call than before, so a renewal late in a day the cron already used up can show a rate-limit note until the next sync.
+  - Rows without a booking date use the value date.
+  - The common Coinbase coins are priced.
+  - Price sync reads every holding (no 1000-row cap) and asks CoinGecko in batches. New holdings must have a sensible symbol and CoinGecko id; rows already stored are not checked.
+  - Connecting a different Splitwise account removes the old account's synced shares (CSV rows stay).
+  - One user's failure no longer stops bank reminders for the others.
+  - The Worth it? €15 line is in euros for every currency.
+  - A PDF read cut short says so.
+  - A category you set on money out no longer spreads to money in from the same name.
+  - AI answers land on the right row when two accounts share a reference.
+- **Roll back:** run `supabase/rollbacks/20270102000000_splitwise_switch_account.down.sql` and `supabase/rollbacks/20270101000000_holding_id_checks.down.sql`, then `supabase migration repair --status reverted 20270102000000 20270101000000 --linked`, and redeploy the previous functions (`git checkout <previous tag> -- supabase/functions && supabase functions deploy`).
+
 ### Notifications follow whoever is signed in on a browser
 - **Migration:** `20261231000000_claim_push_subscription`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
 - When a second account signed in on a browser that already had notifications on, its subscription failed silently (the endpoint was taken), so the new account got nothing and the previous one kept getting its alerts. Turning notifications on now moves this browser to the signed-in account, and signing out removes this browser's subscription.

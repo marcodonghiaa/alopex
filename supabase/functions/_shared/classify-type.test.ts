@@ -74,3 +74,16 @@ Deno.test("the type prompt marks the fields as untrusted and allows only the two
   assertMatch(prompt, /untrusted data from third parties/);
   assertMatch(prompt, /"Subscription" or "One-time"/);
 });
+
+// H074: same fix for the Subscription / One-time answers.
+Deno.test("the same reference on two accounts: each row gets its own type", async () => {
+  const db = memoryDb({
+    transactions: [tx("r1", "NETFLIX", { account_uid: "a1" }), tx("r1", "SHOP", { account_uid: "a2" })],
+    category_rules: [],
+  });
+  const ask: Ask = async (prompt) =>
+    [...prompt.matchAll(/"entry_reference": "([^"]+)",\s*"creditor_name": "([^"]+)"/g)]
+      .map((m) => ({ entry_reference: m[1], transaction_type: m[2] === "NETFLIX" ? "Subscription" : "One-time" }));
+  await classifyTypes(db, ask);
+  assertEquals(db.tables.transactions.map((r) => [r.account_uid, r.transaction_type]), [["a1", "Subscription"], ["a2", "One-time"]]);
+});

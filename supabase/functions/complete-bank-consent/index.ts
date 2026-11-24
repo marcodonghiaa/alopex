@@ -56,7 +56,7 @@ Deno.serve(serveWithCors(async (req, json) => {
   EdgeRuntime.waitUntil(startFirstSync(
     Deno.env.get("SUPABASE_URL")!,
     SECRET_KEYS.default ?? Object.values(SECRET_KEYS)[0],
-    result.newAccountUids,
+    result.syncUids,
     fetch,
     // Then categories, transfers and subscriptions right away, not at the next 6-hour run.
     async () => {

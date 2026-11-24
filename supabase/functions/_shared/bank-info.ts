@@ -1,6 +1,8 @@
 // The bank (ASPSP) behind a linked account. Enable Banking's /sessions response
 // names the bank and its country but not its logo; /aspsps?country= lists logos.
 
+import { ebErrorMessage } from "./enable-banking.ts";
+
 export interface BankInfo { bank_name: string | null; bank_country: string | null; bank_logo: string | null }
 
 export function bankLogo(aspsps: Array<{ name: string; logo?: string | null }> | null, name: string): string | null {
@@ -57,4 +59,49 @@ export async function consentEnd(
   fetchFn: typeof fetch = fetch,
 ): Promise<string> {
   return consentValidUntil(await fetchAspsps(token, country, fetchFn), bankName, now);
+}
+
+// start-bank-consent's /auth call. Every failure discards the pending row it was given, or a few
+// failed tries fill MAX_OPEN_CONSENTS and lock the user out with a misleading 429 (H037).
+export async function requestConsentUrl(opts: {
+  token: string;
+  bankName: string;
+  country: string;
+  validUntil: string;
+  state: string;
+  redirectUrl: string;
+  discard: () => PromiseLike<unknown>;
+  fetchFn?: typeof fetch;
+}): Promise<{ url: string } | { error: string; status: number }> {
+  const fail = async (error: string, status: number) => {
+    try {
+      await opts.discard();
+    } catch { /* best effort: the 15-minute window clears it anyway */ }
+    return { error, status };
+  };
+  try {
+    const res = await (opts.fetchFn ?? fetch)("https://api.enablebanking.com/auth", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${opts.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access: { valid_until: opts.validUntil },
+        aspsp: { name: opts.bankName, country: opts.country },
+        state: opts.state,
+        redirect_url: opts.redirectUrl,
+        psu_type: "personal",
+      }),
+    });
+    if (!res.ok) {
+      console.error("Enable Banking error:", res.status);
+      return fail(ebErrorMessage(res.status), 502);
+    }
+    const data = await res.json();
+    if (!data?.url) {
+      console.error("Enable Banking error: no consent url");
+      return fail("Enable Banking error, please try again", 502);
+    }
+    return { url: data.url };
+  } catch {
+    return fail("Something went wrong, please try again", 500);
+  }
 }

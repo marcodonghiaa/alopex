@@ -68,4 +68,12 @@ test('schema invariants', { skip }, async (t) => {
     assert.deepEqual(list(admin(`select string_agg(relname, ',') from pg_class where ${pub} and relkind = 'v'
       and not coalesce('security_invoker=true' = any(reloptions), false)`)), []);
   });
+
+  // H238: deleting a user (or one of their accounts) must remove every row that belongs to them.
+  // 20261125 turned the old foreign keys into cascades; later tables each declare it by hand.
+  await t.test('every foreign key to auth.users or accounts cascades on delete', () => {
+    assert.ok(Number(admin(`select count(*) from pg_constraint where contype = 'f' and confrelid = 'auth.users'::regclass`)) > 10);
+    assert.deepEqual(list(admin(`select string_agg(conrelid::regclass || '.' || conname, ',') from pg_constraint
+      where contype = 'f' and confrelid in ('auth.users'::regclass, 'public.accounts'::regclass) and confdeltype <> 'c'`)), []);
+  });
 });

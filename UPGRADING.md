@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### The bank sync cron shares one Edge Function caller
+- **Migration:** `20270111000000_sync_all_banks_uses_call_edge_function`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. `sync_all_banks` sends each bank account through `call_edge_function`, like the other cron jobs, instead of keeping its own copy of the Vault secrets, headers and timeout. It still stops with "Set the Vault secrets ..." when they are missing.
+- **Roll back:** run `supabase/rollbacks/20270111000000_sync_all_banks_uses_call_edge_function.down.sql`, then `supabase migration repair --status reverted 20270111000000 --linked`.
+
 ### New transaction columns are server-only by default
 - **Migration:** `20270110000000_transactions_update_allowlist`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: nothing you can see. The guard on transactions now lists what a signed-in user may change (category, name, flow, split, note, tags and the like, plus amount, date and name on manual accounts) instead of what they may not, so a column a later release adds can only be written by the sync until it is allowed on purpose. Every column that exists today keeps its old rule.

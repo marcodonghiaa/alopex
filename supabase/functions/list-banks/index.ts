@@ -18,13 +18,6 @@ import { callerOrReply } from "../_shared/caller.ts";
 import { isCountryCode } from "../_shared/validate.ts";
 import { bankChoices } from "../_shared/bank-info.ts";
 
-interface Aspsp {
-  name: string;
-  country: string;
-  logo?: string | null;
-  beta?: boolean;
-}
-
 Deno.serve(serveWithCors(async (req, json) => {
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
@@ -57,7 +50,7 @@ Deno.serve(serveWithCors(async (req, json) => {
     }
     const data = await res.json();
 
-    const banks = bankChoices((data.aspsps ?? []) as Array<Aspsp>);
+    const banks = bankChoices(data.aspsps ?? []);
 
     return json({ banks });
   } catch {

@@ -78,9 +78,6 @@ const OVERLAP_DAYS = 7;
 const FALLBACK_FIRST_SYNC_DAYS = 90;
 const DAY_MS = 24 * 3600 * 1000;
 
-// Statuses with which EB refuses an account id (dead or expired consent).
-const EB_REJECTED_STATUSES = new Set([401, 403, 404, 422]);
-
 type EbError = Error & { status?: number; code?: string };
 
 export { errorTag };
@@ -88,8 +85,6 @@ export { errorTag };
 // The id Enable Banking answers to now: a renewed consent can give the same bank
 // account a new id (eb_account_uid); null means uid is still it.
 const ebAccountId = (account: SyncAccount) => account.eb_account_uid || account.uid;
-
-const rejectedStatus = (err: EbError) => (err.status && EB_REJECTED_STATUSES.has(err.status) ? err.status : null);
 
 // What went wrong, as stored on accounts.sync_error for the dashboard: EB's error name when the
 // bank answered with one (e.g. ASPSP_RATE_LIMIT_EXCEEDED), else the HTTP status, a timeout
@@ -177,8 +172,8 @@ async function fetchStoredRefs(supabase: Db, accountUid: string, transactions: E
   return stored;
 }
 
-// Rows and the cursor stay under the PK (uid). Never throws for EB failures: rejected carries
-// the status when EB refuses the id. cursor = the new last_synced, null when it must not move.
+// Rows and the cursor stay under the PK (uid). Never throws for EB failures: error names
+// the failure. cursor = the new last_synced, null when it must not move.
 export async function syncAccountTransactions(
   { fetch, supabase }: Deps,
   token: string,
@@ -233,13 +228,13 @@ export async function syncAccountTransactions(
       }
     } catch (err) {
       console.error(`Supabase insert error: ${errorTag(err)}`);
-      return { upserted: 0, rejected: null, cursor: null, error: "SAVE_FAILED" };
+      return { upserted: 0, cursor: null, error: "SAVE_FAILED" };
     }
-    if (failure) return { upserted: rows.length, rejected: rejectedStatus(failure as EbError), cursor: null, error: syncErrorCode(failure) };
-    return { upserted: rows.length, rejected: null, cursor: today, error: null };
+    if (failure) return { upserted: rows.length, cursor: null, error: syncErrorCode(failure) };
+    return { upserted: rows.length, cursor: today, error: null };
   }
-  if (failure) return { upserted: 0, rejected: rejectedStatus(failure as EbError), cursor: null, error: syncErrorCode(failure) };
-  return { upserted: 0, rejected: null, cursor: today, error: null };
+  if (failure) return { upserted: 0, cursor: null, error: syncErrorCode(failure) };
+  return { upserted: 0, cursor: today, error: null };
 }
 
 // Older rows lack account_type, and some identification_hash (and iban): ask EB once and store
@@ -297,7 +292,7 @@ export async function syncAccountBalance(deps: Deps, token: string, account: Syn
     const balance = pickBalance(data.balances);
     if (!balance) {
       console.log("No balance returned.");
-      return { row: null, rejected: null, renewed: false, ebFailed: false, error: null };
+      return { row: null, renewed: false, ebFailed: false, error: null };
     }
     const row = {
       account_uid: account.uid,
@@ -306,10 +301,10 @@ export async function syncAccountBalance(deps: Deps, token: string, account: Syn
       snapshot_date: today,
       user_id: account.user_id,
     };
-    return { row, rejected: null, renewed: false, ebFailed: false, error: null };
+    return { row, renewed: false, ebFailed: false, error: null };
   } catch (err) {
     console.error(`Failed to fetch balance: ${errorTag(err)}`);
     const renewed = await markForRenewal(deps.supabase, account, err as EbError, today);
-    return { row: null, rejected: rejectedStatus(err as EbError), renewed, ebFailed: true, error: syncErrorCode(err) };
+    return { row: null, renewed, ebFailed: true, error: syncErrorCode(err) };
   }
 }

@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
 
   // The bank just refused or failed this account: don't spend more of its daily calls on it.
   const tx = balance.ebFailed
-    ? { upserted: 0, rejected: null, cursor: null, error: null }
+    ? { upserted: 0, cursor: null, error: null }
     : await syncAccountTransactions(deps, token, account, cursorRead.data?.last_synced ?? null, today);
   if (tx.cursor) {
     const { error } = await supabase
@@ -89,7 +89,6 @@ Deno.serve(async (req) => {
   const result = {
     upserted: tx.upserted,
     balance_saved: balanceSaved,
-    rejected: balance.rejected ?? tx.rejected,
     renewed: balance.renewed,
     error: syncError,
     ms: Date.now() - started,

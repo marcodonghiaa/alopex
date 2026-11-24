@@ -66,7 +66,7 @@ Deno.test("transactions: calls EB with eb_account_uid; rows and cursor use uid",
   assert(urls[0].startsWith(`${EB}/eb/transactions?`));
   assertEquals(writes[0].filters, [{ onConflict: "account_uid,entry_reference" }]);
   assert((writes[0].data as { account_uid: string }[]).every((row) => row.account_uid === "pk"));
-  assertEquals(result, { upserted: 1, rejected: null, cursor: TODAY, error: null });
+  assertEquals(result, { upserted: 1, cursor: TODAY, error: null });
 });
 
 // H014/H016: a bank reusing an entry_reference overwrote the stored transaction with the new one.
@@ -213,7 +213,7 @@ Deno.test("transactions: a repeated continuation_key stops paging, saves what ca
   }
 
   assertEquals(calls, 2);
-  assertEquals(result, { upserted: 1, rejected: null, cursor: null, error: "PAGING_LOOP" });
+  assertEquals(result, { upserted: 1, cursor: null, error: "PAGING_LOOP" });
   assertEquals((writes[0].data as unknown[]).length, 1);
 });
 
@@ -238,13 +238,13 @@ Deno.test("transactions: paging stops after 500 pages", async () => {
   assertEquals(result.cursor, null);
 });
 
-Deno.test("transactions: a 404 is rejected and the cursor stays", async () => {
+Deno.test("transactions: a 404 is an error and the cursor stays", async () => {
   const { fetch } = fakeFetch({ "/transactions?": { ok: false, status: 404 } });
   const { supabase, writes } = fakeSupabase();
 
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
 
-  assertEquals(result, { upserted: 0, rejected: 404, cursor: null, error: "HTTP_404" });
+  assertEquals(result, { upserted: 0, cursor: null, error: "HTTP_404" });
   assertEquals(writes, []);
 });
 
@@ -254,18 +254,18 @@ Deno.test("transactions: a failed upsert leaves the cursor", async () => {
 
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
 
-  assertEquals(result, { upserted: 0, rejected: null, cursor: null, error: "SAVE_FAILED" });
+  assertEquals(result, { upserted: 0, cursor: null, error: "SAVE_FAILED" });
 });
 
 Deno.test("balance: calls EB with eb_account_uid and builds the row under uid", async () => {
   const { fetch, urls } = fakeFetch({ "/balances": { body: BALANCES } });
   const { supabase } = fakeSupabase();
 
-  const { row, rejected } = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
+  const { row, error } = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
 
   assertEquals(urls, [`${EB}/eb/balances`]);
   assertEquals(row, { account_uid: "pk", currency: "EUR", amount: 12.5, snapshot_date: TODAY, user_id: "user" });
-  assertEquals(rejected, null);
+  assertEquals(error, null);
 });
 Deno.test("balance: saves the booked balance when the bank lists the available one first", async () => {
   const body = { balances: [
@@ -361,7 +361,7 @@ Deno.test("balance: EXPIRED_SESSION marks the consent as ending today (compare-a
     data: { consent_valid_until: TODAY },
     filters: [["eq", "uid", "pk"], ["eq", "consent_valid_until", consent]],
   }]);
-  assertEquals(result, { row: null, rejected: 401, renewed: true, ebFailed: true, error: "EXPIRED_SESSION" });
+  assertEquals(result, { row: null, renewed: true, ebFailed: true, error: "EXPIRED_SESSION" });
 });
 
 Deno.test("balance: a 429 on balances reports ebFailed so the caller stops", async () => {
@@ -370,7 +370,7 @@ Deno.test("balance: a 429 on balances reports ebFailed so the caller stops", asy
 
   const result = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
 
-  assertEquals(result, { row: null, rejected: null, renewed: false, ebFailed: true, error: "HTTP_429" });
+  assertEquals(result, { row: null, renewed: false, ebFailed: true, error: "HTTP_429" });
 });
 
 Deno.test("balance: EXPIRED_SESSION never moves an earlier consent date later", async () => {
@@ -388,7 +388,7 @@ Deno.test("balance: a 401 that is not EXPIRED_SESSION, or not JSON, leaves the d
     const { supabase, writes } = fakeSupabase();
     const result = await syncAccountBalance({ fetch, supabase }, "t", account({ consent_valid_until: null }), TODAY);
     assertEquals(writes, []);
-    assertEquals(result.rejected, 401);
+    assertEquals(result.ebFailed, true);
   }
 });
 
@@ -444,7 +444,7 @@ Deno.test("transactions: WRONG_TRANSACTIONS_PERIOD (cursor older than the bank k
   const retry = new URL(urls[1]).searchParams;
   assertEquals(retry.get("strategy"), "longest");
   assertEquals(retry.get("date_from"), "2026-01-03");
-  assertEquals(result, { upserted: 1, rejected: null, cursor: TODAY, error: null });
+  assertEquals(result, { upserted: 1, cursor: TODAY, error: null });
 });
 
 Deno.test("transactions: pages fetched before a failure are saved, the cursor stays", async () => {
@@ -459,7 +459,7 @@ Deno.test("transactions: pages fetched before a failure are saved, the cursor st
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), null, TODAY);
 
   assertEquals(writes.length, 1);
-  assertEquals(result, { upserted: 1, rejected: null, cursor: null, error: "ASPSP_RATE_LIMIT_EXCEEDED" });
+  assertEquals(result, { upserted: 1, cursor: null, error: "ASPSP_RATE_LIMIT_EXCEEDED" });
 });
 
 Deno.test("transactions: a network failure reports NETWORK, a timeout TIMEOUT", async () => {

@@ -363,10 +363,16 @@ The APP_ID is the long id shown next to your app.`);
 }
 
 // Switches public sign-ups off (the login exists already) and, once known, points auth emails at the dashboard.
+// The minimum password length is only ever raised to 12: one the owner set higher stays.
 function closeAuth(sb, ref, siteUrl) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alopex-auth-'));
   fs.mkdirSync(path.join(dir, 'supabase'));
-  fs.writeFileSync(path.join(dir, 'supabase', 'config.toml'), lib.authConfigToml({ siteUrl }));
+  const toml = (minPassword) => fs.writeFileSync(path.join(dir, 'supabase', 'config.toml'), lib.authConfigToml({ siteUrl, minPassword }));
+  toml(lib.MIN_PASSWORD);
+  const d = supabase(['config', 'diff', `--remote=${ref}`, '--workdir', dir, '--output-format', 'json'], sb);
+  const remote = d.ok ? lib.remotePasswordLength(d.out, lib.MIN_PASSWORD) : null;
+  toml(remote !== null && remote < lib.MIN_PASSWORD ? lib.MIN_PASSWORD : undefined);
+  if (remote === null) console.log(`Could not read the minimum password length: check it is ${lib.MIN_PASSWORD} or more at https://supabase.com/dashboard/project/${ref}/auth/providers (Email).`);
   const r = supabase(['config', 'push', '--workdir', dir, '--project-ref', ref, '--yes'], sb);
   fs.rmSync(dir, { recursive: true, force: true });
   if (!r.ok) console.log(`WARNING: could not switch public sign-ups off. Do it at https://supabase.com/dashboard/project/${ref}/auth/providers`);

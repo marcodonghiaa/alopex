@@ -55,11 +55,34 @@ test('authConfigToml closes sign-ups and adds the site URL only when known', () 
   assert.match(plain, /enable_signup = false/);
   assert.doesNotMatch(plain, /site_url/);
   // H217: the server refuses a new password under 12 characters too (sign-in with an older,
-  // shorter one keeps working: the length is checked only when a password is set).
-  assert.match(plain, /^minimum_password_length = 12$/m);
+  // shorter one keeps working: the length is checked only when a password is set). Pushed only
+  // when asked (closeAuth asks only to raise it), so a longer remote minimum is never lowered.
+  assert.doesNotMatch(plain, /minimum_password_length/);
+  assert.match(lib.authConfigToml({ minPassword: 12 }), /^minimum_password_length = 12$/m);
   const withSite = lib.authConfigToml({ siteUrl: 'https://x.vercel.app' });
   assert.match(withSite, /site_url = "https:\/\/x\.vercel\.app"/);
   assert.match(withSite, /additional_redirect_urls = \["https:\/\/x\.vercel\.app\/reset-password"\]/);
+});
+
+// H217: `supabase config diff --output-format json` against a config declaring 12. The push must
+// only raise the minimum: an owner who set 16 by hand keeps 16. fails_when=a remote 16 reads as
+// lower than 12, or an unreadable answer reads as a known length
+test('remotePasswordLength reads the project\'s minimum from config diff, null when unknown', () => {
+  const diff = (changes, present = ['auth']) => `Target: x\n${JSON.stringify({ scope: { present, missing: [] }, changes })}\n`;
+  const len = (remote) => ({ path: ['auth', 'minimum_password_length'], class: 'update', declared: true, local: 12, remote });
+  assert.strictEqual(lib.remotePasswordLength(diff([len(16)]), 12), 16);
+  assert.strictEqual(lib.remotePasswordLength(diff([len(6), { path: ['auth', 'site_url'], remote: 'https://a' }]), 12), 6);
+  // No difference while auth was compared: the project already has the declared 12.
+  assert.strictEqual(lib.remotePasswordLength(diff([]), 12), 12);
+  // Auth not returned, a non-number, or no JSON: unknown, so nothing is pushed for it.
+  assert.strictEqual(lib.remotePasswordLength(diff([], []), 12), null);
+  assert.strictEqual(lib.remotePasswordLength(diff([len(null)]), 12), null);
+  assert.strictEqual(lib.remotePasswordLength('Error: no access token', 12), null);
+  assert.strictEqual(lib.remotePasswordLength('', 12), null);
+  // closeAuth reads it first and pushes 12 only when the project's minimum is lower.
+  const src = require('node:fs').readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  assert.match(src, /'config', 'diff'/);
+  assert.match(src, /remote !== null && remote < lib\.MIN_PASSWORD \? lib\.MIN_PASSWORD : undefined/);
 });
 
 test('vercelUrl prefers the alias, else the last vercel.app address, else empty', () => {

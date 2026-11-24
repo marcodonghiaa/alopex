@@ -44,13 +44,28 @@ function vaultSql(secrets) {
 // Only the keys declared here are pushed, so every other remote auth setting stays as it is.
 // Shortest password the installer and Supabase Auth accept for a new password.
 const MIN_PASSWORD = 12;
-function authConfigToml({ siteUrl } = {}) {
+// minPassword only when it should be pushed: closeAuth passes it only to raise the project's.
+function authConfigToml({ siteUrl, minPassword } = {}) {
+  const lines = ['project_id = "installer"', '', '[auth]', 'enable_signup = false'];
   // The login guards every linked bank's data and the dashboard is public: 12 characters, not 6.
-  const lines = ['project_id = "installer"', '', '[auth]', 'enable_signup = false', `minimum_password_length = ${MIN_PASSWORD}`];
+  if (minPassword) lines.push(`minimum_password_length = ${minPassword}`);
   if (siteUrl) {
     lines.push(`site_url = "${siteUrl}"`, `additional_redirect_urls = ["${siteUrl}/reset-password"]`);
   }
   return `${lines.join('\n')}\n`;
+}
+
+// The project's minimum password length from `supabase config diff --output-format json` run
+// against a config declaring `declared`: the remote value when they differ, `declared` when auth
+// was compared and nothing differs, null when unknown (auth not returned, no JSON).
+function remotePasswordLength(output, declared) {
+  const line = String(output).split('\n').reverse().find((l) => l.trim().startsWith('{'));
+  let diff;
+  try { diff = JSON.parse(line); } catch { return null; }
+  if (!diff?.scope?.present?.includes('auth') || !Array.isArray(diff.changes)) return null;
+  const change = diff.changes.find((c) => c?.path?.join('.') === 'auth.minimum_password_length');
+  if (!change) return declared;
+  return Number.isInteger(change.remote) ? change.remote : null;
 }
 
 // `vercel deploy --prod` prints the deployment URL on stdout and "Aliased: https://..." for the
@@ -199,4 +214,4 @@ const intro = (app, updating) =>
     ? `Updating ${app}: keeps your settings, applies what's new (a few minutes).`
     : `${app} setup: about 30 minutes the first time, most of it on Enable Banking's site.`;
 
-module.exports = { orgsAfterCreate, loginProblem, banner, intro, projectProblem, doneLine, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, projectEnv, pickKeys, vaultSql, authConfigToml, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };
+module.exports = { orgsAfterCreate, loginProblem, banner, intro, projectProblem, doneLine, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, projectEnv, pickKeys, vaultSql, authConfigToml, remotePasswordLength, MIN_PASSWORD, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };

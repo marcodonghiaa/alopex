@@ -31,7 +31,7 @@ export function consentValidUntil(aspsps: Array<{ name: string; maximum_consent_
   return new Date(Math.min(fallback, now + max * 1000 - 60_000)).toISOString();
 }
 
-export type Aspsp = { name: string; logo?: string | null; maximum_consent_validity?: unknown };
+type Aspsp = { name: string; logo?: string | null; maximum_consent_validity?: unknown };
 
 // Enable Banking's bank list for one country (logo, maximum consent length). Best effort with a
 // short timeout: null when the call fails, so callers fall back to defaults.

@@ -80,8 +80,6 @@ const DAY_MS = 24 * 3600 * 1000;
 
 type EbError = Error & { status?: number; code?: string };
 
-export { errorTag };
-
 // The id Enable Banking answers to now: a renewed consent can give the same bank
 // account a new id (eb_account_uid); null means uid is still it.
 const ebAccountId = (account: SyncAccount) => account.eb_account_uid || account.uid;
@@ -89,7 +87,7 @@ const ebAccountId = (account: SyncAccount) => account.eb_account_uid || account.
 // What went wrong, as stored on accounts.sync_error for the dashboard: EB's error name when the
 // bank answered with one (e.g. ASPSP_RATE_LIMIT_EXCEEDED), else the HTTP status, a timeout
 // (the sync's deadline) or a network failure.
-export function syncErrorCode(err: unknown): string {
+function syncErrorCode(err: unknown): string {
   const e = err as EbError;
   if (typeof e?.code === "string") return e.code;
   if (e?.status) return `HTTP_${e.status}`;

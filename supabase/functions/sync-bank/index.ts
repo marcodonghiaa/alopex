@@ -7,11 +7,11 @@
 // ~4 unattended calls a day per account. verify_jwt is off: secret keys are not JWTs.
 
 import { signEnableBankingJwt } from "../_shared/enable-banking.ts";
+import { errorTag } from "../_shared/log-safe.ts";
 import { hasSecretKey } from "../_shared/secret-key.ts";
 import { SECRET_KEYS, serviceClient } from "../_shared/clients.ts";
 import {
   ACCOUNT_COLUMNS,
-  errorTag,
   recordSyncError,
   signOrRecord,
   type SyncAccount,

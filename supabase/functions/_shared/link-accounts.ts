@@ -10,7 +10,7 @@ import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
 import { closeReplaced, closeSessions, exchangeCode, relinkPatch } from "./eb-sessions.ts";
 
-export const LINK_FAILED = "Couldn't link the bank, please try again";
+const LINK_FAILED = "Couldn't link the bank, please try again";
 
 interface EnableBankingAccount {
   uid: string;
@@ -21,7 +21,7 @@ interface EnableBankingAccount {
   cash_account_type?: string | null;
 }
 
-export type LinkResult = { params: Record<string, string>; syncUids: string[] } | { error: string };
+type LinkResult = { params: Record<string, string>; syncUids: string[] } | { error: string };
 
 // deno-lint-ignore no-explicit-any
 export async function linkAccounts(supabase: any, userId: string, code: string): Promise<LinkResult> {

@@ -7,7 +7,7 @@ import { errorTag } from "./log-safe.ts";
 
 type OriginLoader = () => Promise<string[]>;
 
-export function legacyOrigin(): string | null {
+function legacyOrigin(): string | null {
   const raw = Deno.env.get("FRONTEND_URL");
   // Browsers compare Origin exactly, so a trailing slash in the secret would block every request.
   return raw ? raw.replace(/\/+$/, "") : null;

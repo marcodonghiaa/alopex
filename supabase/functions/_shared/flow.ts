@@ -12,6 +12,7 @@ import { applyGroupedUpdates, type Db, fetchByRefs, readPages } from "./batch-up
 import { errorTag } from "./log-safe.ts";
 import { matchRefunds, type RefundRow, WINDOW_DAYS } from "./refunds.ts";
 import { fetchRules, matchRule, type Rule } from "./rules.ts";
+import { daysAgo } from "./today.ts";
 
 export const BATCH_SIZE = 200;
 const TRANSFER_CODES = new Set(["EXCHANGE", "TOPUP"]);
@@ -77,7 +78,7 @@ export async function classifyAll<T extends { account_uid: string; entry_referen
 const RERESOLVE = [["default", ["spend", "income"]], ["rule", ["transfer"]]] as const;
 async function reresolveDefaults(db: Db, rules: FlowRule[], timeLeft: () => boolean): Promise<number> {
   if (!timeLeft()) return 0;
-  const since = new Date(Date.now() - RERESOLVE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const since = daysAgo(RERESOLVE_DAYS);
   const rows: (FlowRow & { flow_type: string; flow_source: string })[] = [];
   // ponytail: 90 days of one person's default rows, a few pages; read first, then update.
   for (const [source, types] of RERESOLVE) {
@@ -143,7 +144,7 @@ export async function classifyFlows(db: Db, timeLeft: () => boolean = () => true
 // never touched, so moving a wrong pair back to spend sticks.
 const REFUND_SOURCES = ["default", "rule", "legacy"];
 
-const REFUND_SINCE = () => new Date(Date.now() - 2 * WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
+const REFUND_SINCE = () => daysAgo(2 * WINDOW_DAYS);
 const keyOf = (r: { account_uid: string; entry_reference: string }) => `${r.account_uid}|${r.entry_reference}`;
 
 // Reads every page of a query in primary-key order (pages never overlap), deduped by key: a write

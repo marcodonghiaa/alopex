@@ -9,6 +9,7 @@ import { errorTag } from "./log-safe.ts";
 import { applyRules, fetchRules, type Rule, ruleUpdate } from "./rules.ts";
 import { aiBatches, aiRefs, walkNullRows } from "./user-batch.ts";
 import type { CategorizeRow } from "./categorize-prompt.ts";
+import { daysAgo } from "./today.ts";
 
 const BATCH_SIZE = 40;
 const RELEARN_DAYS = 120;
@@ -88,7 +89,7 @@ function categorizeWithAi(db: Db, rules: Rule[], classify: Classify, timeLeft: (
 // correction fixes the merchant's other rows too. Guarded on category_source = 'ai'.
 // ponytail: reads 120 days of AI rows with no time check; a few pages for one person.
 async function relearnAiRows(db: Db): Promise<number> {
-  const since = new Date(Date.now() - RELEARN_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const since = daysAgo(RELEARN_DAYS);
   const rows: Row[] = await readPages((from, to) =>
     db
       .from("transactions")

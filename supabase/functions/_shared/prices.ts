@@ -4,13 +4,13 @@ import { FRANKFURTER, fxRows } from "./fx-rates.ts";
 import { coingeckoPriceUrl, parseYahooChart, yahooChartUrl } from "./holdings.ts";
 import { errorTag } from "./log-safe.ts";
 import { type Db, readPages } from "./batch-update.ts";
+import { daysAgo } from "./today.ts";
 
 type Json = Record<string, unknown>;
 /** GET a URL and return its JSON; throws with the status only on a bad answer. */
 export type GetJson = (url: string, headers?: Record<string, string>) => Promise<Json>;
 
 const HISTORY_DAYS = 100; // the bank sync reads 90 days; every view needs a rate on or before each booking_date
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 export const getJson: GetJson = async (url, headers = {}) => {
   // 10 s: a quote answers in well under a second; a hung host must not eat the 150 s wall clock.

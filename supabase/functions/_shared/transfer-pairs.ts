@@ -7,6 +7,7 @@
 // Better no pair than a wrong one: any tie skips the rows involved. A suggested pair whose rows
 // changed since (you edited one, or the update never landed) is removed again.
 import { applyGroupedUpdates, type Db, fetchByRefs, readPages } from "./batch-update.ts";
+import { daysAgo } from "./today.ts";
 import { errorTag } from "./log-safe.ts";
 
 export const PAIR_WINDOW_DAYS = 4;
@@ -84,7 +85,7 @@ export function matchTransferPairs(rows: PairRow[], rejectedKeys: Set<string> = 
 }
 
 function fetchCandidates(db: Db): Promise<PairRow[]> {
-  const since = new Date(Date.now() - LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const since = daysAgo(LOOKBACK_DAYS);
   return readPages((from, to) =>
     db
       .from("transactions")

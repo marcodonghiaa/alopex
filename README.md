@@ -123,6 +123,7 @@ SETUP_EMAIL="$SETUP_EMAIL" SETUP_PASSWORD="$SETUP_PASSWORD" node --env-file=.env
 4. In the dashboard, **Authentication -> Users -> Add user** (tick auto-confirm) to create your login.
 5. **Authentication -> Sign In / Providers -> User Signups**: turn off *Allow new users to sign up*. Supabase leaves it on, which lets anyone who finds your project URL create an account.
 6. Deploy the dashboard ([alopex-web](https://github.com/marcodonghiaa/alopex-web)) with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+7. **Authentication -> URL Configuration**: set *Site URL* to your dashboard's address and add `<dashboard address>/reset-password` under *Redirect URLs*. Otherwise the password-reset email opens `localhost:3000`. Do it again if the dashboard's address changes.
 
 </details>
 

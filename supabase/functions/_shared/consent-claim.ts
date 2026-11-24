@@ -24,7 +24,7 @@ export async function claimConsent(
   state: string,
   userId: string,
   now: number,
-): Promise<{ ok: true } | { error: string; transient?: true }> {
+): Promise<{ ok: true } | { error: string; transient?: true; burn?: true }> {
   const { data, error } = await db
     .from("pending_bank_consents")
     .delete()
@@ -34,6 +34,8 @@ export async function claimConsent(
   // A database error is not a refusal: report it as such, so the caller does not burn the code.
   if (error) return { error: CLAIM_FAILED, transient: true };
   if (!data || data.user_id !== userId) return { error: INVALID_CONSENT };
-  if (now - new Date(data.created_at).getTime() > CONSENT_WINDOW_MS) return { error: EXPIRED_CONSENT };
+  // The caller's own row, now deleted: burn tells the caller to close the code (H165), as for a
+  // state that is someone else's, which only the caller can look up.
+  if (now - new Date(data.created_at).getTime() > CONSENT_WINDOW_MS) return { error: EXPIRED_CONSENT, burn: true };
   return { ok: true };
 }

@@ -45,9 +45,11 @@ Deno.test("a database error is transient, not a refusal", async () => {
   assertEquals(await claimConsent(db, STATE, "u1", NOW), { error: CLAIM_FAILED, transient: true });
 });
 
-Deno.test("a link older than 15 minutes has expired", async () => {
+// H165: the caller's own expired row is deleted here, so complete-bank-consent's "is the state
+// someone else's" lookup found nothing and the code stayed redeemable. Expired says: burn it.
+Deno.test("a link older than 15 minutes has expired, and its code is to be burned", async () => {
   const { db } = fakeDb({ user_id: "u1", created_at: "2026-11-09T11:44:00Z" });
-  assertEquals(await claimConsent(db, STATE, "u1", NOW), { error: EXPIRED_CONSENT });
+  assertEquals(await claimConsent(db, STATE, "u1", NOW), { error: EXPIRED_CONSENT, burn: true });
 });
 
 Deno.test("isConsentInput needs a code and a uuid state", () => {

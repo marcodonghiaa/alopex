@@ -58,3 +58,9 @@ Deno.test("the sign-in and two-step check is callerOrReply's alone (_shared/call
 Deno.test("no function reads the legacy keys itself: clients.ts picks the secret or publishable key first", () => {
   assertEquals(offenders(/SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ANON_KEY/), []);
 });
+
+// H165: claimConsent's burn (the caller's own expired link) must reach burnCode, not only a
+// state that belongs to someone else.
+Deno.test("complete-bank-consent burns the code of an expired link too", () => {
+  assertEquals(/if \(claim\.burn \|\| foreign\) await burnCode\(body\.code\)/.test(completeBankConsent), true);
+});

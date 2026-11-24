@@ -30,11 +30,12 @@ Deno.serve(serveWithCors(async (req, json) => {
   const claim = await claimConsent(asUser, body.state, userId, Date.now());
   if ("error" in claim) {
     if (claim.transient) return json({ error: claim.error }, 503);
-    // The state is someone else's (the link was started by another user): close the code, so it
-    // can't be paired with a state of their own. A state that doesn't exist costs no bank call.
-    const { data: foreign } = await service
-      .from("pending_bank_consents").select("id").eq("id", body.state).maybeSingle();
-    if (foreign) await burnCode(body.code);
+    // The caller's own link expired (claim.burn), or the state is someone else's (the link was
+    // started by another user): close the code, so it can't be paired with another state. A state
+    // that doesn't exist costs no bank call.
+    const foreign = !claim.burn && (await service
+      .from("pending_bank_consents").select("id").eq("id", body.state).maybeSingle()).data;
+    if (claim.burn || foreign) await burnCode(body.code);
     return json({ error: claim.error }, 403);
   }
 

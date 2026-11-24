@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Push subscriptions must be real browser endpoints
+- **Migration:** `20270118000000_push_subscription_checks`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: a push subscription saved straight into the database (older dashboards did that) must now pass the same checks as turning check-ins on in the current dashboard: an `https://` endpoint and well-formed keys. A stored one that fails them could never receive a notification and is deleted; if that was yours, turn purchase check-ins on again.
+- **Roll back:** run `supabase/rollbacks/20270118000000_push_subscription_checks.down.sql`, then `supabase migration repair --status reverted 20270118000000 --linked`.
+
 ### Category names and bank-link origins have a length cap
 - **Migration:** `20270117000000_user_text_length_caps`. Apply it with `supabase db push --linked`. No function or dashboard change.
 - What changes: a category you set on a transaction can be at most 100 characters, as for manual transactions already (checked only when you set or change it; a longer one stored before stays, and the sync and your rules are never refused). An unfinished bank link whose stored origin is longer than 300 characters (only possible by writing to the database directly) is deleted, and new ones are capped at 300.

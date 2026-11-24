@@ -1,6 +1,6 @@
 // Enable Banking sessions: closing them, so a bank stops sharing data with this app. Used when
 // a link is refused (burnCode) and when a user deletes their account (closeSessions).
-import { signEnableBankingJwt } from "./enable-banking.ts";
+import { ebTimeout, signEnableBankingJwt } from "./enable-banking.ts";
 import { errorTag } from "./log-safe.ts";
 
 // A code whose link was refused (another user's state, or expired) must not stay redeemable:
@@ -13,18 +13,15 @@ export async function burnCode(
 ): Promise<void> {
   try {
     const token = await sign();
-    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     const res = await fetchFn("https://api.enablebanking.com/sessions", {
       method: "POST",
-      headers,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ code }),
+      signal: ebTimeout(),
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && typeof data.session_id === "string") {
-      await fetchFn(`https://api.enablebanking.com/sessions/${encodeURIComponent(data.session_id)}`, {
-        method: "DELETE",
-        headers,
-      });
+      await closeSessions([data.session_id], fetchFn, () => Promise.resolve(token));
     }
   } catch (err) {
     console.error(`refused code not closed: ${errorTag(err)}`);

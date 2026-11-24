@@ -14,7 +14,7 @@
 // A share's category comes from Splitwise's own, mapped as the CSV import maps it; when that
 // says nothing, it is left empty and post-sync fills it (_shared/splitwise.ts).
 import { CATEGORIES } from "./categories.ts";
-import { centsToDecimal, type SwExpense, type SwGroup, type SwUser, toCents } from "./splitwise-api.ts";
+import { centsToDecimal, personName, type SwExpense, type SwGroup, type SwUser, toCents } from "./splitwise-api.ts";
 
 export const NON_GROUP = "Non-group expenses";
 const MAX_GROUP = 100;
@@ -74,7 +74,7 @@ export function categoryFrom(name: string | null | undefined): string | null {
 const UNSTORABLE = /\u0000|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
 const cut = (s: string, n: number) => [...s.replace(UNSTORABLE, "")].slice(0, n).join("");
 const fullName = (u: SwUser | undefined, id: number) =>
-  cut([u?.first_name, u?.last_name].filter((p) => p && p.trim()).map((p) => p!.trim()).join(" ") || `Splitwise user ${id}`, MAX_GROUP);
+  cut(personName(u) || `Splitwise user ${id}`, MAX_GROUP);
 
 /** Group id → the name shown in Alopex: Splitwise's own, made unique and short enough. Among
  *  same-named groups the oldest (lowest id) keeps the plain name, whatever order the API lists
@@ -153,7 +153,7 @@ export function classify(e: SwExpense, me: number, labels: Map<number, string>):
       }
     };
     const other = (e.users ?? []).find((u) => u.user_id !== me && positive(paid > 0 ? u.owed_share : u.paid_share));
-    const name = [other?.user?.first_name, other?.user?.last_name].map((n) => (n ?? "").trim()).filter(Boolean).join(" ");
+    const name = personName(other?.user);
     const settle = (kind: ReviewKind, share: number): Classified => {
       const c = review(kind, share);
       if (c.type === "review") c.row.counterparty = name ? cut(name, MAX_NAME) : null;

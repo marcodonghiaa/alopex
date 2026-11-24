@@ -53,6 +53,9 @@ export function centsToDecimal(cents: number): string {
 }
 
 export type SwUser = { id: number; first_name?: string | null; last_name?: string | null };
+/** "First Last" from a Splitwise user, blanks dropped; "" when it has neither. */
+export const personName = (u: SwUser | null | undefined) =>
+  [u?.first_name, u?.last_name].map((n) => (n ?? "").trim()).filter(Boolean).join(" ");
 export type SwBalance = { currency_code: string; amount: string };
 export type SwShare = { user_id: number; paid_share: string; owed_share: string; user?: SwUser | null };
 export type SwExpense = {

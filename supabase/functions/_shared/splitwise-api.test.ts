@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
 import {
   centsToDecimal,
+  personName,
   splitwiseClient,
   SplitwiseApiError,
   SplitwiseAuthError,
@@ -195,4 +196,11 @@ Deno.test("expense reads one expense by id; 404 is null, other errors are passed
   await assertRejects(() => api.expense(9), SplitwiseApiError, "Splitwise answered HTTP 500");
   await assertRejects(() => api.expense(10), SplitwiseApiError, "Splitwise sent an unreadable answer");
   assertEquals(f.calls.map((c) => c.url.pathname), ["/api/v3.0/get_expense/7", "/api/v3.0/get_expense/8", "/api/v3.0/get_expense/9", "/api/v3.0/get_expense/10"]);
+});
+
+Deno.test("personName: first and last trimmed, blanks dropped, empty when there is neither", () => {
+  assertEquals(personName({ id: 1, first_name: " Ann ", last_name: "Lee" }), "Ann Lee");
+  assertEquals(personName({ id: 1, first_name: "Ann", last_name: "  " }), "Ann");
+  assertEquals(personName({ id: 1, first_name: null }), "");
+  assertEquals(personName(undefined), "");
 });

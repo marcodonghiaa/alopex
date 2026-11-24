@@ -10,6 +10,9 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### The export leaves out an always-empty column
+- **No migration, update the dashboard.** `net_worth.csv` in Settings -> Your data no longer has the `eur_equivalent` column: nothing ever wrote `net_worth_snapshots.eur_equivalent`, so it was always empty (euro values are in `v_net_worth_eur.amount_eur`). The column stays in the database, deprecated, and is still in `data.json`; a later release drops it.
+
 ### The unused deposits view is removed
 - **Migration:** `20270108000000_drop_v_cd_holdings`. Apply it with `supabase db push --linked`, then update the dashboard. No function change.
 - What changes: nothing you can see. Deposits (CDs) left the app in v0.2; the `v_cd_holdings` view nothing read is dropped (a view holds no data). The `cd_holdings` table and your rows stay, marked deprecated, and are still in Settings -> Your data. A later release drops the table, so download your data if you still want those rows.

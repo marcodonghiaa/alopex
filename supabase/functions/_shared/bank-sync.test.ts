@@ -81,6 +81,23 @@ Deno.test("transactions: a reused entry_reference is saved beside the stored row
   assertEquals(rows.map((r) => r.entry_reference), ["r1#d55b3e31c767"]);
 });
 
+// H171: rows stored before raw was trimmed keep their full payload. Re-syncing the same bank data
+// (a reused ref included) must land on exactly the stored keys: an update, never a new row.
+Deno.test("transactions: re-syncing stored rows (full old raw) writes only their stored keys", async () => {
+  const party = { name: "Shop", postal_address: { town_name: "Milano" } };
+  const a = { ...TX, creditor: party, ultimate_creditor: { name: "Parent" }, creditor_agent: { bic_fi: "B" } };
+  const b = { ...a, transaction_amount: { amount: "-9.00", currency: "EUR" } }; // reuses r1
+  const first = fakeSupabase();
+  await syncAccountTransactions({ fetch: fakeFetch({ "/transactions?": { body: { transactions: [a, b] } } }).fetch, supabase: first.supabase }, "t", account(), "2026-10-20", TODAY);
+  const keys = (first.writes[0].data as { entry_reference: string }[]).map((r) => r.entry_reference);
+  assertEquals(keys.length, 2);
+  // Stored as an older version wrote them: the untrimmed bank payload in raw.
+  const stored = [{ entry_reference: keys[0], raw: a }, { entry_reference: keys[1], raw: b }];
+  const again = fakeSupabase(null, [], stored);
+  await syncAccountTransactions({ fetch: fakeFetch({ "/transactions?": { body: { transactions: [b, a] } } }).fetch, supabase: again.supabase }, "t", account(), "2026-10-20", TODAY);
+  assertEquals((again.writes[0].data as { entry_reference: string }[]).map((r) => r.entry_reference).sort(), [...keys].sort());
+});
+
 // A first sync can bring thousands of rows: the stored-key lookups run 4 at a time, not one by one.
 Deno.test("transactions: stored keys are looked up in chunks of 50, 4 requests at a time", async () => {
   const many = Array.from({ length: 300 }, (_, i) => ({ ...TX, entry_reference: `r${i}` }));

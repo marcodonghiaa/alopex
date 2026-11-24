@@ -100,6 +100,13 @@ export function applyRules<T extends Row>(rows: T[], rules: Rule[]) {
   return { matched, unmatched };
 }
 
+/** What a category rule writes: its category, and its type when it sets one too. */
+export function ruleUpdate(rule: Rule): Record<string, unknown> {
+  const update: Record<string, unknown> = { category: rule.set_category, category_source: "rule" };
+  if (rule.set_transaction_type) update.transaction_type = rule.set_transaction_type;
+  return update;
+}
+
 // Rows categorized by the AI or an earlier rule, or not at all yet, get the (possibly new) rule's
 // category. Hand-set categories are excluded here and again by the statement's guard.
 // Transfer is left alone both ways: whether a row counts as spending was decided from its
@@ -115,12 +122,10 @@ export function planRuleReapply(rows: Row[], rules: Rule[]): RowUpdate[] {
     if (row.category === TRANSFER || rule.set_category === TRANSFER) continue;
     // Like the sync, a rule that also sets a type sets it here (a type you set by hand is kept by
     // trg_keep_manual_transaction_type). Type-only rules stay out of re-apply.
-    const update: Record<string, unknown> = { category: rule.set_category, category_source: "rule" };
-    if (rule.set_transaction_type) update.transaction_type = rule.set_transaction_type;
     items.push({
       account_uid: row.account_uid,
       entry_reference: row.entry_reference,
-      update,
+      update: ruleUpdate(rule),
       guardColumn: "category_source",
       // An empty row is updated only while still empty (the default is-null guard).
       ...(empty ? {} : { guardIn: REAPPLY_SOURCES }),

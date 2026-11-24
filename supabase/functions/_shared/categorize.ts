@@ -6,7 +6,7 @@ import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
 import { CATEGORIES, categoriesFor } from "./categories.ts";
 import { applyLearned, fetchLearned, learnedUpdate, planRelearn } from "./learned-categories.ts";
 import { errorTag } from "./log-safe.ts";
-import { applyRules, fetchRules, type Rule } from "./rules.ts";
+import { applyRules, fetchRules, type Rule, ruleUpdate } from "./rules.ts";
 import { aiBatches, aiRefs, walkNullRows } from "./user-batch.ts";
 import type { CategorizeRow } from "./categorize-prompt.ts";
 
@@ -31,11 +31,7 @@ async function fetchUserCategories(db: Db, userId: string): Promise<string[]> {
 const applyRuleMatches = (db: Db, matched: Array<{ row: Row; rule: Rule }>) =>
   applyGroupedUpdates(
     db,
-    matched.map(({ row, rule }) => {
-      const update: Record<string, unknown> = { category: rule.set_category, category_source: "rule" };
-      if (rule.set_transaction_type) update.transaction_type = rule.set_transaction_type;
-      return { account_uid: row.account_uid, entry_reference: row.entry_reference, update, guardColumn: "category" };
-    }),
+    matched.map(({ row, rule }) => ({ account_uid: row.account_uid, entry_reference: row.entry_reference, update: ruleUpdate(rule), guardColumn: "category" })),
   );
 
 // Of `rows` (one user's), those whose merchant you categorized by hand before get that category.

@@ -7,7 +7,7 @@ import type { Db } from "./batch-update.ts";
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
 
-// ---- "Worth it?" prompts, every 30 minutes ----
+// ---- "Worth it?" prompts, hourly ----
 
 // ponytail: hardcoded allowlist, add a per-user setting if it ever needs to be configurable.
 const DISCRETIONARY_CATEGORIES = ["Shopping", "Entertainment", "Dine Out", "Experiences"];

@@ -99,12 +99,14 @@ export async function notifyUser(db: Db, userId: string, send: SendPush | null, 
     return 0;
   }
   const promptedAt = now.toISOString();
+  // One update per account, like splitwise.ts applyPlan.
+  const byAccount = Map.groupBy(transactions, (tx) => tx.account_uid as string);
   let failed = 0;
-  for (const tx of transactions) {
+  for (const [accountUid, txs] of byAccount) {
     const { error } = await db
       .from("transactions").update({ worth_it_prompted_at: promptedAt })
-      .eq("account_uid", tx.account_uid).eq("entry_reference", tx.entry_reference);
-    if (error) failed++;
+      .eq("account_uid", accountUid).in("entry_reference", txs.map((tx) => tx.entry_reference));
+    if (error) failed += txs.length;
   }
   if (failed > 0) console.error(`Failed to mark ${failed} transaction(s) prompted.`);
   return transactions.length;

@@ -104,6 +104,41 @@ Deno.test("rows are marked prompted only after a push is delivered", async () =>
   }
 });
 
+// H247: one update per account, not per row; a failed update counts all of its rows.
+Deno.test("prompted rows are marked with one update per account", async () => {
+  const row = (ref: string, account_uid: string) =>
+    ({ entry_reference: ref, account_uid, creditor_name: "Shop", amount: 20, currency: "EUR", category: "Shopping", flow_type: "spend", deleted_at: null });
+  const calls: unknown[] = [];
+  const errors: string[] = [];
+  const db = {
+    from: (table: string) => {
+      const q: Record<string, unknown> = {};
+      let call: unknown[] | null = null;
+      for (const m of ["select", "is", "gte", "lte"]) q[m] = () => q;
+      q.or = async () => ({ data: [row("r1", "a1"), row("r2", "a2"), row("r3", "a1")], error: null });
+      q.update = (u: unknown) => (call = [u], calls.push(call), q);
+      q.eq = (...args: unknown[]) => (call?.push(args), q);
+      q.in = (...args: unknown[]) => (call?.push(args), q);
+      if (table === "push_subscriptions") q.eq = async () => ({ data: [{ id: "s1", endpoint: "https://push.example.com/s1", p256dh: "k", auth: "a" }], error: null });
+      q.then = (resolve: (v: unknown) => void) => resolve({ error: call && (call[1] as unknown[])[1] === "a2" ? { message: "x" } : null });
+      return q;
+    },
+  };
+  const quiet = console.error;
+  console.error = (m: string) => errors.push(m);
+  try {
+    assertEquals(await notifyUser(db, "u1", async () => {}, NOW), 3);
+  } finally {
+    console.error = quiet;
+  }
+  const at = { worth_it_prompted_at: NOW.toISOString() };
+  assertEquals(calls, [
+    [at, ["account_uid", "a1"], ["entry_reference", ["r1", "r3"]]],
+    [at, ["account_uid", "a2"], ["entry_reference", ["r2"]]],
+  ]);
+  assertEquals(errors, ["Failed to mark 1 transaction(s) prompted."]);
+});
+
 Deno.test("a dead subscription is removed; without push keys nothing is sent", async () => {
   const deleted: string[] = [];
   const db = { from: () => ({ delete: () => ({ eq: async (_: string, id: string) => (deleted.push(id), { error: null }) }) }) };

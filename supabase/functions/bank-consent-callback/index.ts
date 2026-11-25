@@ -11,14 +11,11 @@
 // dashboard with the code; the dashboard, signed in, calls complete-bank-consent, which links
 // the accounts only when the signed-in user is the one who started this link.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { redirectOrigin } from "../_shared/origins.ts";
+import { serviceClient } from "../_shared/clients.ts";
 import { CONSENT_WINDOW_MS, EXPIRED_CONSENT, INVALID_CONSENT } from "../_shared/consent-claim.ts";
 
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
+const supabase = serviceClient();
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);

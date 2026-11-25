@@ -9,12 +9,11 @@
 //
 // Requires a signed-in user, like list-banks: otherwise this is an open proxy to Yahoo/CoinGecko.
 
-import { createClient } from "jsr:@supabase/supabase-js@2.119.0";
 import { serveWithCors } from "../_shared/origins.ts";
-import { asUser } from "../_shared/clients.ts";
+import { asUser, serviceClient, userCaller } from "../_shared/clients.ts";
+import { callerOrReply } from "../_shared/caller.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { fetchRateToEur } from "../_shared/fx-rates.ts";
-import { mfaRefusal } from "../_shared/mfa.ts";
 import {
   AlreadyHeld,
   HoldingError,
@@ -49,7 +48,7 @@ async function getJson(url: string): Promise<Record<string, unknown>> {
   return await res.json();
 }
 
-const admin = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const admin = () => serviceClient();
 
 // Latest stored rate, or today's from Frankfurter when fx-sync hasn't stored this currency yet.
 // Throws when there is none: a holding with no value in EUR would show as 0 and never heal.
@@ -164,13 +163,9 @@ Deno.serve(serveWithCors(async (req, json) => {
     return json({ error: "Method not allowed" }, 405);
   }
 
+  const userId = await callerOrReply(req, userCaller, json, "add-holding");
+  if (userId instanceof Response) return userId;
   const userClient = asUser(req.headers.get("Authorization")!);
-  const { data: userData, error: userError } = await userClient.auth.getUser();
-  if (userError || !userData.user) {
-    return json({ error: "Not signed in" }, 401);
-  }
-  const mfa = await mfaRefusal(userClient);
-  if (mfa) return json(mfa.body, mfa.status);
 
   let body: unknown;
   try {
@@ -192,7 +187,7 @@ Deno.serve(serveWithCors(async (req, json) => {
 
   try {
     const add = parsed.kind === "stock" ? addStock : addCoin;
-    const priced = await add(userClient, userData.user.id, parsed);
+    const priced = await add(userClient, userId, parsed);
     return json({ added: true, priced });
   } catch (err) {
     if (err instanceof AlreadyHeld) return json({ error: "already_held", key: err.key }, 409);

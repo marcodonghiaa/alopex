@@ -26,3 +26,21 @@ export function hasSecretKey(req: Request, keys: Record<string, string>): boolea
     return expected.length === given.length && timingSafeEqual(expected, given);
   });
 }
+
+type Env = (name: string) => string | undefined;
+
+// SUPABASE_SECRET_KEYS / SUPABASE_PUBLISHABLE_KEYS: the "default" key, else the first one.
+const firstKey = (json: string | undefined): string | undefined => {
+  const keys = parseSecretKeys(json);
+  return keys.default ?? Object.values(keys)[0];
+};
+
+/** The server's key: a project secret key (sb_secret_...), else the legacy service_role key. */
+export function serviceKey(env: Env): string {
+  return firstKey(env("SUPABASE_SECRET_KEYS")) ?? env("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+}
+
+/** The key a caller's client sends: a publishable key (sb_publishable_...), else the legacy anon key. */
+export function userKey(env: Env): string {
+  return firstKey(env("SUPABASE_PUBLISHABLE_KEYS")) ?? env("SUPABASE_ANON_KEY") ?? "";
+}

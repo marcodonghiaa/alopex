@@ -1,13 +1,15 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { type DeleteAccountDeps, deleteAccountHandler } from "./handler.ts";
+import { mfaRefusal } from "../_shared/mfa.ts";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const BODY = { confirm: "DELETE", password: "pw" };
 
 type Over = {
   user?: { id: string; email?: string } | null;
-  userError?: unknown;
-  mfa?: { data: unknown; error: unknown };
+  authDown?: boolean;
+  emailError?: unknown;
+  mfa?: { data: unknown; error: { code?: string } | null };
   signedInAs?: string | null;
   passwordError?: unknown;
   allowed?: { data: unknown; error: unknown };
@@ -19,16 +21,19 @@ type Over = {
 function setup(o: Over = {}) {
   const steps: string[] = [];
   const deps: DeleteAccountDeps = {
-    asUser: (authorization) => ({
-      auth: {
-        getUser: () => {
-          steps.push(`getUser ${authorization}`);
-          const user = "user" in o ? o.user! : { id: "u1", email: "a@b.c" };
-          return Promise.resolve({ data: { user }, error: o.userError ?? null });
-        },
-      },
-      rpc: (fn: string) => (steps.push(fn), Promise.resolve(o.mfa ?? { data: true, error: null })),
-    }) as ReturnType<DeleteAccountDeps["asUser"]>,
+    userIdFor: (authorization) => {
+      steps.push(`getUser ${authorization}`);
+      if (o.authDown) return Promise.reject(new Error("auth down"));
+      const user = "user" in o ? o.user! : { id: "u1", email: "a@b.c" };
+      return Promise.resolve(user?.id ?? null);
+    },
+    mfaRefusal: () =>
+      mfaRefusal({ rpc: (fn: string) => (steps.push(fn), Promise.resolve(o.mfa ?? { data: true, error: null })) }),
+    user: (userId) => {
+      steps.push(`email ${userId}`);
+      const user = "user" in o ? o.user! : { id: "u1", email: "a@b.c" };
+      return Promise.resolve({ data: { user }, error: o.emailError ?? null });
+    },
     signIn: (email, password) => {
       steps.push(`signIn ${email} ${password}`);
       const id = "signedInAs" in o ? o.signedInAs : "u1";
@@ -64,6 +69,7 @@ Deno.test("password checked, then owner guard, then delete, then bank sessions c
   assertEquals(s.steps, [
     "getUser Bearer jwt",
     "mfa_satisfied",
+    "email u1",
     "signIn a@b.c pw",
     "can_delete_user u1",
     "sessions u1",
@@ -75,8 +81,11 @@ Deno.test("password checked, then owner guard, then delete, then bank sessions c
 Deno.test("only POST, signed in, past two-step sign-in", async () => {
   assertEquals((await setup().call(null, "GET")).status, 405);
   assertEquals(await setup({ user: null }).call(), { status: 401, body: { error: "Not signed in" } });
-  // Any getUser error is "not signed in", an auth outage included.
-  assertEquals((await setup({ userError: { status: 500 } }).call()).status, 401);
+  // An auth outage is "try again", not "not signed in" (callerOrReply).
+  assertEquals(await setup({ authDown: true }).call(), {
+    status: 503,
+    body: { error: "Sign-in check is unavailable, please try again" },
+  });
   const mfa = setup({ mfa: { data: false, error: null } });
   assertEquals((await mfa.call()).status, 403);
   assertEquals(mfa.steps.some((x) => x.startsWith("signIn")), false);
@@ -89,6 +98,10 @@ Deno.test("the body must confirm with DELETE and a password", async () => {
   }
   assertEquals((await setup().call("not json")).status, 400);
   assertEquals(await setup({ user: { id: "u1" } }).call(), { status: 400, body: { error: "This account has no password to confirm with" } });
+  // The email can't be read: try again, nothing deleted.
+  const noEmail = setup({ emailError: { status: 500 } });
+  assertEquals(await noEmail.call(), { status: 500, body: SORRY });
+  assertEquals(noEmail.steps.some((x) => x.startsWith("signIn")), false);
 });
 
 Deno.test("a wrong password or another user is refused, nothing deleted", async () => {

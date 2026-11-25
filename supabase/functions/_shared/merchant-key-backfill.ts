@@ -1,17 +1,19 @@
 // Fills merchant_key where it is missing (rows from before the sync wrote it, or whose
 // creditor_name changed) and drops aliases that repeat the newest alias text for their key.
-// Aggregator keys (PayPal, Apple, Google) span unrelated payees: rows store them, but they
-// never pick up an alias by key, and aliases named after them stay unkeyed and are never merged.
+// Setting the key is all it writes: the database's alias trigger then names the row
+// (apply_merchant_alias, migration 20270112000000), so the alias is chosen in one place.
+// Aggregator keys (PayPal, Apple, Google) span unrelated payees: rows store them, and aliases
+// named after them stay unkeyed and are never merged.
 import { applyGroupedUpdates, type Db, PAGE_SIZE } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { normalizeMerchant } from "./merchant-key.ts";
 
 
 type Alias = { user_id: string; source_name: string; alias: string; merchant_key: string | null; created_at: string };
-type TxRow = { user_id: string; account_uid: string; entry_reference: string; creditor_name: string; custom_name: string | null };
+type TxRow = { account_uid: string; entry_reference: string; creditor_name: string };
 
-// Returns the newest alias per "user|key" and every alias text per "user|source_name".
-async function keyAliases(db: Db): Promise<{ count: number; byKey: Map<string, Alias>; bySource: Map<string, string> }> {
+// Keys the unkeyed aliases and drops exact repeats; returns how many it keyed.
+async function keyAliases(db: Db): Promise<number> {
   // shortcut: one page of aliases (1000), plenty for one person; page it if users ever add more.
   const { data, error } = await db
     .from("merchant_aliases")
@@ -21,12 +23,10 @@ async function keyAliases(db: Db): Promise<{ count: number; byKey: Map<string, A
   if (error) throw error;
 
   const byKey = new Map<string, Alias>();
-  const bySource = new Map<string, string>();
   const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
   const losers = new Map<string, string[]>();
   const toKey: Alias[] = [];
   for (const a of data as Alias[]) {
-    bySource.set(`${a.user_id}|${a.source_name}`, a.alias);
     const n = normalizeMerchant(a.source_name);
     const key = a.merchant_key ?? (n.aggregator ? null : n.key);
     if (!key || n.aggregator) continue;
@@ -53,7 +53,7 @@ async function keyAliases(db: Db): Promise<{ count: number; byKey: Map<string, A
       .is("merchant_key", null);
     if (error) console.error(`Failed to key an alias: ${errorTag(error)}`);
   }
-  return { count: toKey.length, byKey, bySource };
+  return toKey.length;
 }
 
 async function fetchUnkeyed(db: Db, limit: number): Promise<TxRow[]> {
@@ -61,7 +61,7 @@ async function fetchUnkeyed(db: Db, limit: number): Promise<TxRow[]> {
   for (let from = 0; from < limit; from += PAGE_SIZE) {
     const { data, error } = await db
       .from("transactions")
-      .select("user_id, account_uid, entry_reference, creditor_name, custom_name")
+      .select("account_uid, entry_reference, creditor_name")
       .is("merchant_key", null)
       .filter("creditor_name", "match", "\\S") // blank names have no key; refetching them would block the rest
       .order("account_uid")
@@ -86,18 +86,16 @@ export async function fillMerchantKeys(db: Db, timeLeft: () => boolean, limit = 
 
 async function fill(db: Db, timeLeft: () => boolean, limit: number) {
   if (!timeLeft()) return { keys: 0, aliases: 0 };
-  const { count: aliases, byKey, bySource } = await keyAliases(db);
+  const aliases = await keyAliases(db);
   if (!timeLeft()) return { keys: 0, aliases };
 
   const updates = (await fetchUnkeyed(db, limit)).flatMap((row) => {
-    const { key, aggregator } = normalizeMerchant(row.creditor_name);
+    const { key } = normalizeMerchant(row.creditor_name);
     if (!key) return [];
-    const alias = row.custom_name !== null ? undefined : bySource.get(`${row.user_id}|${row.creditor_name}`) ??
-      (aggregator ? undefined : byKey.get(`${row.user_id}|${key}`)?.alias);
     return [{
       account_uid: row.account_uid,
       entry_reference: row.entry_reference,
-      update: alias ? { merchant_key: key, custom_name: alias } : { merchant_key: key },
+      update: { merchant_key: key },
       guardColumn: "merchant_key",
     }];
   });

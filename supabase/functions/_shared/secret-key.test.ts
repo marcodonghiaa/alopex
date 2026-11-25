@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { hasSecretKey, parseSecretKeys } from "./secret-key.ts";
+import { hasSecretKey, parseSecretKeys, serviceKey, userKey } from "./secret-key.ts";
 
 const KEYS = parseSecretKeys(JSON.stringify({ default: "sb_secret_abc", cron: "sb_secret_xyz" }));
 const req = (headers: Record<string, string> = {}) => new Request("http://x", { headers });
@@ -40,4 +40,23 @@ Deno.test("parseSecretKeys keeps named non-empty strings and survives bad input"
   assertEquals(parseSecretKeys("null"), {});
   assertEquals(parseSecretKeys('"abc"'), {});
   assertEquals(parseSecretKeys('["sb_secret_abc"]'), {});
+});
+
+const env = (vars: Record<string, string>) => (name: string) => vars[name];
+
+Deno.test("serviceKey: the default secret key, else the first, else the legacy service_role key", () => {
+  const legacy = { SUPABASE_SERVICE_ROLE_KEY: "eyJlegacy" };
+  assertEquals(serviceKey(env({ ...legacy, SUPABASE_SECRET_KEYS: JSON.stringify({ a: "sb_secret_a", default: "sb_secret_d" }) })), "sb_secret_d");
+  assertEquals(serviceKey(env({ ...legacy, SUPABASE_SECRET_KEYS: JSON.stringify({ a: "sb_secret_a" }) })), "sb_secret_a");
+  assertEquals(serviceKey(env({ ...legacy, SUPABASE_SECRET_KEYS: "not json" })), "eyJlegacy");
+  assertEquals(serviceKey(env(legacy)), "eyJlegacy");
+  assertEquals(serviceKey(env({})), "");
+});
+
+Deno.test("userKey: the default publishable key, else the first, else the legacy anon key", () => {
+  const legacy = { SUPABASE_ANON_KEY: "eyJanon" };
+  assertEquals(userKey(env({ ...legacy, SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ a: "sb_publishable_a", default: "sb_publishable_d" }) })), "sb_publishable_d");
+  assertEquals(userKey(env({ ...legacy, SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ a: "sb_publishable_a" }) })), "sb_publishable_a");
+  assertEquals(userKey(env(legacy)), "eyJanon");
+  assertEquals(userKey(env({})), "");
 });

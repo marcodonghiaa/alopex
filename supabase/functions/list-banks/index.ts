@@ -13,9 +13,9 @@
 
 import { EB_KEY_INVALID, ebErrorMessage, signEnableBankingJwt } from "../_shared/enable-banking.ts";
 import { serveWithCors } from "../_shared/origins.ts";
-import { asUser } from "../_shared/clients.ts";
+import { userCaller } from "../_shared/clients.ts";
+import { callerOrReply } from "../_shared/caller.ts";
 import { isCountryCode } from "../_shared/validate.ts";
-import { mfaRefusal } from "../_shared/mfa.ts";
 import { bankChoices } from "../_shared/bank-info.ts";
 
 interface Aspsp {
@@ -30,13 +30,8 @@ Deno.serve(serveWithCors(async (req, json) => {
     return json({ error: "Method not allowed" }, 405);
   }
 
-  const supabase = asUser(req.headers.get("Authorization")!);
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError || !userData.user) {
-    return json({ error: "Not signed in" }, 401);
-  }
-  const mfa = await mfaRefusal(supabase);
-  if (mfa) return json(mfa.body, mfa.status);
+  const userId = await callerOrReply(req, userCaller, json, "list-banks");
+  if (userId instanceof Response) return userId;
 
   let body: { country?: string };
   try {

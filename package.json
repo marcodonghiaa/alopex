@@ -2,13 +2,12 @@
   "name": "alopex",
   "version": "0.1.0",
   "description": "Alopex backend: self-hosted net worth tracker for European banks. Supabase migrations, Edge Functions and the Enable Banking sync.",
-  "main": "index.js",
   "scripts": {
     "test": "node --test --test-concurrency=1 *.test.js installer/*.test.js"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "web-push": "^3.6.7"

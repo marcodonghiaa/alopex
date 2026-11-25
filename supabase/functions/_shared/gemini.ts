@@ -28,7 +28,7 @@ export const geminiText = (answer: unknown): string | undefined =>
   (answer as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> } | null)
     ?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-export interface GeminiRequest {
+interface GeminiRequest {
   prompt: string;
   resultKey: string;
   resultEnum: string[];

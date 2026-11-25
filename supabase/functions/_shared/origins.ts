@@ -3,9 +3,11 @@
 // dashboard_origins). A FRONTEND_URL secret, set by older setups, is still
 // accepted as an extra origin. A failed lookup falls back to that secret alone: never open, never a crash.
 
+import { errorTag } from "./log-safe.ts";
+
 type OriginLoader = () => Promise<string[]>;
 
-export function legacyOrigin(): string | null {
+function legacyOrigin(): string | null {
   const raw = Deno.env.get("FRONTEND_URL");
   // Browsers compare Origin exactly, so a trailing slash in the secret would block every request.
   return raw ? raw.replace(/\/+$/, "") : null;
@@ -15,13 +17,13 @@ async function loadRegisteredOrigins(): Promise<string[]> {
   const { serviceClient } = await import("./clients.ts");
   const supabase = serviceClient();
   const { data, error } = await supabase.from("dashboard_origins").select("origin").order("created_at");
-  if (error) throw new Error(error.message);
+  if (error) throw error;
   return (data ?? []).map((row: { origin: string }) => row.origin);
 }
 
 async function allowedOrigins(load: OriginLoader): Promise<string[]> {
   const registered = await load().catch((err) => {
-    console.error("dashboard_origins lookup failed:", (err as Error).message);
+    console.error(`dashboard_origins lookup failed: ${errorTag(err)}`);
     return [] as string[];
   });
   const legacy = legacyOrigin();

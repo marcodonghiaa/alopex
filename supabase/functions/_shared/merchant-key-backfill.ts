@@ -4,7 +4,7 @@
 // (apply_merchant_alias, migration 20270112000000), so the alias is chosen in one place.
 // Aggregator keys (PayPal, Apple, Google) span unrelated payees: rows store them, and aliases
 // named after them stay unkeyed and are never merged.
-import { applyGroupedUpdates, type Db, PAGE_SIZE } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, inListSafe, PAGE_SIZE, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { normalizeMerchant } from "./merchant-key.ts";
 
@@ -14,26 +14,32 @@ type TxRow = { account_uid: string; entry_reference: string; creditor_name: stri
 
 // Keys the unkeyed aliases and drops exact repeats; returns how many it keyed.
 async function keyAliases(db: Db): Promise<number> {
-  // shortcut: one page of aliases (1000), plenty for one person; page it if users ever add more.
-  const { data, error } = await db
-    .from("merchant_aliases")
-    .select("user_id, source_name, alias, merchant_key, created_at")
-    .order("created_at", { ascending: false })
-    .order("source_name");
-  if (error) throw error;
+  // Every page, every user's (H256): one read stopped at PostgREST's 1000-row cap.
+  const data = await readPages<Alias>((from, to) =>
+    db
+      .from("merchant_aliases")
+      .select("user_id, source_name, alias, merchant_key, created_at")
+      .order("created_at", { ascending: false })
+      .order("user_id")
+      .order("source_name")
+      .range(from, to)
+  );
 
   const byKey = new Map<string, Alias>();
   const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
   const losers = new Map<string, string[]>();
   const toKey: Alias[] = [];
-  for (const a of data as Alias[]) {
+  for (const a of data) {
     const n = normalizeMerchant(a.source_name);
     const key = a.merchant_key ?? (n.aggregator ? null : n.key);
     if (!key || n.aggregator) continue;
     const id = `${a.user_id}|${key}`;
     const newest = byKey.get(id);
     // Only an exact repeat of the newest text is redundant; a different alias is the user's and stays.
-    if (newest && same(newest.alias, a.alias)) losers.set(a.user_id, [...(losers.get(a.user_id) ?? []), a.source_name]);
+    // A repeat whose name can't go in the delete's in() list as it is stays (H253): harmless.
+    if (newest && same(newest.alias, a.alias)) {
+      if (inListSafe(a.source_name)) losers.set(a.user_id, [...(losers.get(a.user_id) ?? []), a.source_name]);
+    }
     else {
       if (!newest) byKey.set(id, { ...a, merchant_key: key });
       if (!a.merchant_key) toKey.push({ ...a, merchant_key: key });

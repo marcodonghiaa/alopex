@@ -8,9 +8,9 @@ import { accountType, matchAccount, matchPatch, type StoredAccount } from "./acc
 import { bankLogo, type BankInfo, fetchAspsps } from "./bank-info.ts";
 import { linkedParams } from "./linked-summary.ts";
 import { latestFxRows } from "./fx-rates.ts";
-import { closeReplaced, relinkPatch } from "./eb-sessions.ts";
+import { closeReplaced, closeSessions, exchangeCode, relinkPatch } from "./eb-sessions.ts";
 
-export const LINK_FAILED = "Couldn't link the bank, please try again";
+const LINK_FAILED = "Couldn't link the bank, please try again";
 
 interface EnableBankingAccount {
   uid: string;
@@ -21,7 +21,7 @@ interface EnableBankingAccount {
   cash_account_type?: string | null;
 }
 
-export type LinkResult = { params: Record<string, string>; syncUids: string[] } | { error: string };
+type LinkResult = { params: Record<string, string>; syncUids: string[] } | { error: string };
 
 // deno-lint-ignore no-explicit-any
 export async function linkAccounts(supabase: any, userId: string, code: string): Promise<LinkResult> {
@@ -30,21 +30,23 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
     console.error(`bank link failed: ${errorTag(err)}`);
     return { error: LINK_FAILED };
   };
+  // One account's failed write skips only that account (H160): the ones saved still get their
+  // first sync while the bank allows a long history read. The link fails only if none was saved.
+  const skip = (err: unknown) => console.error(`bank account not linked: ${errorTag(err)}`);
 
   try {
     const token = await signEnableBankingJwt();
-    const res = await fetch("https://api.enablebanking.com/sessions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    const data = await res.json().catch(() => ({}));
+    const { res, data } = await exchangeCode(token, code);
     if (!res.ok) {
       return fail({ status: res.status });
     }
 
     const accounts = (data.accounts ?? []) as Array<EnableBankingAccount>;
-    if (accounts.length === 0) return { error: EB_NO_ACCOUNTS };
+    if (accounts.length === 0) {
+      // Nothing is stored for this session, so nothing could close it later (H167): close it now.
+      if (typeof data.session_id === "string") await closeSessions([data.session_id], fetch, () => Promise.resolve(token));
+      return { error: EB_NO_ACCOUNTS };
+    }
     const consentValidUntil = data.access?.valid_until ?? null;
 
     // The bank itself (name, country), not the holder name EB returns as the account name.
@@ -113,15 +115,21 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
           continue;
         }
         // A concurrent callback inserted the same pocket first (unique user_id + identification_hash).
-        if (error.code !== "23505" || !identificationHash) return fail(error);
-        const { data: raced, error: racedError } = await supabase
+        if (error.code !== "23505" || !identificationHash) {
+          skip(error);
+          continue;
+        }
+        // Named racedRow: `raced` (the Set) must stay in scope for raced.add below.
+        const { data: racedRow, error: racedError } = await supabase
           .from("accounts")
           .select("uid, iban, currency, identification_hash, account_type")
           .eq("user_id", userId)
           .eq("identification_hash", identificationHash)
-          .maybeSingle();
-        if (racedError || !raced) return fail(racedError ?? { name: "RacedRowMissing" });
-        const racedRow: StoredAccount = raced;
+          .maybeSingle() as { data: StoredAccount | null; error: unknown };
+        if (racedError || !racedRow) {
+          skip(racedError ?? { name: "RacedRowMissing" });
+          continue;
+        }
         stored = [...stored, racedRow];
         uid = racedRow.uid;
         raced.add(uid);
@@ -139,7 +147,8 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
         .update(patch)
         .eq("uid", uid);
       if (error) {
-        return fail(error);
+        skip(error);
+        continue;
       }
       stored = stored.map((s) =>
         s.uid === uid
@@ -149,6 +158,8 @@ export async function linkAccounts(supabase: any, userId: string, code: string):
       savedRows.push({ uid, label, currency: a.currency });
       relinked.add(uid);
     }
+
+    if (savedRows.length === 0) return fail({ name: "NoAccountSaved" });
 
     // A renewal leaves the old session open at Enable Banking until it expires: close it once
     // no account reads from it.

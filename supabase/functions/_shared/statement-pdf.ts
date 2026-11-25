@@ -1,6 +1,21 @@
 // Reading a bank statement PDF with Gemini, for parse-statement. Free of Deno APIs so the test
 // runs anywhere. The PDF is sent to Gemini and never stored.
 import { geminiText } from "./gemini.ts";
+import { errorTag } from "./log-safe.ts";
+import type { Rpc } from "./batch-update.ts";
+
+/**
+ * Claims one PDF read for the user (10 per 10 minutes, splitwise_attempt kind 'statement') before
+ * Gemini is asked: null when allowed, else the reply. A failed check refuses rather than skips.
+ */
+export async function statementAttemptRefusal(rpc: Rpc, userId: string): Promise<{ status: number; error: string } | null> {
+  const { data, error } = await rpc("splitwise_attempt", { p_user: userId, p_kind: "statement", p_max: 10, p_window: "10 minutes" });
+  if (error) {
+    console.error(`parse-statement: attempt check failed: ${errorTag(error)}`);
+    return { status: 503, error: "Couldn't start the PDF import right now. Try again later." };
+  }
+  return data === true ? null : { status: 429, error: "Too many PDF imports. Wait 10 minutes and try again." };
+}
 
 // About 6 MB of PDF once decoded: a few months of statement. Bigger is likely the wrong file.
 export const MAX_PDF_BASE64 = 8_000_000;
@@ -98,4 +113,22 @@ export function parseGeminiRows(response: unknown): StatementRow[] {
     rows.push({ date, description: text.slice(0, 200), amount: value, direction });
   }
   return rows;
+}
+
+/**
+ * The reply for Gemini's 2xx answer: the rows, the refusal (422), or 502 when its body isn't JSON
+ * (an HTML error page, or a body cut off by the timeout). That used to throw past the handler, so
+ * the browser saw a CORS error instead of a message (H235).
+ */
+export async function statementReply(res: Response): Promise<{ body: object; status: number }> {
+  let answer: unknown;
+  try {
+    answer = await res.json();
+  } catch (err) {
+    console.error(`Gemini sent an unreadable answer: ${errorTag(err)}`);
+    return { body: { error: "The AI sent an answer that couldn't be read, try again" }, status: 502 };
+  }
+  const refused = geminiRefusal(answer);
+  if (refused) return { body: { error: refused }, status: 422 };
+  return { body: { rows: parseGeminiRows(answer) }, status: 200 };
 }

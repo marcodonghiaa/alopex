@@ -8,10 +8,11 @@
 // sync filling the flow first) still applies. So are recent rule transfers, once no rule or
 // Transfer category holds them any more. Rows you decided ('user', 'legacy') are never read.
 // Then refunds are paired.
-import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, fetchByRefs, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { matchRefunds, type RefundRow, WINDOW_DAYS } from "./refunds.ts";
 import { fetchRules, matchRule, type Rule } from "./rules.ts";
+import { daysAgo } from "./today.ts";
 
 export const BATCH_SIZE = 200;
 const TRANSFER_CODES = new Set(["EXCHANGE", "TOPUP"]);
@@ -31,7 +32,7 @@ type FlowRow = {
   category?: string | null;
   category_source?: string | null;
 };
-export type FlowRule = Rule & { set_flow_type: string };
+type FlowRule = Rule & { set_flow_type: string };
 
 const direction = (row: Pick<FlowRow, "credit_debit_indicator">) => (row.credit_debit_indicator === "DBIT" ? "spend" : "income");
 
@@ -77,7 +78,7 @@ export async function classifyAll<T extends { account_uid: string; entry_referen
 const RERESOLVE = [["default", ["spend", "income"]], ["rule", ["transfer"]]] as const;
 async function reresolveDefaults(db: Db, rules: FlowRule[], timeLeft: () => boolean): Promise<number> {
   if (!timeLeft()) return 0;
-  const since = new Date(Date.now() - RERESOLVE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const since = daysAgo(RERESOLVE_DAYS);
   const rows: (FlowRow & { flow_type: string; flow_source: string })[] = [];
   // ponytail: 90 days of one person's default rows, a few pages; read first, then update.
   for (const [source, types] of RERESOLVE) {
@@ -143,7 +144,7 @@ export async function classifyFlows(db: Db, timeLeft: () => boolean = () => true
 // never touched, so moving a wrong pair back to spend sticks.
 const REFUND_SOURCES = ["default", "rule", "legacy"];
 
-const REFUND_SINCE = () => new Date(Date.now() - 2 * WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
+const REFUND_SINCE = () => daysAgo(2 * WINDOW_DAYS);
 const keyOf = (r: { account_uid: string; entry_reference: string }) => `${r.account_uid}|${r.entry_reference}`;
 
 // Reads every page of a query in primary-key order (pages never overlap), deduped by key: a write
@@ -200,12 +201,11 @@ async function repairHalfPairs(db: Db): Promise<number> {
   // refunds for every user; its rows aren't touched blind.
   const skipped = new Set<string>();
   for (const [account_uid, refs] of byAccount) {
-    for (let i = 0; i < refs.length && !skipped.has(account_uid); i += 50) {
-      const { data, error } = await db.from("transactions").select(SIDE_COLUMNS).eq("account_uid", account_uid).in("entry_reference", refs.slice(i, i + 50));
-      if (error) {
-        console.error(`Refund repair skipped one account: ${errorTag(error)}`);
-        skipped.add(account_uid);
-      } else for (const r of data as PairSide[]) charges.set(keyOf(r), r);
+    try {
+      for (const r of await fetchByRefs<PairSide>(db, SIDE_COLUMNS, account_uid, refs)) charges.set(keyOf(r), r);
+    } catch (error) {
+      console.error(`Refund repair skipped one account: ${errorTag(error)}`);
+      skipped.add(account_uid);
     }
   }
 

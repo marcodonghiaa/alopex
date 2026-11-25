@@ -1,5 +1,5 @@
 // Deterministic user-authored rules take priority over the AI.
-import type { Db, RowUpdate } from "./batch-update.ts";
+import { type Db, readPages, type RowUpdate } from "./batch-update.ts";
 
 export const REAPPLY_SOURCES = ["ai", "rule"]; // never 'manual' or 'legacy': hand edits are not ours
 // Every step that runs rules reads these columns (flow and type rules select their own action).
@@ -11,15 +11,18 @@ export async function fetchRules<T = Rule>(
   action: "set_category" | "set_transaction_type" | "set_flow_type",
   userId?: string,
 ): Promise<T[]> {
-  // A category rule can set a type too (netflix -> Entertainment + Subscription).
-  let q = db.from("category_rules").select(`${RULE_MATCH_COLUMNS}, ${action}${action === "set_category" ? ", set_transaction_type" : ""}`);
-  if (userId) q = q.eq("user_id", userId);
-  const { data, error } = await q
-    .not(action, "is", null)
-    .order("priority", { ascending: true })
-    .order("created_at", { ascending: true }); // every rule has priority 100: oldest first, as listed
-  if (error) throw error;
-  return data;
+  // Every page (H250): one read stopped at PostgREST's 1000-row cap, across all users' rules.
+  return readPages<T>((from, to) => {
+    // A category rule can set a type too (netflix -> Entertainment + Subscription).
+    let q = db.from("category_rules").select(`${RULE_MATCH_COLUMNS}, ${action}${action === "set_category" ? ", set_transaction_type" : ""}`);
+    if (userId) q = q.eq("user_id", userId);
+    return q
+      .not(action, "is", null)
+      .order("priority", { ascending: true })
+      .order("created_at", { ascending: true }) // every rule has priority 100: oldest first, as listed
+      .order("id", { ascending: true }) // a total order, so pages never overlap
+      .range(from, to);
+  });
 }
 const TRANSFER = "Transfer";
 
@@ -97,6 +100,13 @@ export function applyRules<T extends Row>(rows: T[], rules: Rule[]) {
   return { matched, unmatched };
 }
 
+/** What a category rule writes: its category, and its type when it sets one too. */
+export function ruleUpdate(rule: Rule): Record<string, unknown> {
+  const update: Record<string, unknown> = { category: rule.set_category, category_source: "rule" };
+  if (rule.set_transaction_type) update.transaction_type = rule.set_transaction_type;
+  return update;
+}
+
 // Rows categorized by the AI or an earlier rule, or not at all yet, get the (possibly new) rule's
 // category. Hand-set categories are excluded here and again by the statement's guard.
 // Transfer is left alone both ways: whether a row counts as spending was decided from its
@@ -112,12 +122,10 @@ export function planRuleReapply(rows: Row[], rules: Rule[]): RowUpdate[] {
     if (row.category === TRANSFER || rule.set_category === TRANSFER) continue;
     // Like the sync, a rule that also sets a type sets it here (a type you set by hand is kept by
     // trg_keep_manual_transaction_type). Type-only rules stay out of re-apply.
-    const update: Record<string, unknown> = { category: rule.set_category, category_source: "rule" };
-    if (rule.set_transaction_type) update.transaction_type = rule.set_transaction_type;
     items.push({
       account_uid: row.account_uid,
       entry_reference: row.entry_reference,
-      update,
+      update: ruleUpdate(rule),
       guardColumn: "category_source",
       // An empty row is updated only while still empty (the default is-null guard).
       ...(empty ? {} : { guardIn: REAPPLY_SOURCES }),

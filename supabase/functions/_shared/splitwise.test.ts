@@ -55,19 +55,20 @@ Deno.test("without an AI key nothing happens", async () => {
   assertEquals(db.tables.splitwise_expenses[0].category, null);
 });
 
-Deno.test("an AI that answers nothing stops once the same batch comes back; a failure keeps the count", async () => {
+Deno.test("an AI that answers nothing stops once the same batch comes back and counts nothing; a failure keeps the count", async () => {
   const db = memoryDb({ splitwise_expenses: [{ id: "s1", user_id: "u1", description: "x", category: null }, { id: "s2", user_id: "u2", description: "y", category: null }] });
   let calls = 0;
   const warn = console.warn;
   console.warn = () => {};
   try {
-    assertEquals(await categorizeSplitwise(db, async () => (calls++, [])), { splitwise: 2, splitwiseAiFailed: false });
+    // H252: nothing was filled, so nothing counts: a catch-up round doesn't re-send the batch.
+    assertEquals(await categorizeSplitwise(db, async () => (calls++, [])), { splitwise: 0, splitwiseAiFailed: false });
     assertEquals(calls, 2);
     const error = console.error;
     console.error = () => {};
     try {
       let n = 0;
-      const flaky = async () => (n++ === 1 ? Promise.reject(new Error("down")) : []);
+      const flaky = async () => (n++ === 1 ? Promise.reject(new Error("down")) : [{ entry_reference: "s1", category: "Groceries" }]);
       assertEquals(await categorizeSplitwise(db, flaky), { splitwise: 1, splitwiseAiFailed: true });
     } finally {
       console.error = error;

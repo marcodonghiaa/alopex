@@ -1,3 +1,6 @@
+// ECB rates, used by sync-prices, the bank link and the backfill.
+export const FRANKFURTER = "https://api.frankfurter.dev/v1";
+
 // One row per currency (rate_to_eur = 1 / units per EUR, plus an EUR row).
 export function fxRows(date: string, rates: Record<string, number>) {
   const rows = [{ date, currency: "EUR", rate_to_eur: 1 }];
@@ -12,7 +15,7 @@ export function fxRows(date: string, rates: Record<string, number>) {
 export async function latestFxRows(currencies: string[]) {
   const symbols = [...new Set(currencies.filter((c) => c !== "EUR"))];
   if (symbols.length === 0) return [];
-  const res = await fetch(`https://api.frankfurter.dev/v1/latest?base=EUR&symbols=${symbols.join(",")}`, {
+  const res = await fetch(`${FRANKFURTER}/latest?base=EUR&symbols=${symbols.join(",")}`, {
     signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) throw new Error(`Frankfurter API error ${res.status}`);

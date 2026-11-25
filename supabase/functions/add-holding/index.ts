@@ -14,8 +14,10 @@ import { asUser, serviceClient, userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { fetchRateToEur } from "../_shared/fx-rates.ts";
+import { latestRate } from "../_shared/prices.ts";
 import {
   AlreadyHeld,
+  coingeckoPriceUrl,
   HoldingError,
   type HoldingRequest,
   parseCoinGeckoPrice,
@@ -25,6 +27,7 @@ import {
   parseYahooSearch,
   refuseHeldElsewhere,
   upstreamMessage,
+  yahooChartUrl,
 } from "../_shared/holdings.ts";
 
 type AddRequest = Extract<HoldingRequest, { action: "add" }>;
@@ -48,27 +51,22 @@ async function getJson(url: string): Promise<Record<string, unknown>> {
   return await res.json();
 }
 
-const admin = () => serviceClient();
+// One service client per instance, like refresh-recurring.
+const admin = serviceClient();
 
 // Latest stored rate, or today's from Frankfurter when fx-sync hasn't stored this currency yet.
 // Throws when there is none: a holding with no value in EUR would show as 0 and never heal.
 async function rateToEur(currency: string): Promise<number> {
-  if (currency === "EUR") return 1;
-  const { data } = await admin()
-    .from("fx_rates")
-    .select("rate_to_eur")
-    .eq("currency", currency)
-    .order("date", { ascending: false })
-    .limit(1);
-  const stored = data?.[0]?.rate_to_eur;
-  if (stored != null) return stored;
+  try {
+    return await latestRate(admin, currency);
+  } catch { /* none stored yet, or the read failed: ask Frankfurter */ }
 
   const found = await fetchRateToEur(currency).catch((err) => {
     console.error(`fx lookup failed: ${errorTag(err)}`);
     return null;
   });
   if (!found) throw new HoldingError(`No exchange rate for ${currency}, can't value this holding`);
-  const { error } = await admin().from("fx_rates").upsert(found.rows, { onConflict: "date,currency" });
+  const { error } = await admin.from("fx_rates").upsert(found.rows, { onConflict: "date,currency" });
   if (error) console.error(`fx seed failed: ${errorTag(error)}`);
   return found.rate;
 }
@@ -93,7 +91,7 @@ async function addStock(userClient: any, userId: string, req: AddRequest): Promi
   // Already held under another key (by ticker, now by ISIN, or the reverse): one holding, not two.
   await refuseHeldElsewhere(userClient, userId, req.id, key);
   const quote = parseYahooChart(
-    await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(req.id)}?interval=1d&range=1d`),
+    await getJson(yahooChartUrl(req.id)),
     req.id,
   );
   const rate = await rateToEur(quote.currency);
@@ -109,7 +107,7 @@ async function addStock(userClient: any, userId: string, req: AddRequest): Promi
   if (error) throw error;
 
   const valueNative = quote.price * req.quantity;
-  const { error: snapError } = await admin().from("portfolio_snapshots").upsert({
+  const { error: snapError } = await admin.from("portfolio_snapshots").upsert({
     user_id: userId,
     isin: key,
     snapshot_date: new Date().toISOString().slice(0, 10),
@@ -125,7 +123,7 @@ async function addStock(userClient: any, userId: string, req: AddRequest): Promi
 // deno-lint-ignore no-explicit-any
 async function addCoin(userClient: any, userId: string, req: AddRequest): Promise<boolean> {
   const priceUsd = parseCoinGeckoPrice(
-    await getJson(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(req.id)}&vs_currencies=usd`),
+    await getJson(coingeckoPriceUrl(req.id)),
     req.id,
   );
   const rate = await rateToEur("USD");
@@ -141,7 +139,7 @@ async function addCoin(userClient: any, userId: string, req: AddRequest): Promis
   if (error) throw error;
 
   const valueUsd = priceUsd * req.quantity;
-  const { error: snapError } = await admin().from("crypto_snapshots").upsert({
+  const { error: snapError } = await admin.from("crypto_snapshots").upsert({
     user_id: userId,
     asset_symbol: req.symbol.toUpperCase(),
     source: "Manual",

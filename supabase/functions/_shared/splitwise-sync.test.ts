@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import type { SwExpense, SwGroup } from "./splitwise-api.ts";
-import { balancesFrom, classify, groupLabels, NON_GROUP, planSync } from "./splitwise-sync.ts";
+import { balancesFrom, categoryFrom, classify, groupLabels, NON_GROUP, planSync } from "./splitwise-sync.ts";
+import { CATEGORIES } from "./categories.ts";
 
 const ME = 1;
 const share = (user_id: number, paid: string, owed: string, first_name = `P${user_id}`) => ({
@@ -265,4 +266,23 @@ Deno.test("description, group and person names are cut by characters, emoji on t
     original_debts: [{ from: 2, to: 1, amount: "1.00", currency_code: "EUR" }],
   }], ME, labels);
   assertEquals(rows.find((r) => !r.is_me)?.person, `${"p".repeat(99)}😀`);
+});
+
+// H231: two groups with the same name were labelled in API order, so when Splitwise listed them
+// the other way round, new shares of one landed under the other's label.
+Deno.test("groupLabels: same-named groups get the same labels whatever order Splitwise lists them in", () => {
+  const a = { id: 40, name: "Trip", members: [] };
+  const b = { id: 7, name: "Trip", members: [] };
+  const c = { id: 12, name: "Flat", members: [] };
+  const one = groupLabels([a, b, c]);
+  const other = groupLabels([c, b, a]);
+  assertEquals([...one].sort(), [...other].sort());
+  assertEquals([one.get(7), one.get(40), one.get(12)], ["Trip", "Trip (40)", "Flat"]);
+});
+
+// H301: a share never gets an income, transfer or tax category, nor the empty "Others".
+Deno.test("categoryFrom: every app category by name except Income, Transfer, Taxes and Others; else a keyword group", () => {
+  const none = ["Income", "Transfer", "Taxes", "Others"];
+  for (const c of CATEGORIES) assertEquals(categoryFrom(c.toUpperCase()), none.includes(c) ? null : c);
+  assertEquals([categoryFrom("Ristorante da Mario"), categoryFrom("Affitto"), categoryFrom("tax"), categoryFrom(""), categoryFrom(null)], ["Dine Out", "Housing", null, null, null]);
 });

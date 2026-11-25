@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
+import { aiBatches, fetchBatchForOneUser, walkNullRows } from "./user-batch.ts";
 import { memoryDb } from "./memory-db.test-helper.ts";
 
 const row = (user_id: string, ref: string) => ({ user_id, account_uid: "a", entry_reference: ref, category: null });
@@ -49,4 +49,22 @@ Deno.test("walkNullRows stops paging once the time is up", async () => {
     handlePage: async () => (pages++, 0),
   });
   assertEquals([pages, filled], [2, 0]);
+});
+
+// H252: aiBatches counted rows looked at, so a batch the AI never fills still counted as work,
+// and post-sync's catch-up re-sent it to Gemini for up to 10 rounds.
+Deno.test("aiBatches counts only batches that changed something; a stuck one counts nothing", async () => {
+  const quiet = console.warn;
+  console.warn = () => {};
+  try {
+    const db = memoryDb({ transactions: [row("u1", "r1"), row("u1", "r2"), row("u2", "r3")] });
+    const filled = await aiBatches(db, opts, () => true, async (rows) => {
+      for (const r of rows) if (r.user_id === "u2") db.tables.transactions.find((t) => t.entry_reference === r.entry_reference)!.category = "Others";
+    });
+    assertEquals(filled, 1);
+    const stuck = memoryDb({ transactions: [row("u1", "r1")] });
+    assertEquals(await aiBatches(stuck, opts, () => true, async () => {}), 0);
+  } finally {
+    console.warn = quiet;
+  }
 });

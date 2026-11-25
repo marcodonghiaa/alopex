@@ -42,10 +42,13 @@ function setup(opts: {
   apply?: (args: Record<string, unknown>) => { data: unknown; error: unknown };
   tables?: Record<string, Record<string, unknown>[]>;
   attemptError?: unknown;
+  /** get_expense answers by id for the full check's re-read: absent or null is a 404. */
+  reread?: Record<number, SwExpense | null | Error>;
 } = {}) {
   const db = memoryDb({ splitwise_connections: (opts.connections ?? [conn()]).map((c) => ({ ...c })), ...opts.tables });
   const calls: RpcCall[] = [];
   const asked: Array<{ key: string; updatedAfter?: string }> = [];
+  const reread: number[] = [];
   const deps: JobDeps = {
     db,
     rpc: (fn, args) => {
@@ -68,11 +71,16 @@ function setup(opts: {
         return opts.expenses instanceof Error ? Promise.reject(opts.expenses) : Promise.resolve(opts.expenses ?? [expense(1)]);
       },
       groups: () => Promise.resolve(groups),
+      expense: (id) => {
+        reread.push(id);
+        const r = opts.reread?.[id] ?? null;
+        return r instanceof Error ? Promise.reject(r) : Promise.resolve(r);
+      },
     }),
     now: () => NOW,
   };
   const applies = () => calls.filter((c) => c.fn === "splitwise_sync_apply").map((c) => c.args);
-  return { db, deps, calls, asked, applies };
+  return { db, deps, calls, asked, applies, reread };
 }
 
 Deno.test("needsFullCheck: first sync, never checked, or a week since", () => {
@@ -232,7 +240,8 @@ Deno.test("cron: an API error keeps its safe message; out of time leaves the res
 
 Deno.test("cron: the connection list can't be read → one failure, nothing synced", async () => {
   const s = setup();
-  const broken = { from: () => ({ select: () => ({ in: () => ({ order: () => ({ limit: () => Promise.resolve({ data: null, error: { code: "57014" } }) }) }) }) }) };
+  const failed = { limit: () => Promise.resolve({ data: null, error: { code: "57014" } }) };
+  const broken = { from: () => ({ select: () => ({ in: () => ({ order: () => ({ order: () => failed }) }) }) }) };
   assertEquals((await runAllUsers({ ...s.deps, db: broken }, () => true)).failed, 1);
 });
 
@@ -336,4 +345,125 @@ Deno.test("handler: a failed preview keeps the status, except a refused key", as
   const real = setup({ connections: [conn({ last_synced_at: null })], expenses: new SplitwiseApiError("Splitwise answered HTTP 500", 500) });
   await call(handler(real), user({}));
   assertEquals(real.db.tables.splitwise_connections[0].status, "error", "a real sync still records it");
+});
+
+// H230: the cron ordered by last_synced_at, set only on success. A user whose run was killed by
+// the wall clock kept the oldest time and went first every run, so a user who always overran
+// starved everyone after them. Each try is now stamped first, and the order follows the stamp.
+Deno.test("cron: the user tried longest ago goes first, and each try is stamped before it starts", async () => {
+  const s = setup({
+    connections: [
+      { ...conn({ user_id: "killed", last_synced_at: "2026-11-01T00:00:00Z" }), last_attempt_at: "2026-11-17T06:00:00Z" } as Connection,
+      { ...conn({ user_id: "waiting", last_synced_at: "2026-11-10T00:00:00Z" }), last_attempt_at: "2026-11-10T00:00:00Z" } as Connection,
+    ],
+  });
+  const order: string[] = [];
+  const stampedBefore: unknown[] = [];
+  const rpc = s.deps.rpc;
+  s.deps.rpc = (fn, args) => {
+    if (fn === "splitwise_read_key") {
+      order.push(args.p_user as string);
+      stampedBefore.push(s.db.tables.splitwise_connections.find((c) => c.user_id === args.p_user)?.last_attempt_at);
+    }
+    return rpc(fn, args);
+  };
+  await runAllUsers(s.deps, () => true);
+  assertEquals(order, ["waiting", "killed"]);
+  assertEquals(stampedBefore, [new Date(NOW).toISOString(), new Date(NOW).toISOString()]);
+});
+
+// H232: the full check pages by offset, so a row the list shifted past was "missing" and deleted,
+// releasing its bank-payment link. Up to 10 missing ids are now read one by one first.
+Deno.test("a full check reads up to 10 missing ids again and removes only what Splitwise really lost", async () => {
+  const s = setup({
+    expenses: [expense(1)],
+    reread: {
+      7: expense(7, { updated_at: "2026-11-17T11:00:00Z" }), // skipped by the paging: still there
+      8: expense(8, { deleted_at: "2026-11-16T00:00:00Z" }), // deleted
+      10: new SplitwiseApiError("Splitwise answered HTTP 403", 403), // can't tell: kept
+    },
+    tables: {
+      splitwise_expenses: [1, 7, 8, 9, 10].map((id) => ({ user_id: "u1", splitwise_id: id })),
+      splitwise_review: [],
+    },
+  });
+  const counts = await syncUser(s.deps, conn({ last_full_check_at: null }), { preview: false });
+  assertEquals(s.reread.sort((a, b) => a - b), [7, 8, 9, 10]);
+  const [args] = s.applies();
+  assertEquals((args.p_deleted as number[]).sort(), [8, 9]);
+  assertEquals((args.p_shares as Array<{ splitwise_id: number }>).map((r) => r.splitwise_id).sort((a, b) => a - b), [1, 7]);
+  assertEquals(args.p_cursor, "2026-11-16T08:00:00.000Z", "the cursor is the full read's, not the re-read's");
+  assertEquals(counts.deleted, 2);
+});
+
+Deno.test("a refused key or a rate limit during the re-read stops the sync and removes nothing", async () => {
+  const s = setup({
+    expenses: [expense(1)],
+    reread: { 7: new SplitwiseRateLimitError("slow", 429) },
+    tables: { splitwise_expenses: [1, 7].map((id) => ({ user_id: "u1", splitwise_id: id })), splitwise_review: [] },
+  });
+  let err: unknown = null;
+  await syncUser(s.deps, conn({ last_full_check_at: null }), { preview: false }).catch((e) => (err = e));
+  assertEquals(err instanceof SplitwiseRateLimitError, true);
+  assertEquals(s.applies().length, 0);
+  const refused = setup({
+    expenses: [expense(1)],
+    reread: { 7: new SplitwiseAuthError("Splitwise refused the API key", 401) },
+    tables: { splitwise_expenses: [1, 7].map((id) => ({ user_id: "u1", splitwise_id: id })), splitwise_review: [] },
+  });
+  err = null;
+  await syncUser(refused.deps, conn({ last_full_check_at: null }), { preview: false }).catch((e) => (err = e));
+  assertEquals([err instanceof SplitwiseAuthError, refused.applies().length], [true, 0]);
+});
+
+// H230 (review): sync-splitwise deployed before its migration (20270121000000) ordered by a
+// column that isn't there yet, so every cron run failed between the two deploy steps. It now
+// falls back to the old order and stamps nothing until the column exists.
+Deno.test("cron: without the last_attempt_at column, users still sync in the old order and nothing is stamped", async () => {
+  const s = setup({ connections: [conn({ user_id: "late", last_synced_at: "2026-11-10T00:00:00Z" }), conn({ user_id: "early", last_synced_at: "2026-11-01T00:00:00Z" })] });
+  const from = s.db.from.bind(s.db);
+  const updates: unknown[] = [];
+  const db = {
+    ...s.db,
+    from: (t: string) => {
+      // deno-lint-ignore no-explicit-any
+      const q: any = from(t);
+      const order = q.order;
+      q.order = (c: string, o?: { ascending?: boolean }) =>
+        c === "last_attempt_at" ? { order: () => ({ limit: () => Promise.resolve({ data: null, error: { code: "42703" } }) }) } : order(c, o);
+      const update = q.update;
+      q.update = (v: Record<string, unknown>) => ("last_attempt_at" in v && updates.push(v), update(v));
+      return q;
+    },
+  };
+  const order: string[] = [];
+  const rpc = s.deps.rpc;
+  const error = console.error;
+  console.error = () => {};
+  try {
+    const result = await runAllUsers({ ...s.deps, db, rpc: (fn, args) => (fn === "splitwise_read_key" && order.push(args.p_user as string), rpc(fn, args)) }, () => true);
+    assertEquals([result.users, result.failed, order, updates.length], [2, 0, ["early", "late"], 0]);
+  } finally {
+    console.error = error;
+  }
+});
+
+// H232 (review): each re-read can wait 20 s. Ten that time out are 200 s, past the 150 s wall
+// clock, so the run was killed before any write and the full check came back every run. Once
+// Splitwise doesn't answer (timeout or 5xx), the rest are kept without asking.
+Deno.test("the full check's re-read stops at the first timeout or 5xx and keeps the rest", async () => {
+  const s = setup({
+    expenses: [expense(1)],
+    reread: { 7: new SplitwiseApiError("Splitwise did not answer in time"), 9: new SplitwiseApiError("Splitwise answered HTTP 502", 502) },
+    tables: { splitwise_expenses: [1, 7, 8, 9].map((id) => ({ user_id: "u1", splitwise_id: id })), splitwise_review: [] },
+  });
+  const error = console.error;
+  console.error = () => {};
+  try {
+    await syncUser(s.deps, conn({ last_full_check_at: null }), { preview: false });
+  } finally {
+    console.error = error;
+  }
+  assertEquals(s.reread, [7]);
+  assertEquals(s.applies()[0].p_deleted, []);
 });

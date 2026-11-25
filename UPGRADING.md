@@ -4,11 +4,73 @@ Pulling new code does not update your database. Migrations are not applied autom
 
 For every release: `git pull`, then `supabase db push --linked` for new migrations (keep `--linked`: since Supabase CLI v3 a plain `db push` targets a local database, not your project), then `supabase functions deploy` for changed functions.
 
-To roll a change back: run its file from `supabase/rollbacks/` in the Supabase SQL editor (or with `psql`), then `supabase migration repair --status reverted <version> --linked` (the version is the number at the start of the file name). Without the repair, a later `supabase db push --linked` still counts the migration as applied and does not bring it back.
+To roll a change back: run its file from `supabase/rollbacks/` in the Supabase SQL editor (or with `psql`), then `supabase migration repair --status reverted <version> --linked` (the version is the number at the start of the file name). Without the repair, a later `supabase db push --linked` still counts the migration as applied and does not bring it back. Migrations before `20261020000000`, and `20261027000000_merchant_aliases` and `20261028000000_net_worth_daily_bonds`, have no rollback file: they are not reversible.
 
 ## Release notes, newest first
 
 ## Unreleased
+
+### Steadier prices, Splitwise, notifications and post-sync
+- **Deploy:** `supabase functions deploy` (sync-prices, sync-splitwise, notify, parse-statement, post-sync, detect-recurring, refresh-recurring). No migration of its own (sync-splitwise uses `20270121000000_splitwise_last_attempt`, below, and runs the old order without it). No dashboard change.
+- What changes: Coinbase crypto now counts funds on hold in open orders and adds up every account of a coin, and a coin's other account at zero no longer sets it to zero. The price sync reads each exchange rate once per run, and prices the holdings not yet priced today first and sold ones (0 shares) last, so when it runs out of time a different part waits each run. Splitwise groups with the same name keep their names whatever order Splitwise lists them in (the oldest keeps the plain name; if yours were the other way round, shares follow the new names as they sync and the weekly full read). The weekly Splitwise check reads up to 10 missing expenses once more before removing them, so one the paging skipped is kept. A notification the push service refuses with 403 (its VAPID check failed: push keys other than the ones the device subscribed with, for example after a reinstall that made new ones) now logs "check that VAPID_* are the keys the devices subscribed with" and keeps the subscription, so putting the old keys back brings every device back. A PDF import whose AI answer can't be read says so instead of failing with a network error. Rules, merchant names and subscription detection read every row past the first 1000. A catch-up round after a first sync counts only rows the AI filled, so a batch it can't fill is not sent again for 10 rounds. Bank names with a double quote or backslash are left out of the "your past choice" lookup (they go to the AI). Subscription detection counts a payment not yet given a flow as spending, as every page already does.
+- **Roll back:** deploy the previous functions.
+
+### Splitwise: a sync that never finishes no longer holds up everyone after it
+- **Migration:** `20270121000000_splitwise_last_attempt`. Apply it with `supabase db push --linked`, best before `supabase functions deploy` (sync-splitwise). Deployed first, the new function logs "last_attempt_at missing, run supabase db push" and keeps the old order until the column exists.
+- What changes: the scheduled Splitwise sync now notes when it last tried each connection and starts with the one tried longest ago. Before, a user whose sync was cut off by the time limit stayed first on every run, so if it always ran out of time, connections after it never synced. Nothing changes for a sync that finishes.
+- **Roll back:** deploy the previous sync-splitwise, then run `supabase/rollbacks/20270121000000_splitwise_last_attempt.down.sql`, then `supabase migration repair --status reverted 20270121000000 --linked`.
+
+### Sturdier account deletion, origin check and installer
+- **Deploy:** `supabase functions deploy` (delete-account, and every dashboard-facing function for the origin check). No migration of its own. The installer changes reach you with the next `npx create-alopex@latest`.
+- What changes: deleting your account no longer leaves behind the extra session its password check opened when the delete is refused or fails. A failed lookup of the dashboard addresses is logged with its error code only, never the message. The installer now asks for a login password of at least 12 characters and raises Supabase Auth's minimum password length to 12 when it is lower (a higher one you set stays), so a reset or change can't go shorter (your current password keeps working, whatever its length). It unpacks each release in a private temporary folder and installs the backend packages without running install scripts.
+- **Optional, the scheduled sync's own key:** in Supabase, Project Settings -> API Keys, add a secret key named `cron`, then run `npx create-alopex@latest` again. The sync then stores that key in Vault instead of your main secret key, so you can revoke or rotate it alone. By hand: put it in the Vault secret `sync_bank_secret_key` (see `20261117000000_sync_all_banks.sql`).
+- **Roll back:** deploy the previous functions.
+
+### Undoing a payback puts back what it changed
+- **Migration:** `20270120000000_payback_undo_restores`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: when you undo an "Is this Anna?" answer and also unlink the payer, a link that answer had replaced (the payer was linked to someone else before) comes back instead of being deleted. A payment you had marked as income by hand is income again after the undo; one the app had classified goes back to the app, as before. A payment reference stored on a settled bill can be at most 1000 characters (a longer one, which can't be a bank reference, is cleared; the bill stays settled). Paybacks recorded before this release undo as before.
+- **Roll back:** run `supabase/rollbacks/20270120000000_payback_undo_restores.down.sql`, then `supabase migration repair --status reverted 20270120000000 --linked`.
+
+### The bank-field guard can't be switched off by a session
+- **Migration:** `20270119000000_broker_flag_definer_only`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. The guard that stops a signed-in user from rewriting bank fields, and the marks for categories and flows you set by hand, stood aside whenever the session setting `alopex.broker_match` was on. That setting now counts only inside the database's own broker matching and category move, never when a user's session sets it itself.
+- **If you redefined `restrict_transaction_updates`, `mark_manual_category` or `flow_source_user` in a migration of your own**, start from the versions in this migration: they no longer check the setting themselves (the triggers do).
+- **Roll back:** run `supabase/rollbacks/20270119000000_broker_flag_definer_only.down.sql`, then `supabase migration repair --status reverted 20270119000000 --linked`.
+
+### Push subscriptions must be real browser endpoints
+- **Migration:** `20270118000000_push_subscription_checks`. Apply it with `supabase db push --linked`, then `supabase functions deploy notify`. No dashboard change.
+- What changes: a push subscription saved straight into the database (older dashboards did that) must now pass the same checks as turning check-ins on in the current dashboard: an `https://` endpoint and well-formed keys. Both now also refuse an endpoint whose host is an IP address, `localhost` (or a name ending in `.localhost`), a name without a dot, or one with user info, so the notify job can't be pointed at a machine on your network by address. The notify job skips such an endpoint too. A name that resolves to a private address still passes. A stored one that fails them could never receive a notification and is deleted; if that was yours, turn purchase check-ins on again.
+- **Roll back:** run `supabase/rollbacks/20270118000000_push_subscription_checks.down.sql`, then `supabase migration repair --status reverted 20270118000000 --linked`.
+
+### Category names and bank-link origins have a length cap
+- **Migration:** `20270117000000_user_text_length_caps`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: a category you set on a transaction can be at most 100 characters, as for manual transactions already (checked only when you set or change it; a longer one stored before stays, and the sync and your rules are never refused). An unfinished bank link whose stored origin is longer than 300 characters (only possible by writing to the database directly) is deleted, and new ones are capped at 300.
+- **Roll back:** run `supabase/rollbacks/20270117000000_user_text_length_caps.down.sql`, then `supabase migration repair --status reverted 20270117000000 --linked`.
+
+### Trades refuse impossible numbers
+- **Migration:** `20270116000000_holding_trades_finite`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: a trade's shares, price and fee must be real numbers; `NaN` and `Infinity` are refused, as holdings already refuse them. Trades you stored before are not checked; one with such a number has to be fixed or deleted before you can edit it again.
+- **Roll back:** run `supabase/rollbacks/20270116000000_holding_trades_finite.down.sql`, then `supabase migration repair --status reverted 20270116000000 --linked`.
+
+### Six database functions search temporary tables last
+- **Migration:** `20270115000000_definer_search_path_pg_temp`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. `add_manual_debt`, `add_manual_transaction`, `set_account_type`, `set_holding_quantity`, `set_manual_balance` and `upsert_detected_streams` now look up tables in `public` and only then in a session's temporary tables, like the newer functions, so a temporary table can never stand in for a real one inside them.
+- **Roll back:** run `supabase/rollbacks/20270115000000_definer_search_path_pg_temp.down.sql`, then `supabase migration repair --status reverted 20270115000000 --linked`.
+
+### Sync cursors are server-only
+- **Migration:** `20270114000000_sync_cursors_server_only`. Apply it with `supabase db push --linked`. No function or dashboard change.
+- What changes: nothing you can see. `sync_cursors` (where each account's sync got to) no longer carries Supabase's default grants to `anon` and `authenticated`, like the other server-only tables, so it stays closed even if row level security is ever turned off. The sync uses the service role and is not affected.
+- **Roll back:** run `supabase/rollbacks/20270114000000_sync_cursors_server_only.down.sql`, then `supabase migration repair --status reverted 20270114000000 --linked`.
+
+### PDF import has a per-user limit
+- **Migration:** `20270113000000_statement_attempts`. Apply it with `supabase db push --linked` first, then `supabase functions deploy parse-statement`. No dashboard change.
+- What changes: each user can import up to 10 PDF statements per 10 minutes; the 11th answers "Too many PDF imports. Wait 10 minutes and try again." This stops one account (or a stolen session) from spending your Gemini quota in a loop.
+- **Roll back:** deploy the previous `parse-statement` first, then run `supabase/rollbacks/20270113000000_statement_attempts.down.sql`, then `supabase migration repair --status reverted 20270113000000 --linked`.
+
+### Bank linking and sync are sturdier
+- **Deploy:** `supabase functions deploy` (sync-bank, complete-bank-consent, start-bank-consent, list-banks, delete-account). No migration, no dashboard change.
+- What changes: when one account of a bank link can't be saved, the others are still linked and synced right away, instead of the whole link failing. A bank whose account details never carry an identification hash is no longer asked for them on every sync. A bank that keeps sending the same next-page key stops the sync at once with `PAGING_LOOP` (pages read are saved, the next sync tries again) instead of running into `TIMEOUT`. A first sync that ran out of time but saved transactions gets them categorised right away. An expired bank link's code is closed at Enable Banking. Enable Banking calls while linking, and the bank list, give up after 15 seconds. Deleting your account also closes bank sessions only your accounts remembered. New transactions keep only the other party's name in the stored bank payload (no address, ids, bank or ultimate parties); rows stored before keep theirs.
+- **Roll back:** deploy the previous functions.
 
 ### Edge Functions share one sign-in check and one key choice
 - **Deploy:** `supabase functions deploy` (all functions). No migration of its own.
@@ -607,5 +669,5 @@ If you use your own PostgREST pre-request hook, read "Two-step sign-in" before s
 - `merchant_aliases` (`20261027000000`) and `net_worth_daily_bonds` (`20261028000000`) were added to this repo. If you already created them by hand or from the frontend repo, `supabase db push --linked` fails with `Found local migration files to be inserted before the last migration on remote database` and suggests `--include-all`. Do not use `--include-all`: it would re-run the `create table` and fail with "already exists". Mark them applied instead: `supabase migration repair --status applied 20261027000000 20261028000000`, then `supabase db push --linked` again. (Tested on a local Supabase: after the repair, push reports the database is up to date.)
 
 ## Known limits
-- Portfolio, crypto and notification scripts are single-user (`USER_ID`). Bank sync is multi-user.
+- Only the Coinbase balance sync is single-user (`COINBASE_USER_ID`). Everything else covers every user.
 - Nothing trims old data. Daily net worth snapshots, FX rates and transactions are kept forever. The dashboard reads at most 1000 rows per query, which daily net worth would reach after about 2.6 years of daily snapshots.

@@ -96,7 +96,7 @@ Deno.test("an AI that answers nothing stops once the same batch comes back: that
   try {
     const result = await classifyTypes(db, async (prompt) => (asked.push(prompt.includes('"a"') ? "a" : "b"), []));
     assertEquals(asked, ["a", "b"]);
-    assertEquals(result, { typed: 2, typedByRules: 0, typeAiFailed: false });
+    assertEquals(result, { typed: 0, typedByRules: 0, typeAiFailed: false }); // H252: nothing filled
   } finally {
     console.warn = warn;
   }

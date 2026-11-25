@@ -9,9 +9,13 @@ export type DeleteAccountDeps = CallerDeps & {
   // The signed-in user's email, for the password check (service role).
   user(userId: string): Answer<{ user: { email?: string } | null }>;
   // A fresh sign-in with the typed password, kept apart from the caller's session.
-  signIn(email: string, password: string): Answer<{ user: { id: string } | null }>;
+  signIn(email: string, password: string): Answer<{ user: { id: string } | null; session?: { access_token: string } | null }>;
+  // Ends that sign-in's session (service role), so a refused or failed delete leaves none behind.
+  signOut(accessToken: string): PromiseLike<{ error: unknown }>;
   rpc(fn: string, args: Record<string, unknown>): Answer<unknown>; // service role
   sessionIds(userId: string): Answer<{ session_id: string }[] | null>; // service role
+  // The session each account reads from: bank_sessions is written best effort at link time.
+  accountSessionIds(userId: string): Answer<{ bank_session_id: string | null }[] | null>; // service role
   deleteUser(userId: string): PromiseLike<{ error: unknown }>; // service role
   closeSessions(sessionIds: string[]): Promise<unknown>;
 };
@@ -36,6 +40,11 @@ export const deleteAccountHandler = (deps: DeleteAccountDeps) => async (req: Req
   const email = userData.user?.email;
   if (!email) return json({ error: "This account has no password to confirm with" }, 400);
   const { data: signedIn, error: passwordError } = await deps.signIn(email, password);
+  const checkToken = signedIn?.session?.access_token;
+  if (checkToken) {
+    const { error: signOutError } = await Promise.resolve(deps.signOut(checkToken)).catch((err) => ({ error: err }));
+    if (signOutError) console.error(`delete-account: check session not signed out: ${errorTag(signOutError)}`);
+  }
   if (passwordError || signedIn.user?.id !== userId) {
     return json({ error: "Wrong password" }, 403);
   }
@@ -50,8 +59,9 @@ export const deleteAccountHandler = (deps: DeleteAccountDeps) => async (req: Req
   }
 
   const { data: sessions, error: sessionsError } = await deps.sessionIds(userId);
-  if (sessionsError) {
-    console.error(`delete-account: sessions not read: ${errorTag(sessionsError)}`);
+  const { data: accountSessions, error: accountSessionsError } = await deps.accountSessionIds(userId);
+  if (sessionsError || accountSessionsError) {
+    console.error(`delete-account: sessions not read: ${errorTag(sessionsError ?? accountSessionsError)}`);
     return json({ error: "Couldn't delete the account, please try again" }, 500);
   }
   // Delete first: if it fails, the user keeps working banks. The session ids are already read.
@@ -60,9 +70,13 @@ export const deleteAccountHandler = (deps: DeleteAccountDeps) => async (req: Req
     console.error(`delete-account failed: ${errorTag(error)}`);
     return json({ error: "Couldn't delete the account, please try again" }, 500);
   }
-  // Links made before bank_sessions existed have no stored session: those expire on their own
+  // Links made before either was stored have no session id: those expire on their own
   // (at most 180 days) and can be revoked from the bank's own app meanwhile.
-  await deps.closeSessions((sessions ?? []).map((s) => s.session_id)).catch((err) => {
+  const ids = new Set([
+    ...(sessions ?? []).map((s) => s.session_id),
+    ...(accountSessions ?? []).map((a) => a.bank_session_id).filter((id): id is string => !!id),
+  ]);
+  await deps.closeSessions([...ids]).catch((err) => {
     console.error(`delete-account: sessions not closed: ${errorTag(err)}`);
   });
   return json({ ok: true });

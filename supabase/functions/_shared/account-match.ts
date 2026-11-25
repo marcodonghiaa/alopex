@@ -12,7 +12,7 @@ export interface StoredAccount {
   identification_hash: string | null;
   account_type?: string | null;
 }
-export type IncomingAccount = Omit<StoredAccount, "uid" | "account_type">;
+type IncomingAccount = Omit<StoredAccount, "uid" | "account_type">;
 
 // Enable Banking cash_account_type (ISO 20022) -> accounts.account_type. null = not sent.
 const CASH_ACCOUNT_TYPES: Record<string, string> = { CACC: "checking", SVGS: "savings", CARD: "credit_card", LOAN: "loan" };

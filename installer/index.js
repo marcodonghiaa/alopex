@@ -96,12 +96,11 @@ async function download(repo, dir, localDir) {
   }
   const res = await fetch(lib.tarballUrl(repo, REF));
   if (!res.ok) die(`Could not download ${repo} at ${REF} (HTTP ${res.status}).`);
-  const file = path.join(os.tmpdir(), `alopex-${process.pid}-${path.basename(dir)}.tar.gz`);
-  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+  const archive = Buffer.from(await res.arrayBuffer());
   fs.mkdirSync(dir, { recursive: true });
   // Extracting over an existing install updates the code and leaves .env (not in the archive).
-  must('tar', ['-xzf', file, '-C', dir, '--strip-components=1'], {}, `Could not unpack ${repo}.`);
-  fs.rmSync(file, { force: true });
+  // The archive sits in a private mkdtemp folder, never at a name another local user could guess.
+  withTempFile(archive, (file) => must('tar', ['-xzf', file, '-C', dir, '--strip-components=1'], {}, `Could not unpack ${repo}.`));
 }
 
 async function main() {
@@ -131,7 +130,8 @@ async function main() {
   step('Downloading the app');
   await download(BACKEND_REPO, backend, process.env.ALOPEX_BACKEND_DIR);
   await download(DASHBOARD_REPO, dashboard, process.env.ALOPEX_DASHBOARD_DIR);
-  must('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: backend }, 'Could not install the backend packages.');
+  // No install scripts: none of the backend's packages need one, so none can run code here.
+  must('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: backend }, 'Could not install the backend packages.');
   // The backend's own helpers: .env merging, login creation, Enable Banking check.
   const { mergeEnv, parseEnv } = require(path.join(backend, 'env-file.js'));
   const envFile = path.join(backend, '.env');
@@ -219,7 +219,7 @@ async function main() {
     let password = '';
     for (;;) {
       email = (await ask('Email')).trim();
-      password = await askHidden('Password (6+ characters, not shown)');
+      password = await askHidden('Password (12+ characters, not shown)');
       const problem = lib.loginProblem(email, password);
       if (!problem) break;
       console.log(problem);
@@ -312,8 +312,12 @@ The APP_ID is the long id shown next to your app.`);
     supabaseMust(['secrets', 'set', '--project-ref', ref, '--env-file', file, '--yes'], sb, 'Could not save the Edge Function secrets.'));
   supabaseMust(['functions', 'deploy', '--project-ref', ref, '--use-api', '--yes'], sb, 'Could not deploy the Edge Functions.');
   // The pg_cron jobs from the migrations call the functions with these: setting them turns the sync on.
-  withTempFile(lib.vaultSql({ project_url: url, sync_bank_secret_key: keys.secret }), (file) =>
+  // A secret key named "cron" goes to Vault when there is one, so it can be revoked on its own.
+  withTempFile(lib.vaultSql({ project_url: url, sync_bank_secret_key: keys.cron }), (file) =>
     supabaseMust(['db', 'query', '--remote', '--file', file, '--yes'], sb, 'Could not turn the scheduled sync on.'));
+  if (keys.cron === keys.secret) {
+    console.log(`Optional: to give the scheduled sync its own key, add a secret key named "cron" at https://supabase.com/dashboard/project/${ref}/settings/api-keys and run again.`);
+  }
   saveEnv({ SYNC_ON: 'supabase' });
   console.log('Functions live. Your banks sync 4 times a day inside Supabase: nothing has to stay on.');
 
@@ -359,10 +363,16 @@ The APP_ID is the long id shown next to your app.`);
 }
 
 // Switches public sign-ups off (the login exists already) and, once known, points auth emails at the dashboard.
+// The minimum password length is only ever raised to 12: one the owner set higher stays.
 function closeAuth(sb, ref, siteUrl) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alopex-auth-'));
   fs.mkdirSync(path.join(dir, 'supabase'));
-  fs.writeFileSync(path.join(dir, 'supabase', 'config.toml'), lib.authConfigToml({ siteUrl }));
+  const toml = (minPassword) => fs.writeFileSync(path.join(dir, 'supabase', 'config.toml'), lib.authConfigToml({ siteUrl, minPassword }));
+  toml(lib.MIN_PASSWORD);
+  const d = supabase(['config', 'diff', `--remote=${ref}`, '--workdir', dir, '--output-format', 'json'], sb);
+  const remote = d.ok ? lib.remotePasswordLength(d.out, lib.MIN_PASSWORD) : null;
+  toml(remote !== null && remote < lib.MIN_PASSWORD ? lib.MIN_PASSWORD : undefined);
+  if (remote === null) console.log(`Could not read the minimum password length: check it is ${lib.MIN_PASSWORD} or more at https://supabase.com/dashboard/project/${ref}/auth/providers (Email).`);
   const r = supabase(['config', 'push', '--workdir', dir, '--project-ref', ref, '--yes'], sb);
   fs.rmSync(dir, { recursive: true, force: true });
   if (!r.ok) console.log(`WARNING: could not switch public sign-ups off. Do it at https://supabase.com/dashboard/project/${ref}/auth/providers`);

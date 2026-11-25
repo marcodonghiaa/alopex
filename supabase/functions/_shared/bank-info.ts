@@ -1,7 +1,7 @@
 // The bank (ASPSP) behind a linked account. Enable Banking's /sessions response
 // names the bank and its country but not its logo; /aspsps?country= lists logos.
 
-import { ebErrorMessage } from "./enable-banking.ts";
+import { EB_API, ebErrorMessage, ebTimeout } from "./enable-banking.ts";
 
 export interface BankInfo { bank_name: string | null; bank_country: string | null; bank_logo: string | null }
 
@@ -31,13 +31,13 @@ export function consentValidUntil(aspsps: Array<{ name: string; maximum_consent_
   return new Date(Math.min(fallback, now + max * 1000 - 60_000)).toISOString();
 }
 
-export type Aspsp = { name: string; logo?: string | null; maximum_consent_validity?: unknown };
+type Aspsp = { name: string; logo?: string | null; maximum_consent_validity?: unknown };
 
 // Enable Banking's bank list for one country (logo, maximum consent length). Best effort with a
 // short timeout: null when the call fails, so callers fall back to defaults.
 export async function fetchAspsps(token: string, country: string, fetchFn: typeof fetch = fetch): Promise<Aspsp[] | null> {
   try {
-    const res = await fetchFn(`https://api.enablebanking.com/aspsps?country=${encodeURIComponent(country)}`, {
+    const res = await fetchFn(`${EB_API}/aspsps?country=${encodeURIComponent(country)}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(3000),
     });
@@ -47,18 +47,6 @@ export async function fetchAspsps(token: string, country: string, fetchFn: typeo
   } catch {
     return null;
   }
-}
-
-// start-bank-consent's valid_until: the bank's own maximum, looked up in its country. Best effort:
-// a failed lookup asks for the usual 180 days.
-export async function consentEnd(
-  token: string,
-  country: string,
-  bankName: string,
-  now: number,
-  fetchFn: typeof fetch = fetch,
-): Promise<string> {
-  return consentValidUntil(await fetchAspsps(token, country, fetchFn), bankName, now);
 }
 
 // start-bank-consent's /auth call. Every failure discards the pending row it was given, or a few
@@ -80,7 +68,7 @@ export async function requestConsentUrl(opts: {
     return { error, status };
   };
   try {
-    const res = await (opts.fetchFn ?? fetch)("https://api.enablebanking.com/auth", {
+    const res = await (opts.fetchFn ?? fetch)(`${EB_API}/auth`, {
       method: "POST",
       headers: { Authorization: `Bearer ${opts.token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -90,6 +78,7 @@ export async function requestConsentUrl(opts: {
         redirect_url: opts.redirectUrl,
         psu_type: "personal",
       }),
+      signal: ebTimeout(),
     });
     if (!res.ok) {
       console.error("Enable Banking error:", res.status);

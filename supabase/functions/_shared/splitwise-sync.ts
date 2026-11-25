@@ -14,7 +14,8 @@
 // A share's category comes from Splitwise's own, mapped as the CSV import maps it; when that
 // says nothing, it is left empty and post-sync fills it (_shared/splitwise.ts).
 import { CATEGORIES } from "./categories.ts";
-import { centsToDecimal, type SwExpense, type SwGroup, type SwUser, toCents } from "./splitwise-api.ts";
+import { SPLITWISE_CATEGORIES } from "./splitwise.ts";
+import { centsToDecimal, personName, type SwExpense, type SwGroup, type SwUser, toCents } from "./splitwise-api.ts";
 
 export const NON_GROUP = "Non-group expenses";
 const MAX_GROUP = 100;
@@ -48,8 +49,9 @@ export type Classified =
   | { type: "gone"; id: number }
   | { type: "skip"; id: number };
 
-// Same as the dashboard's suggestCategory (src/lib/import/suggest-category.ts), which maps the
-// category column of a Splitwise file: an app category by name, else the first keyword group.
+// Like the dashboard's suggestCategory (src/lib/import/suggest-category.ts) for the category column
+// of a Splitwise file: an app category by name, else the first keyword group. Only the groups a
+// share can have; the dashboard has more (Taxes, Income, Transfer) and defaults to Others.
 const KEYWORDS: Array<[string, RegExp]> = [
   ["Groceries", /\b(grocer|supermerc|spesa|market)/],
   ["Dine Out", /\b(restaurant|ristorant|dining|bar\b|cafe|caffe|pizz|takeaway)/],
@@ -61,26 +63,27 @@ const KEYWORDS: Array<[string, RegExp]> = [
   ["Shopping", /\b(shop|cloth|abbigliament|amazon)/],
   ["Services", /\b(bill|bolletta|utilit|insurance|assicur|internet|phone|telefon)/],
 ];
-// A share is everyday spending: never income, a transfer or a tax; "Others" says nothing.
-const NOT_A_SHARE = new Set(["Income", "Transfer", "Taxes", "Others"]);
 export function categoryFrom(name: string | null | undefined): string | null {
   const s = (name ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   if (!s) return null;
   const found = CATEGORIES.find((c) => c.toLowerCase() === s) ?? KEYWORDS.find(([, re]) => re.test(s))?.[0] ?? null;
-  return found && !NOT_A_SHARE.has(found) ? found : null;
+  // A share is everyday spending (SPLITWISE_CATEGORIES); "Others" says nothing.
+  return found && found !== "Others" && SPLITWISE_CATEGORIES.includes(found) ? found : null;
 }
 
 // Postgres jsonb takes neither a NUL nor half a surrogate pair: dropped, so one odd text cannot fail every sync.
 const UNSTORABLE = /\u0000|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
 const cut = (s: string, n: number) => [...s.replace(UNSTORABLE, "")].slice(0, n).join("");
 const fullName = (u: SwUser | undefined, id: number) =>
-  cut([u?.first_name, u?.last_name].filter((p) => p && p.trim()).map((p) => p!.trim()).join(" ") || `Splitwise user ${id}`, MAX_GROUP);
+  cut(personName(u) || `Splitwise user ${id}`, MAX_GROUP);
 
-/** Group id → the name shown in Alopex: Splitwise's own, made unique and short enough. */
+/** Group id → the name shown in Alopex: Splitwise's own, made unique and short enough. Among
+ *  same-named groups the oldest (lowest id) keeps the plain name, whatever order the API lists
+ *  them in (H231). */
 export function groupLabels(groups: SwGroup[]): Map<number, string> {
   const out = new Map<number, string>();
   const used = new Set<string>();
-  for (const g of groups) {
+  for (const g of [...groups].sort((a, b) => a.id - b.id)) {
     let name = g.id === 0 ? NON_GROUP : cut((g.name ?? "").trim(), MAX_GROUP) || `Splitwise group ${g.id}`;
     if (used.has(name)) name = `${cut(name, MAX_GROUP - ` (${g.id})`.length)} (${g.id})`;
     used.add(name);
@@ -151,7 +154,7 @@ export function classify(e: SwExpense, me: number, labels: Map<number, string>):
       }
     };
     const other = (e.users ?? []).find((u) => u.user_id !== me && positive(paid > 0 ? u.owed_share : u.paid_share));
-    const name = [other?.user?.first_name, other?.user?.last_name].map((n) => (n ?? "").trim()).filter(Boolean).join(" ");
+    const name = personName(other?.user);
     const settle = (kind: ReviewKind, share: number): Classified => {
       const c = review(kind, share);
       if (c.type === "review") c.row.counterparty = name ? cut(name, MAX_NAME) : null;

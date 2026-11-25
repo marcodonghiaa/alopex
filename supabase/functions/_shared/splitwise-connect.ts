@@ -7,7 +7,7 @@
 import { errorTag } from "./log-safe.ts";
 import type { Reply } from "./origins.ts";
 import { type CallerDeps, callerOrReply } from "./caller.ts";
-import { type SplitwiseClient, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
+import { personName, type SplitwiseClient, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 
 const MAX_BODY = 16 * 1024;
 // Splitwise keys are letters and digits; a little slack, never spaces.
@@ -63,8 +63,7 @@ export const connectHandler = (deps: ConnectDeps) => async (req: Request, json: 
     if (err instanceof SplitwiseRateLimitError) return json({ error: "Splitwise asked to slow down. Try again later." }, 429);
     return json({ error: "Couldn't reach Splitwise. Try again later." }, 502);
   }
-  const displayName = [me.first_name, me.last_name].filter((p) => p && p.trim()).map((p) => p!.trim()).join(" ") ||
-    `Splitwise user ${me.id}`;
+  const displayName = personName(me) || `Splitwise user ${me.id}`;
   const { error } = await deps.rpc("splitwise_save_connection", {
     p_user: userId,
     p_key: apiKey,

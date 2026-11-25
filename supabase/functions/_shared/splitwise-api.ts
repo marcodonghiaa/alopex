@@ -53,6 +53,9 @@ export function centsToDecimal(cents: number): string {
 }
 
 export type SwUser = { id: number; first_name?: string | null; last_name?: string | null };
+/** "First Last" from a Splitwise user, blanks dropped; "" when it has neither. */
+export const personName = (u: SwUser | null | undefined) =>
+  [u?.first_name, u?.last_name].map((n) => (n ?? "").trim()).filter(Boolean).join(" ");
 export type SwBalance = { currency_code: string; amount: string };
 export type SwShare = { user_id: number; paid_share: string; owed_share: string; user?: SwUser | null };
 export type SwExpense = {
@@ -150,6 +153,19 @@ export function splitwiseClient(
         out.push(...rows);
       }
       throw new SplitwiseApiError("Splitwise has too many expenses to read in one run");
+    },
+    /** One expense by id (deleted ones included), or null when Splitwise answers 404. */
+    async expense(id: number): Promise<SwExpense | null> {
+      let body: Record<string, unknown>;
+      try {
+        body = await get(`get_expense/${encodeURIComponent(String(id))}`);
+      } catch (err) {
+        if (err instanceof SplitwiseApiError && err.status === 404) return null;
+        throw err;
+      }
+      const e = body.expense as SwExpense | null;
+      if (!e || typeof e !== "object" || typeof e.id !== "number") throw new SplitwiseApiError(UNREADABLE);
+      return e;
     },
     async groups(): Promise<SwGroup[]> {
       return list<SwGroup>(await get("get_groups"), "groups");

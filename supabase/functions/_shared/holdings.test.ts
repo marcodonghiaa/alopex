@@ -1,6 +1,8 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import {
   AlreadyHeld,
+  coingeckoPriceUrl,
+  yahooChartUrl,
   refuseHeldElsewhere,
   HoldingError,
   isIsin,
@@ -163,4 +165,9 @@ Deno.test("re-adding under the same key, or a symbol only someone else holds, is
 Deno.test("a failed read is passed on", async () => {
   const db = { from: () => { const q = { select: () => q, eq: () => q, neq: () => q, limit: async () => ({ data: null, error: { code: "XX000" } }) }; return q; } };
   assertEquals(await refuseHeldElsewhere(db, "u1", "VWCE.DE", "X").catch((e) => e), { code: "XX000" });
+});
+
+Deno.test("price URLs: Yahoo's daily chart and CoinGecko's USD price, ids encoded", () => {
+  assertEquals(yahooChartUrl("BRK.B"), "https://query1.finance.yahoo.com/v8/finance/chart/BRK.B?interval=1d&range=1d");
+  assertEquals(coingeckoPriceUrl("bitcoin,ethereum"), "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin%2Cethereum&vs_currencies=usd");
 });

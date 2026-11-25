@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
 import {
   centsToDecimal,
+  personName,
   splitwiseClient,
   SplitwiseApiError,
   SplitwiseAuthError,
@@ -184,4 +185,22 @@ Deno.test("a call Splitwise doesn't answer in time is an API error with a safe m
   const err = await assertRejects(() => splitwiseClient("k", hang, { timeoutMs: 20 }).expenses(), SplitwiseApiError);
   assertEquals([err.message, err.status], ["Splitwise did not answer in time", null]);
   assertEquals(signal?.aborted, true);
+});
+
+// H232: the full check re-reads a missing expense by id; a 404 means it is gone.
+Deno.test("expense reads one expense by id; 404 is null, other errors are passed on", async () => {
+  const f = fakeFetch([{ body: { expense: { id: 7, cost: "1.00" } } }, { status: 404, body: { errors: { base: ["Not found"] } } }, { status: 500 }, { body: { expense: null } }]);
+  const api = splitwiseClient("k", f.fn);
+  assertEquals((await api.expense(7))?.id, 7);
+  assertEquals(await api.expense(8), null);
+  await assertRejects(() => api.expense(9), SplitwiseApiError, "Splitwise answered HTTP 500");
+  await assertRejects(() => api.expense(10), SplitwiseApiError, "Splitwise sent an unreadable answer");
+  assertEquals(f.calls.map((c) => c.url.pathname), ["/api/v3.0/get_expense/7", "/api/v3.0/get_expense/8", "/api/v3.0/get_expense/9", "/api/v3.0/get_expense/10"]);
+});
+
+Deno.test("personName: first and last trimmed, blanks dropped, empty when there is neither", () => {
+  assertEquals(personName({ id: 1, first_name: " Ann ", last_name: "Lee" }), "Ann Lee");
+  assertEquals(personName({ id: 1, first_name: "Ann", last_name: "  " }), "Ann");
+  assertEquals(personName({ id: 1, first_name: null }), "");
+  assertEquals(personName(undefined), "");
 });

@@ -82,11 +82,27 @@ async function bankKey(
   return bareTaken.get(ref) === content ? ref : split;
 }
 
-// The bank payload is kept for support and export, minus the counterparty's account number
-// (IBAN): nothing reads it, and it is someone else's data.
+// The bank payload is kept for support and export, minus what identifies the other party beyond
+// their name: account numbers (IBAN), ultimate parties, their banks, addresses and ids (H171).
+// It is someone else's data and nothing reads it. storedContent's fields (date, amount, side)
+// stay, so a re-sync still keys rows as before.
+const partyName = (party: unknown) =>
+  party && typeof party === "object" && (party as Json).name != null ? { name: (party as Json).name } : undefined;
+
 export function rawWithoutAccounts(tx: EbTransaction): EbTransaction {
-  const { creditor_account: _c, debtor_account: _d, ...rest } = tx;
-  return rest;
+  const {
+    creditor_account: _c,
+    debtor_account: _d,
+    ultimate_creditor: _uc,
+    ultimate_debtor: _ud,
+    creditor_agent: _ca,
+    debtor_agent: _da,
+    creditor,
+    debtor,
+    ...rest
+  } = tx;
+  const names = { creditor: partyName(creditor), debtor: partyName(debtor) };
+  return { ...rest, ...(names.creditor && { creditor: names.creditor }), ...(names.debtor && { debtor: names.debtor }) };
 }
 
 // Uppercase, no spaces: how IBANs are compared.

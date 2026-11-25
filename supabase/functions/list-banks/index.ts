@@ -3,27 +3,19 @@
 // Powers the bank picker on the Accounts page -- given a country, returns
 // Enable Banking's real list of supported banks (ASPSPs) so the user picks
 // from a dropdown instead of typing a bank name that has to match exactly.
-// Same JWT-signing as start-bank-consent/bank-consent-callback; no writes,
-// read-only lookup.
+// Read-only lookup, no writes.
 //
 // Requires a signed-in user -- otherwise this is an unauthenticated proxy to
 // the operator's Enable Banking credentials/quota. verify_jwt is also set in
 // supabase/config.toml as a gateway-level backstop; this in-function check is
 // the one that's actually reproducible from a plain `supabase functions deploy`.
 
-import { EB_KEY_INVALID, ebErrorMessage, signEnableBankingJwt } from "../_shared/enable-banking.ts";
+import { EB_API, EB_KEY_INVALID, ebErrorMessage, ebTimeout, signEnableBankingJwt } from "../_shared/enable-banking.ts";
 import { serveWithCors } from "../_shared/origins.ts";
 import { userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { isCountryCode } from "../_shared/validate.ts";
 import { bankChoices } from "../_shared/bank-info.ts";
-
-interface Aspsp {
-  name: string;
-  country: string;
-  logo?: string | null;
-  beta?: boolean;
-}
 
 Deno.serve(serveWithCors(async (req, json) => {
   if (req.method !== "POST") {
@@ -48,8 +40,8 @@ Deno.serve(serveWithCors(async (req, json) => {
 
   try {
     const res = await fetch(
-      `https://api.enablebanking.com/aspsps?country=${encodeURIComponent(body.country)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      `${EB_API}/aspsps?country=${encodeURIComponent(body.country)}`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: ebTimeout() },
     );
     if (!res.ok) {
       console.error("Enable Banking error:", res.status);
@@ -57,7 +49,7 @@ Deno.serve(serveWithCors(async (req, json) => {
     }
     const data = await res.json();
 
-    const banks = bankChoices((data.aspsps ?? []) as Array<Aspsp>);
+    const banks = bankChoices(data.aspsps ?? []);
 
     return json({ banks });
   } catch {

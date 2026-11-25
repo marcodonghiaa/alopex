@@ -3,7 +3,7 @@
 // at aal1 the database refuses the call (42501) → 403; any other error → 503, logged.
 import { errorTag } from "./log-safe.ts";
 
-export type RpcClient = {
+type RpcClient = {
   rpc: (fn: string) => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
 };
 

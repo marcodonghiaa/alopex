@@ -66,7 +66,7 @@ Deno.test("transactions: calls EB with eb_account_uid; rows and cursor use uid",
   assert(urls[0].startsWith(`${EB}/eb/transactions?`));
   assertEquals(writes[0].filters, [{ onConflict: "account_uid,entry_reference" }]);
   assert((writes[0].data as { account_uid: string }[]).every((row) => row.account_uid === "pk"));
-  assertEquals(result, { upserted: 1, rejected: null, cursor: TODAY, error: null });
+  assertEquals(result, { upserted: 1, cursor: TODAY, error: null });
 });
 
 // H014/H016: a bank reusing an entry_reference overwrote the stored transaction with the new one.
@@ -79,6 +79,23 @@ Deno.test("transactions: a reused entry_reference is saved beside the stored row
 
   const rows = writes[0].data as { entry_reference: string }[];
   assertEquals(rows.map((r) => r.entry_reference), ["r1#d55b3e31c767"]);
+});
+
+// H171: rows stored before raw was trimmed keep their full payload. Re-syncing the same bank data
+// (a reused ref included) must land on exactly the stored keys: an update, never a new row.
+Deno.test("transactions: re-syncing stored rows (full old raw) writes only their stored keys", async () => {
+  const party = { name: "Shop", postal_address: { town_name: "Milano" } };
+  const a = { ...TX, creditor: party, ultimate_creditor: { name: "Parent" }, creditor_agent: { bic_fi: "B" } };
+  const b = { ...a, transaction_amount: { amount: "-9.00", currency: "EUR" } }; // reuses r1
+  const first = fakeSupabase();
+  await syncAccountTransactions({ fetch: fakeFetch({ "/transactions?": { body: { transactions: [a, b] } } }).fetch, supabase: first.supabase }, "t", account(), "2026-10-20", TODAY);
+  const keys = (first.writes[0].data as { entry_reference: string }[]).map((r) => r.entry_reference);
+  assertEquals(keys.length, 2);
+  // Stored as an older version wrote them: the untrimmed bank payload in raw.
+  const stored = [{ entry_reference: keys[0], raw: a }, { entry_reference: keys[1], raw: b }];
+  const again = fakeSupabase(null, [], stored);
+  await syncAccountTransactions({ fetch: fakeFetch({ "/transactions?": { body: { transactions: [b, a] } } }).fetch, supabase: again.supabase }, "t", account(), "2026-10-20", TODAY);
+  assertEquals((again.writes[0].data as { entry_reference: string }[]).map((r) => r.entry_reference).sort(), [...keys].sort());
 });
 
 // A first sync can bring thousands of rows: the stored-key lookups run 4 at a time, not one by one.
@@ -176,13 +193,58 @@ Deno.test("transactions: follows continuation_key across pages", async () => {
   assertEquals(result.upserted, 2);
 });
 
-Deno.test("transactions: a 404 is rejected and the cursor stays", async () => {
+// H163: a bank answering the same continuation_key again made every run page until the 120 s
+// deadline (TIMEOUT, one bank call a page). A repeated key now stops the run at once: the pages
+// read are saved and the cursor stays, so nothing is skipped.
+Deno.test("transactions: a repeated continuation_key stops paging, saves what came in, keeps the cursor", async () => {
+  let calls = 0;
+  const fetch = (async () => {
+    calls++;
+    return { ok: true, status: 200, json: async () => ({ transactions: [TX], continuation_key: "same" }) };
+  }) as unknown as Deps["fetch"];
+  const { supabase, writes } = fakeSupabase();
+  const silence = console.error;
+  console.error = () => {};
+  let result;
+  try {
+    result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
+  } finally {
+    console.error = silence;
+  }
+
+  assertEquals(calls, 2);
+  assertEquals(result, { upserted: 1, cursor: null, error: "PAGING_LOOP" });
+  assertEquals((writes[0].data as unknown[]).length, 1);
+});
+
+Deno.test("transactions: paging stops after 500 pages", async () => {
+  let calls = 0;
+  const fetch = (async () => {
+    calls++;
+    return { ok: true, status: 200, json: async () => ({ transactions: [], continuation_key: `k${calls}` }) };
+  }) as unknown as Deps["fetch"];
+  const { supabase } = fakeSupabase();
+  const silence = console.error;
+  console.error = () => {};
+  let result;
+  try {
+    result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
+  } finally {
+    console.error = silence;
+  }
+
+  assertEquals(calls, 500);
+  assertEquals(result.error, "PAGING_LOOP");
+  assertEquals(result.cursor, null);
+});
+
+Deno.test("transactions: a 404 is an error and the cursor stays", async () => {
   const { fetch } = fakeFetch({ "/transactions?": { ok: false, status: 404 } });
   const { supabase, writes } = fakeSupabase();
 
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
 
-  assertEquals(result, { upserted: 0, rejected: 404, cursor: null, error: "HTTP_404" });
+  assertEquals(result, { upserted: 0, cursor: null, error: "HTTP_404" });
   assertEquals(writes, []);
 });
 
@@ -192,18 +254,18 @@ Deno.test("transactions: a failed upsert leaves the cursor", async () => {
 
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
 
-  assertEquals(result, { upserted: 0, rejected: null, cursor: null, error: "SAVE_FAILED" });
+  assertEquals(result, { upserted: 0, cursor: null, error: "SAVE_FAILED" });
 });
 
 Deno.test("balance: calls EB with eb_account_uid and builds the row under uid", async () => {
   const { fetch, urls } = fakeFetch({ "/balances": { body: BALANCES } });
   const { supabase } = fakeSupabase();
 
-  const { row, rejected } = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
+  const { row, error } = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
 
   assertEquals(urls, [`${EB}/eb/balances`]);
   assertEquals(row, { account_uid: "pk", currency: "EUR", amount: 12.5, snapshot_date: TODAY, user_id: "user" });
-  assertEquals(rejected, null);
+  assertEquals(error, null);
 });
 Deno.test("balance: saves the booked balance when the bank lists the available one first", async () => {
   const body = { balances: [
@@ -226,11 +288,11 @@ Deno.test("balance: fills a missing hash once, then fetches the balance", async 
   });
   const { supabase, writes } = fakeSupabase();
 
-  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null }), TODAY);
+  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null, account_type: null }), TODAY);
 
   assertEquals(urls, [`${EB}/eb/details`, `${EB}/eb/balances`]);
   assertEquals(writes, [
-    { table: "accounts", op: "update", data: { identification_hash: "h", iban: "IT1" }, filters: [["eq", "uid", "pk"]] },
+    { table: "accounts", op: "update", data: { identification_hash: "h", iban: "IT1", account_type: "checking" }, filters: [["eq", "uid", "pk"]] },
   ]);
   assertEquals(row?.account_uid, "pk");
 });
@@ -264,11 +326,23 @@ Deno.test("balance: a typed account with a hash skips details", async () => {
   assertEquals(writes, []);
 });
 
+// H161: a bank whose /details never has an identification_hash was asked again on every run,
+// one more unattended call toward its daily limit. /details is asked once, with the type lookup.
+Deno.test("balance: a typed account the bank gives no hash for does not ask details again", async () => {
+  const { fetch, urls } = fakeFetch({ "/balances": { body: BALANCES } });
+  const { supabase, writes } = fakeSupabase();
+
+  await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null, account_type: "checking" }), TODAY);
+
+  assertEquals(urls, [`${EB}/eb/balances`]);
+  assertEquals(writes, []);
+});
+
 Deno.test("balance: a 429 on details still returns the balance", async () => {
   const { fetch } = fakeFetch({ "/details": { ok: false, status: 429 }, "/balances": { body: BALANCES } });
   const { supabase, writes } = fakeSupabase();
 
-  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null }), TODAY);
+  const { row } = await syncAccountBalance({ fetch, supabase }, "t", account({ identification_hash: null, account_type: null }), TODAY);
 
   assertEquals(writes, []);
   assert(row);
@@ -287,7 +361,7 @@ Deno.test("balance: EXPIRED_SESSION marks the consent as ending today (compare-a
     data: { consent_valid_until: TODAY },
     filters: [["eq", "uid", "pk"], ["eq", "consent_valid_until", consent]],
   }]);
-  assertEquals(result, { row: null, rejected: 401, renewed: true, ebFailed: true, error: "EXPIRED_SESSION" });
+  assertEquals(result, { row: null, renewed: true, ebFailed: true, error: "EXPIRED_SESSION" });
 });
 
 Deno.test("balance: a 429 on balances reports ebFailed so the caller stops", async () => {
@@ -296,7 +370,7 @@ Deno.test("balance: a 429 on balances reports ebFailed so the caller stops", asy
 
   const result = await syncAccountBalance({ fetch, supabase }, "t", account(), TODAY);
 
-  assertEquals(result, { row: null, rejected: null, renewed: false, ebFailed: true, error: "HTTP_429" });
+  assertEquals(result, { row: null, renewed: false, ebFailed: true, error: "HTTP_429" });
 });
 
 Deno.test("balance: EXPIRED_SESSION never moves an earlier consent date later", async () => {
@@ -314,7 +388,7 @@ Deno.test("balance: a 401 that is not EXPIRED_SESSION, or not JSON, leaves the d
     const { supabase, writes } = fakeSupabase();
     const result = await syncAccountBalance({ fetch, supabase }, "t", account({ consent_valid_until: null }), TODAY);
     assertEquals(writes, []);
-    assertEquals(result.rejected, 401);
+    assertEquals(result.ebFailed, true);
   }
 });
 
@@ -370,7 +444,7 @@ Deno.test("transactions: WRONG_TRANSACTIONS_PERIOD (cursor older than the bank k
   const retry = new URL(urls[1]).searchParams;
   assertEquals(retry.get("strategy"), "longest");
   assertEquals(retry.get("date_from"), "2026-01-03");
-  assertEquals(result, { upserted: 1, rejected: null, cursor: TODAY, error: null });
+  assertEquals(result, { upserted: 1, cursor: TODAY, error: null });
 });
 
 Deno.test("transactions: pages fetched before a failure are saved, the cursor stays", async () => {
@@ -385,7 +459,7 @@ Deno.test("transactions: pages fetched before a failure are saved, the cursor st
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), null, TODAY);
 
   assertEquals(writes.length, 1);
-  assertEquals(result, { upserted: 1, rejected: null, cursor: null, error: "ASPSP_RATE_LIMIT_EXCEEDED" });
+  assertEquals(result, { upserted: 1, cursor: null, error: "ASPSP_RATE_LIMIT_EXCEEDED" });
 });
 
 Deno.test("transactions: a network failure reports NETWORK, a timeout TIMEOUT", async () => {
@@ -448,6 +522,19 @@ Deno.test("transactions: a first sync that timed out falls back to the last 90 d
   const params = new URL(urls[0]).searchParams;
   assertEquals(params.has("strategy"), false);
   assertEquals(params.get("date_from"), "2026-07-29"); // TODAY 2026-10-27 minus 90 days
+});
+
+// H163 review: a first sync stopped by PAGING_LOOP (500 pages of a long history, or a bank that
+// repeats its key on longest) would ask for longest again every run and never set a cursor.
+Deno.test("transactions: a first sync stopped by PAGING_LOOP falls back to the last 90 days", async () => {
+  const { fetch, urls } = fakeFetch({ "/transactions?": { body: { transactions: [TX] } } });
+  const { supabase } = fakeSupabase();
+
+  await syncAccountTransactions({ fetch, supabase }, "t", account({ sync_error: "PAGING_LOOP" }), null, TODAY);
+
+  const params = new URL(urls[0]).searchParams;
+  assertEquals(params.has("strategy"), false);
+  assertEquals(params.get("date_from"), "2026-07-29");
 });
 
 Deno.test("transactions: a first sync after another error still asks for the longest history", async () => {

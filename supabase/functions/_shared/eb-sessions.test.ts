@@ -165,3 +165,15 @@ Deno.test("closeReplaced: a failed re-read closes nothing and deletes nothing", 
   assertEquals(calls, []);
   assertEquals(deleted, []);
 });
+
+// H245: burnCode's own POST and DELETE had no timeout (closeSessions' DELETE has one).
+Deno.test("burnCode: both Enable Banking calls have a timeout", async () => {
+  const signals: Array<AbortSignal | null | undefined> = [];
+  const fn = ((_url: string, init: RequestInit = {}) => {
+    signals.push(init.signal);
+    return Promise.resolve(Response.json(signals.length === 1 ? { session_id: "s1" } : {}));
+  }) as unknown as typeof fetch;
+  await burnCode("code", fn, sign);
+  assertEquals(signals.length, 2);
+  assertEquals(signals.every((s) => s instanceof AbortSignal), true);
+});

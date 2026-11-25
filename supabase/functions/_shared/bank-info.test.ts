@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { bankChoices, bankLogo, consentEnd, consentValidUntil, fetchAspsps, requestConsentUrl } from "./bank-info.ts";
+import { bankChoices, bankLogo, consentValidUntil, fetchAspsps, requestConsentUrl } from "./bank-info.ts";
 
 const aspsps = [
   { name: "Fineco", logo: "https://enablebanking.com/brands/IT/Fineco/" },
@@ -58,21 +58,6 @@ Deno.test("fetchAspsps gives null on a refused call, a bad body or a network err
   assertEquals(await fetchAspsps("tok", "IT", down), null);
 });
 
-// Polish 5 F1: start-bank-consent asks for the bank's own maximum, looked up for its country.
-Deno.test("consentEnd: looks the bank up in its country and asks for no more than its maximum", async () => {
-  const urls: string[] = [];
-  const fetchFn = ((url: string) => {
-    urls.push(url);
-    return Promise.resolve(Response.json({ aspsps: [{ name: "B", maximum_consent_validity: 90 * 86400 }] }));
-  }) as unknown as typeof fetch;
-  assertEquals(await consentEnd("tok", "IT", "B", NOW, fetchFn), new Date(NOW + 90 * DAY - 60_000).toISOString());
-  assertEquals(urls, ["https://api.enablebanking.com/aspsps?country=IT"]);
-});
-Deno.test("consentEnd: a failed lookup asks for the usual 180 days", async () => {
-  const fail = (() => Promise.resolve(new Response(null, { status: 500 }))) as unknown as typeof fetch;
-  assertEquals(await consentEnd("tok", "IT", "B", NOW, fail), new Date(NOW + 180 * DAY).toISOString());
-});
-
 Deno.test("bankChoices keeps beta banks, flagged, A to Z (a bank linked in Enable Banking must show)", () => {
   assertEquals(bankChoices([
     { name: "Trade Republic", beta: true, logo: "https://x/tr.png" },
@@ -108,4 +93,15 @@ Deno.test("requestConsentUrl: a good reply keeps the row and returns the bank's 
   });
   assertEquals(result, { url: "https://bank/consent" });
   assertEquals(discarded, 0);
+});
+
+// H169: a slow Enable Banking held the function until the platform killed it.
+Deno.test("requestConsentUrl: the /auth call has a timeout", async () => {
+  let signal: AbortSignal | null | undefined;
+  const fetchFn = ((_url: string, init: RequestInit) => {
+    signal = init.signal;
+    return Promise.resolve(Response.json({ url: "https://bank/consent" }));
+  }) as unknown as typeof fetch;
+  await requestConsentUrl({ ...CONSENT, discard: async () => {}, fetchFn });
+  assertEquals(signal instanceof AbortSignal, true);
 });

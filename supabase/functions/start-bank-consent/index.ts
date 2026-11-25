@@ -1,8 +1,7 @@
 // Supabase Edge Function: start-bank-consent
 //
 // First step of self-serve bank linking. Given a bank name + country, signs
-// the Enable Banking RS256 JWT server-side (logic that used to live in a
-// local CLI script) and returns the consent
+// the Enable Banking RS256 JWT server-side and returns the consent
 // URL the user's browser should be redirected to.
 //
 // Called via supabase.functions.invoke from the browser, so it needs real
@@ -16,7 +15,7 @@ import { asUser, userCaller } from "../_shared/clients.ts";
 import { callerOrReply } from "../_shared/caller.ts";
 import { isBankName, isCountryCode, MAX_OPEN_CONSENTS } from "../_shared/validate.ts";
 import { CONSENT_WINDOW_MS } from "../_shared/consent-claim.ts";
-import { consentEnd, requestConsentUrl } from "../_shared/bank-info.ts";
+import { consentValidUntil, fetchAspsps, requestConsentUrl } from "../_shared/bank-info.ts";
 
 Deno.serve(serveWithCors(async (req, json, origin) => {
   if (req.method !== "POST") {
@@ -72,7 +71,8 @@ Deno.serve(serveWithCors(async (req, json, origin) => {
   }
 
   // Banks cap the consent (maximum_consent_validity); asking past it can fail the link.
-  const validUntil = await consentEnd(token, body.country, body.bankName, Date.now());
+  // A failed lookup asks for the usual 180 days.
+  const validUntil = consentValidUntil(await fetchAspsps(token, body.country), body.bankName, Date.now());
 
   const result = await requestConsentUrl({
     token,

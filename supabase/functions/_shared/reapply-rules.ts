@@ -11,7 +11,7 @@ const SAMPLE_SIZE = 5;
 // Some updates failed; the others are saved. Running it again is safe: it only plans what's left.
 export class PartialApplyError extends Error {}
 
-export interface ReapplyResult {
+interface ReapplyResult {
   changes: number;
   sample: Array<{ name: string; from: string | null; to: string | null }>;
 }

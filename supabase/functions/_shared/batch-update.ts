@@ -3,6 +3,7 @@ import { errorTag } from "./log-safe.ts";
 
 // deno-lint-ignore no-explicit-any
 export type Db = { from(table: string): any };
+export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 
 export interface RowUpdate {
   account_uid: string;
@@ -18,6 +19,11 @@ export interface RowUpdate {
 
 export const PAGE_SIZE = 1000; // PostgREST caps a response at 1000 rows
 
+/** Whether a text value can go in a postgrest-js in() list as it is: it quotes a value with a
+ *  comma or a bracket but leaves a double quote or backslash inside it unescaped, so a name like
+ *  `ROSSI, "X"` breaks the filter or splits into two values (H253). Leave such values out. */
+export const inListSafe = (value: string) => !/["\\]/.test(value);
+
 /** Every row of a query, page by page: `page(from, to)` reads rows from..to (inclusive). Order it. */
 export async function readPages<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
   const out: T[] = [];
@@ -30,6 +36,17 @@ export async function readPages<T>(page: (from: number, to: number) => PromiseLi
 }
 
 const CHUNK_SIZE = 50; // keeps the `in (...)` request URL well under proxy limits
+
+/** One account's transactions by entry_reference, CHUNK_SIZE refs per request. Throws on the first failed read. */
+export async function fetchByRefs<T>(db: Db, columns: string, accountUid: string, refs: string[]): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < refs.length; i += CHUNK_SIZE) {
+    const { data, error } = await db.from("transactions").select(columns).eq("account_uid", accountUid).in("entry_reference", refs.slice(i, i + CHUNK_SIZE));
+    if (error) throw error;
+    out.push(...(data ?? []));
+  }
+  return out;
+}
 
 // One UPDATE per (account, update payload) group instead of one per row. Every statement
 // is guarded on guardColumn: is-null by default (only fills empty values), or an in-list

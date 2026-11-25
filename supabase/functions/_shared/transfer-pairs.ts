@@ -6,10 +6,11 @@
 // other side, so its counterpart stops counting too. Yours, legacy, rule and own-account rows stay.
 // Better no pair than a wrong one: any tie skips the rows involved. A suggested pair whose rows
 // changed since (you edited one, or the update never landed) is removed again.
-import { applyGroupedUpdates, type Db, readPages } from "./batch-update.ts";
+import { applyGroupedUpdates, type Db, fetchByRefs, readPages } from "./batch-update.ts";
+import { daysAgo } from "./today.ts";
 import { errorTag } from "./log-safe.ts";
 
-export const PAIR_WINDOW_DAYS = 4;
+const PAIR_WINDOW_DAYS = 4;
 const LOOKBACK_DAYS = 90;
 const DAY_MS = 86_400_000;
 
@@ -23,10 +24,11 @@ export interface PairRow {
   booking_date: string;
   flow_source?: string | null;
 }
-export type Pair = { out: PairRow; in: PairRow };
+type Pair = { out: PairRow; in: PairRow };
 
-const sideKey = (r: { account_uid: string; entry_reference: string }) => `${r.account_uid}:${r.entry_reference}`;
-export const pairKey = (out: PairRow, inn: PairRow) => `${sideKey(out)}>${sideKey(inn)}`;
+type SideRef = { account_uid: string; entry_reference: string };
+const sideKey = (r: SideRef) => `${r.account_uid}:${r.entry_reference}`;
+export const pairKey = (out: SideRef, inn: SideRef) => `${sideKey(out)}>${sideKey(inn)}`;
 
 const days = (a: PairRow, b: PairRow) => Math.abs(Date.parse(a.booking_date) - Date.parse(b.booking_date)) / DAY_MS;
 
@@ -83,7 +85,7 @@ export function matchTransferPairs(rows: PairRow[], rejectedKeys: Set<string> = 
 }
 
 function fetchCandidates(db: Db): Promise<PairRow[]> {
-  const since = new Date(Date.now() - LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const since = daysAgo(LOOKBACK_DAYS);
   return readPages((from, to) =>
     db
       .from("transactions")
@@ -116,16 +118,8 @@ async function dropStalePairs(db: Db, pairs: PairRecord[]): Promise<PairRecord[]
   const suggested = pairs.filter((p) => p.status === "suggested");
   const sides = new Map<string, Side>();
   for (const [account, refs] of Map.groupBy(suggested.flatMap((p) => [[p.out_account_uid, p.out_ref], [p.in_account_uid, p.in_ref]]), ([a]) => a)) {
-    const list = refs.map(([, r]) => r);
-    for (let i = 0; i < list.length; i += 50) {
-      const { data, error } = await db
-        .from("transactions")
-        .select("account_uid, entry_reference, credit_debit_indicator, flow_source, deleted_at")
-        .eq("account_uid", account)
-        .in("entry_reference", list.slice(i, i + 50));
-      if (error) throw error;
-      for (const r of data as Side[]) sides.set(sideKey(r), r);
-    }
+    const columns = "account_uid, entry_reference, credit_debit_indicator, flow_source, deleted_at";
+    for (const r of await fetchByRefs<Side>(db, columns, account, refs.map(([, r]) => r))) sides.set(sideKey(r), r);
   }
   const sidesOf = (p: PairRecord) => [sides.get(`${p.out_account_uid}:${p.out_ref}`), sides.get(`${p.in_account_uid}:${p.in_ref}`)];
   const live = (s?: Side) => !!s && !s.deleted_at && LIVE_SIDE.includes(s.flow_source ?? "");
@@ -159,7 +153,7 @@ export async function pairTransfers(db: Db, timeLeft: () => boolean = () => true
   for (const p of existing) {
     const out = { account_uid: p.out_account_uid, entry_reference: p.out_ref };
     const inn = { account_uid: p.in_account_uid, entry_reference: p.in_ref };
-    if (p.status === "rejected") rejected.add(`${sideKey(out)}>${sideKey(inn)}`);
+    if (p.status === "rejected") rejected.add(pairKey(out, inn));
     else taken.add(sideKey(out)).add(sideKey(inn));
   }
   const candidates = (await fetchCandidates(db)).filter((r) => !taken.has(sideKey(r)));

@@ -17,8 +17,9 @@ import { type Db, PAGE_SIZE, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import type { Reply } from "./origins.ts";
 import { type CallerDeps, callerOrReply } from "./caller.ts";
-import { type SplitwiseClient, SplitwiseApiError, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
+import { type SplitwiseClient, SplitwiseApiError, type SwExpense, SplitwiseAuthError, SplitwiseProRequiredError, SplitwiseRateLimitError } from "./splitwise-api.ts";
 import { balancesFrom, groupLabels, planSync } from "./splitwise-sync.ts";
+import type { Rpc } from "./batch-update.ts";
 
 const DAY = 86_400_000;
 const OVERLAP_MS = DAY;
@@ -31,7 +32,6 @@ const CONNECTION_COLS = "user_id, splitwise_user_id, cursor_updated_at, last_ful
 const RECONNECT = "Splitwise refused the API key, or your Splitwise Pro subscription ended. Connect again, or import a Splitwise file.";
 const PRO_REQUIRED = "Splitwise needs an active Splitwise Pro subscription for API keys. Renew it and connect again, or import a Splitwise file.";
 
-export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 export type Connection = {
   user_id: string;
   splitwise_user_id: number;
@@ -42,7 +42,7 @@ export type Connection = {
 export type JobDeps = {
   db: Db; // service role
   rpc: Rpc; // service role
-  client: (apiKey: string) => Pick<SplitwiseClient, "expenses" | "groups">;
+  client: (apiKey: string) => Pick<SplitwiseClient, "expenses" | "groups" | "expense">;
   now: () => number;
 };
 export type Counts = { new: number; adopted: number; review: number; deleted: number };
@@ -84,7 +84,31 @@ export async function syncUser(deps: JobDeps, c: Connection, { preview }: { prev
     // counts as done, so a real mass removal never blocks the sync (the next full check, a week
     // later, holds them again).
     if (missing.length > Math.max(MAX_SURE_GONE, new Set(local).size / 2)) held = missing.length;
-    else deleted.push(...missing);
+    else if (missing.length > MAX_SURE_GONE) deleted.push(...missing);
+    else {
+      // Offset paging over a list that moves during the read can skip a row, not only repeat one
+      // (H232). A few missing ids are read again one by one: one that is still there is written
+      // as usual, a 404 or a deleted one goes, and one Splitwise won't answer for is kept.
+      // A refused key or a rate limit stops the sync as anywhere else.
+      // A timeout or 5xx keeps the rest unasked: ten 20 s timeouts would outlast the wall clock.
+      const found: SwExpense[] = [];
+      for (const id of missing) {
+        try {
+          const e = await api.expense(id);
+          if (e) found.push(e);
+          else deleted.push(id);
+        } catch (err) {
+          if (err instanceof SplitwiseAuthError || err instanceof SplitwiseRateLimitError || !(err instanceof SplitwiseApiError)) throw err;
+          console.error(`sync-splitwise: a missing expense couldn't be checked, kept: ${errorTag(err)}`);
+          if (err.status === null || err.status >= 500) break;
+        }
+      }
+      const again = planSync(found, me, labels);
+      plan.shares.push(...again.shares);
+      plan.review.push(...again.review);
+      deleted.push(...again.gone);
+      plan.skipped.push(...again.skipped);
+    }
   }
   const balances = balancesFrom(groups, me, labels);
   const calls = Math.max(1, ...[plan.shares, plan.review, deleted].map((a) => Math.ceil(a.length / CHUNK)));
@@ -135,8 +159,20 @@ async function markFailure(db: Db, user: string, err: unknown): Promise<Outcome>
 
 export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
   const result = { users: 0, failed: 0, needsReconnect: 0, skipped: 0, rateLimited: false, new: 0, adopted: 0, review: 0, deleted: 0 };
-  const { data, error } = await deps.db.from("splitwise_connections").select(CONNECTION_COLS)
-    .in("status", ["ok", "error"]).order("last_synced_at", { ascending: true, nullsFirst: true }).limit(PAGE_SIZE);
+  const read = (byAttempt: boolean) => {
+    let q = deps.db.from("splitwise_connections").select(CONNECTION_COLS).in("status", ["ok", "error"]);
+    // Longest since the last try first (H230): a run the wall clock killed never reaches
+    // markFailure or last_synced_at, so ordering by success alone put that user first forever.
+    if (byAttempt) q = q.order("last_attempt_at", { ascending: true, nullsFirst: true });
+    return q.order("last_synced_at", { ascending: true, nullsFirst: true }).limit(PAGE_SIZE);
+  };
+  let { data, error } = await read(true);
+  // Functions deployed before migration 20270121000000: the old order, no stamps, until it's applied.
+  const noColumn = (error as { code?: string } | null)?.code === "42703";
+  if (noColumn) {
+    console.error("sync-splitwise: last_attempt_at missing, run supabase db push; ordered by last sync");
+    ({ data, error } = await read(false));
+  }
   if (error) {
     console.error(`sync-splitwise: connections read failed: ${errorTag(error)}`);
     return { ...result, failed: 1 };
@@ -147,6 +183,10 @@ export async function runAllUsers(deps: JobDeps, timeLeft: () => boolean) {
     if (!timeLeft()) {
       result.skipped = list.length - i;
       break;
+    }
+    if (!noColumn) {
+      const stamp = await deps.db.from("splitwise_connections").update({ last_attempt_at: new Date(deps.now()).toISOString() }).eq("user_id", c.user_id);
+      if (stamp.error) console.error(`sync-splitwise: attempt time not saved: ${errorTag(stamp.error)}`);
     }
     try {
       const counts = await syncUser(deps, c, { preview: false });

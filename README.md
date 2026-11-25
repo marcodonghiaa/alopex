@@ -97,7 +97,7 @@ Bank access lasts 180 days. Two weeks before it ends the Accounts page shows a *
 
 ### Splitwise (optional)
 
-Alopex can read your Splitwise expenses by itself, every 6 hours and on **Sync now**, so your spending counts only your share of what you split. Each person connects their own account with a personal API key, and **Splitwise gives API keys only to accounts with an active Splitwise Pro subscription** (the account that registers the app needs Pro, so each person needs their own). No Pro? Import the file you export from a Splitwise group instead (**Import a Splitwise file**): it works for everyone, without Pro.
+Alopex can read your Splitwise expenses by itself, 4 times a day after each bank sync and on **Sync now**, so your spending counts only your share of what you split. Each person connects their own account with a personal API key, and **Splitwise gives API keys only to accounts with an active Splitwise Pro subscription** (the account that registers the app needs Pro, so each person needs their own). No Pro? Import the file you export from a Splitwise group instead (**Import a Splitwise file**): it works for everyone, without Pro.
 
 1. Sign in at [secure.splitwise.com/apps](https://secure.splitwise.com/apps) and register an app (any name; the homepage and callback URLs don't matter for a personal key).
 2. On the app's page, generate an **API key** and copy it.
@@ -124,7 +124,7 @@ SETUP_EMAIL="$SETUP_EMAIL" SETUP_PASSWORD="$SETUP_PASSWORD" node --env-file=.env
 5. **Authentication -> Sign In / Providers -> User Signups**: turn off *Allow new users to sign up*. Supabase leaves it on, which lets anyone who finds your project URL create an account.
 6. Deploy the dashboard ([alopex-web](https://github.com/marcodonghiaa/alopex-web)) with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 7. **Authentication -> URL Configuration**: set *Site URL* to your dashboard's address and add `<dashboard address>/reset-password` under *Redirect URLs*. Otherwise the password-reset email opens `localhost:3000`. Do it again if the dashboard's address changes.
-8. **Authentication -> Sign In / Providers -> Email**: turn on *Require current password when changing password*, so changing the password in Settings needs the current one on the server too.
+8. **Authentication -> Sign In / Providers -> Email**: turn on *Require current password when changing password*, so changing the password in Settings needs the current one on the server too, and set *Minimum password length* to 12 (the dashboard is on the internet).
 
 </details>
 
@@ -138,7 +138,7 @@ SETUP_EMAIL="$SETUP_EMAIL" SETUP_PASSWORD="$SETUP_PASSWORD" node --env-file=.env
 
 ## 🗄️ Data model
 
-Every table is Row Level Security scoped to `auth.uid() = user_id`.
+Every per-user table is Row Level Security scoped to `auth.uid() = user_id`. `fx_rates` is shared, read-only reference data; server-only tables (such as `splitwise_connections`) have no client access.
 
 | Area | Tables |
 |---|---|

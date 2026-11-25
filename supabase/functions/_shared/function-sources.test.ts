@@ -4,6 +4,7 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import addHolding from "../add-holding/index.ts" with { type: "text" };
 import bankConsentCallback from "../bank-consent-callback/index.ts" with { type: "text" };
 import completeBankConsent from "../complete-bank-consent/index.ts" with { type: "text" };
+import completeBankConsentHandler from "../complete-bank-consent/handler.ts" with { type: "text" };
 import deleteAccount from "../delete-account/index.ts" with { type: "text" };
 import deleteAccountHandler from "../delete-account/handler.ts" with { type: "text" };
 import detectRecurring from "../detect-recurring/index.ts" with { type: "text" };
@@ -18,6 +19,7 @@ import refreshRecurringHandler from "../refresh-recurring/handler.ts" with { typ
 import splitwiseConnect from "../splitwise-connect/index.ts" with { type: "text" };
 import startBankConsent from "../start-bank-consent/index.ts" with { type: "text" };
 import syncBank from "../sync-bank/index.ts" with { type: "text" };
+import syncBankHandler from "../sync-bank/handler.ts" with { type: "text" };
 import syncPrices from "../sync-prices/index.ts" with { type: "text" };
 import syncSplitwise from "../sync-splitwise/index.ts" with { type: "text" };
 import splitwiseConnectJob from "./splitwise-connect.ts" with { type: "text" };
@@ -28,6 +30,7 @@ const SOURCES: Record<string, string> = {
   "add-holding/index.ts": addHolding,
   "bank-consent-callback/index.ts": bankConsentCallback,
   "complete-bank-consent/index.ts": completeBankConsent,
+  "complete-bank-consent/handler.ts": completeBankConsentHandler,
   "delete-account/index.ts": deleteAccount,
   "delete-account/handler.ts": deleteAccountHandler,
   "detect-recurring/index.ts": detectRecurring,
@@ -42,6 +45,7 @@ const SOURCES: Record<string, string> = {
   "splitwise-connect/index.ts": splitwiseConnect,
   "start-bank-consent/index.ts": startBankConsent,
   "sync-bank/index.ts": syncBank,
+  "sync-bank/handler.ts": syncBankHandler,
   "sync-prices/index.ts": syncPrices,
   "sync-splitwise/index.ts": syncSplitwise,
   "_shared/splitwise-connect.ts": splitwiseConnectJob,
@@ -57,4 +61,9 @@ Deno.test("the sign-in and two-step check is callerOrReply's alone (_shared/call
 
 Deno.test("no function reads the legacy keys itself: clients.ts picks the secret or publishable key first", () => {
   assertEquals(offenders(/SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ANON_KEY/), []);
+});
+
+// H169: list-banks' /aspsps call is made in the function itself; it must not wait forever.
+Deno.test("list-banks gives Enable Banking a timeout", () => {
+  assertEquals(/signal: ebTimeout\(\)/.test(listBanks), true);
 });

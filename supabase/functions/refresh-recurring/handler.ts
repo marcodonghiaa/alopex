@@ -3,7 +3,8 @@ import type { Db } from "../_shared/batch-update.ts";
 import type { Reply } from "../_shared/origins.ts";
 import { errorTag } from "../_shared/log-safe.ts";
 import { type CallerDeps, callerOrReply } from "../_shared/caller.ts";
-import { detectUser, type Rpc } from "../_shared/detect-recurring-job.ts";
+import { detectUser } from "../_shared/detect-recurring-job.ts";
+import type { Rpc } from "../_shared/batch-update.ts";
 
 export interface Deps extends CallerDeps {
   admin(): Db; // service-role reads, scoped to the caller by detectUser

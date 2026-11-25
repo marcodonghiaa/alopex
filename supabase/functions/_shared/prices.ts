@@ -1,18 +1,16 @@
 // Exchange rates, then stock/ETF and coin prices, run by sync-prices.
 // No bank calls: Frankfurter (rates), Yahoo (stock/ETF prices) and CoinGecko (coin prices).
-import { fxRows } from "./fx-rates.ts";
-import { parseYahooChart } from "./holdings.ts";
+import { FRANKFURTER, fxRows } from "./fx-rates.ts";
+import { coingeckoPriceUrl, parseYahooChart, yahooChartUrl } from "./holdings.ts";
 import { errorTag } from "./log-safe.ts";
-import { readPages } from "./batch-update.ts";
+import { type Db, readPages } from "./batch-update.ts";
+import { daysAgo } from "./today.ts";
 
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
 type Json = Record<string, unknown>;
 /** GET a URL and return its JSON; throws with the status only on a bad answer. */
 export type GetJson = (url: string, headers?: Record<string, string>) => Promise<Json>;
 
 const HISTORY_DAYS = 100; // the bank sync reads 90 days; every view needs a rate on or before each booking_date
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 export const getJson: GetJson = async (url, headers = {}) => {
   // 10 s: a quote answers in well under a second; a hung host must not eat the 150 s wall clock.
@@ -33,12 +31,12 @@ export async function syncFx(db: Db, get: GetJson): Promise<number> {
   if (error) throw error;
   let rows = 0;
   if (data.length === 0) {
-    const series = await get(`https://api.frankfurter.dev/v1/${daysAgo(HISTORY_DAYS)}..?base=EUR`);
+    const series = await get(`${FRANKFURTER}/${daysAgo(HISTORY_DAYS)}..?base=EUR`);
     const history = Object.entries(series.rates as Record<string, Record<string, number>>).flatMap(([d, r]) => fxRows(d, r));
     await upsertFx(db, history);
     rows += history.length;
   }
-  const latest = await get("https://api.frankfurter.dev/v1/latest?base=EUR");
+  const latest = await get(`${FRANKFURTER}/latest?base=EUR`);
   const today = fxRows(latest.date as string, latest.rates as Record<string, number>);
   await upsertFx(db, today);
   return rows + today.length;
@@ -54,7 +52,7 @@ function selectAll(db: Db, table: string, columns: string, order: string[]) {
   });
 }
 
-async function latestRate(db: Db, currency: string): Promise<number> {
+export async function latestRate(db: Db, currency: string): Promise<number> {
   if (currency === "EUR") return 1;
   const { data, error } = await db
     .from("fx_rates").select("rate_to_eur").eq("currency", currency).order("date", { ascending: false }).limit(1);
@@ -75,7 +73,7 @@ export interface Holding {
 }
 
 // One snapshot per holding, each under its own user. A symbol held by several users is fetched
-// once. A holding that can't be priced is skipped and logged by position only.
+// once, and each currency's rate is read once. A holding that can't be priced is skipped and logged by position only.
 export async function priceHoldings(
   holdings: Holding[],
   getQuote: (symbol: string) => Promise<{ price: number; currency: string; assetType: string }>,
@@ -88,6 +86,12 @@ export async function priceHoldings(
     if (!quotes.has(symbol)) quotes.set(symbol, getQuote(symbol));
     return quotes.get(symbol)!;
   };
+  // One rate lookup per currency, not one database round trip per holding (H186).
+  const rates = new Map<string, Promise<number>>();
+  const rateOf = (currency: string) => {
+    if (!rates.has(currency)) rates.set(currency, getRate(currency));
+    return rates.get(currency)!;
+  };
   const rows = [];
   const typeUpdates = [];
   for (const [i, holding] of holdings.entries()) {
@@ -98,7 +102,7 @@ export async function priceHoldings(
     try {
       const { price, currency, assetType } = await quoteOf(holding.yahoo_symbol);
       const valueNative = price * holding.shares;
-      const valueEur = valueNative * (await getRate(currency));
+      const valueEur = valueNative * (await rateOf(currency));
       // A NaN, infinite or huge quantity would fail the one save for every user.
       if (!Number.isFinite(valueEur)) {
         console.error(`Holding ${i + 1}/${holdings.length} has an unusable quantity, skipped.`);
@@ -122,13 +126,35 @@ export async function priceHoldings(
   return { rows, typeUpdates };
 }
 
+// The order to price in, so the time cutoff never drops the same holdings every run (H187): held
+// ones not priced yet today first, then held ones already priced today, then sold ones (0 shares;
+// still priced when there is time, so their 0 value is written as before). Stable within each group.
+export function pricingOrder(holdings: Holding[], pricedToday: Set<string>): Holding[] {
+  const rank = (h: Holding) => (Number(h.shares) > 0 ? 0 : 2) + (pricedToday.has(`${h.user_id}|${h.isin}`) ? 1 : 0);
+  return holdings.map((h, i) => ({ h, i, r: rank(h) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.h);
+}
+
+// Holdings that already have today's snapshot. Only for ordering: on a failed read, none.
+async function pricedOn(db: Db, today: string): Promise<Set<string>> {
+  try {
+    const rows = await readPages<{ user_id: string; isin: string }>((from, to) =>
+      db.from("portfolio_snapshots").select("user_id, isin").eq("snapshot_date", today).order("user_id").order("isin").range(from, to)
+    );
+    return new Set(rows.map((r) => `${r.user_id}|${r.isin}`));
+  } catch (err) {
+    console.error(`sync-prices: today's snapshots unread, stable order kept: ${errorTag(err)}`);
+    return new Set();
+  }
+}
+
 export async function syncPortfolio(db: Db, get: GetJson, today: string, timeLeft?: () => boolean): Promise<number> {
-  const holdings = await selectAll(db, "portfolio_holdings", "user_id, isin, yahoo_symbol, shares, asset_type", ["user_id", "isin"]);
+  const all = await selectAll(db, "portfolio_holdings", "user_id, isin, yahoo_symbol, shares, asset_type", ["user_id", "isin"]);
+  const holdings = pricingOrder(all, await pricedOn(db, today));
   const { rows, typeUpdates } = await priceHoldings(
     holdings,
     async (symbol) =>
       parseYahooChart(
-        await get(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`, {
+        await get(yahooChartUrl(symbol), {
           "User-Agent": "Mozilla/5.0",
         }),
         symbol,
@@ -195,7 +221,7 @@ export async function syncCrypto(db: Db, get: GetJson, today: string): Promise<n
   const prices: Record<string, { usd?: number }> = {};
   for (let i = 0; i < ids.length; i += 100) {
     const batch = ids.slice(i, i + 100).join(",");
-    Object.assign(prices, await get(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(batch)}&vs_currencies=usd`, {
+    Object.assign(prices, await get(coingeckoPriceUrl(batch), {
       Accept: "application/json",
     }));
   }

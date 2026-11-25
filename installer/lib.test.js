@@ -22,8 +22,25 @@ test('projectEnv: a new project forgets the old login, the same project keeps it
 
 test('pickKeys matches by prefix, not position', () => {
   const keys = [{ api_key: 'eyJlegacy' }, { api_key: 'sb_secret_x' }, { api_key: 'sb_publishable_y' }];
-  assert.deepEqual(lib.pickKeys(keys), { publishable: 'sb_publishable_y', secret: 'sb_secret_x' });
-  assert.deepEqual(lib.pickKeys([{ api_key: 'eyJ' }]), { publishable: '', secret: '' });
+  assert.deepEqual(lib.pickKeys(keys), { publishable: 'sb_publishable_y', secret: 'sb_secret_x', cron: 'sb_secret_x' });
+  assert.deepEqual(lib.pickKeys([{ api_key: 'eyJ' }]), { publishable: '', secret: '', cron: '' });
+});
+
+// H212: the scheduled sync's key sits in Vault and in pg_net's queue: a secret key named "cron", when
+// the owner made one, goes there instead of the main one, so it can be revoked on its own. The
+// main key stays the one .env and the functions use. fails_when=Vault gets the main key while a
+// "cron" key exists, or no key at all without one
+test('pickKeys gives the scheduled sync a secret key named cron, else the main one', () => {
+  const keys = [
+    { name: 'default', type: 'secret', api_key: 'sb_secret_main' },
+    { name: 'cron', type: 'secret', api_key: 'sb_secret_cron' },
+    { name: 'default', type: 'publishable', api_key: 'sb_publishable_y' },
+  ];
+  assert.deepEqual(lib.pickKeys(keys), { publishable: 'sb_publishable_y', secret: 'sb_secret_main', cron: 'sb_secret_cron' });
+  // Named cron but not a secret key: ignored.
+  assert.equal(lib.pickKeys([{ name: 'cron', api_key: 'sb_publishable_z' }, { api_key: 'sb_secret_main' }]).cron, 'sb_secret_main');
+  const src = require('node:fs').readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  assert.match(src, /sync_bank_secret_key: keys\.cron/);
 });
 
 test('vaultSql updates an existing secret or creates it, and escapes quotes', () => {
@@ -37,9 +54,35 @@ test('authConfigToml closes sign-ups and adds the site URL only when known', () 
   const plain = lib.authConfigToml();
   assert.match(plain, /enable_signup = false/);
   assert.doesNotMatch(plain, /site_url/);
+  // H217: the server refuses a new password under 12 characters too (sign-in with an older,
+  // shorter one keeps working: the length is checked only when a password is set). Pushed only
+  // when asked (closeAuth asks only to raise it), so a longer remote minimum is never lowered.
+  assert.doesNotMatch(plain, /minimum_password_length/);
+  assert.match(lib.authConfigToml({ minPassword: 12 }), /^minimum_password_length = 12$/m);
   const withSite = lib.authConfigToml({ siteUrl: 'https://x.vercel.app' });
   assert.match(withSite, /site_url = "https:\/\/x\.vercel\.app"/);
   assert.match(withSite, /additional_redirect_urls = \["https:\/\/x\.vercel\.app\/reset-password"\]/);
+});
+
+// H217: `supabase config diff --output-format json` against a config declaring 12. The push must
+// only raise the minimum: an owner who set 16 by hand keeps 16. fails_when=a remote 16 reads as
+// lower than 12, or an unreadable answer reads as a known length
+test('remotePasswordLength reads the project\'s minimum from config diff, null when unknown', () => {
+  const diff = (changes, present = ['auth']) => `Target: x\n${JSON.stringify({ scope: { present, missing: [] }, changes })}\n`;
+  const len = (remote) => ({ path: ['auth', 'minimum_password_length'], class: 'update', declared: true, local: 12, remote });
+  assert.strictEqual(lib.remotePasswordLength(diff([len(16)]), 12), 16);
+  assert.strictEqual(lib.remotePasswordLength(diff([len(6), { path: ['auth', 'site_url'], remote: 'https://a' }]), 12), 6);
+  // No difference while auth was compared: the project already has the declared 12.
+  assert.strictEqual(lib.remotePasswordLength(diff([]), 12), 12);
+  // Auth not returned, a non-number, or no JSON: unknown, so nothing is pushed for it.
+  assert.strictEqual(lib.remotePasswordLength(diff([], []), 12), null);
+  assert.strictEqual(lib.remotePasswordLength(diff([len(null)]), 12), null);
+  assert.strictEqual(lib.remotePasswordLength('Error: no access token', 12), null);
+  assert.strictEqual(lib.remotePasswordLength('', 12), null);
+  // closeAuth reads it first and pushes 12 only when the project's minimum is lower.
+  const src = require('node:fs').readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  assert.match(src, /'config', 'diff'/);
+  assert.match(src, /remote !== null && remote < lib\.MIN_PASSWORD \? lib\.MIN_PASSWORD : undefined/);
 });
 
 test('vercelUrl prefers the alias, else the last vercel.app address, else empty', () => {
@@ -183,9 +226,10 @@ test('orgAfterCreate lists the orgs again: create answers in plain text, not JSO
 test('loginProblem refuses an empty or malformed email and a short password (e2e #5)', () => {
   assert.match(lib.loginProblem('', 'secret1'), /email/i);
   assert.match(lib.loginProblem('marco', 'secret1'), /email/i);
-  assert.match(lib.loginProblem('a@b.co', '12345'), /6/);
-  assert.strictEqual(lib.loginProblem('a@b.co', '123456'), null);
-  assert.strictEqual(lib.loginProblem(' a@b.co ', '123456'), null);
+  // H217: an internet-facing finance login: 12 characters, not Supabase's default 6.
+  assert.match(lib.loginProblem('a@b.co', '12345678901'), /12/);
+  assert.strictEqual(lib.loginProblem('a@b.co', '123456789012'), null);
+  assert.strictEqual(lib.loginProblem(' a@b.co ', '123456789012'), null);
 });
 
 test('banner names the installer version, so a user can tell which release runs (e2e #2)', () => {
@@ -211,4 +255,15 @@ test('projectProblem: a project from another Supabase account says to sign in wi
 test('doneLine: an update is ready to use, a first install still connects a bank (e2e #21)', () => {
   assert.equal(lib.doneLine('https://a.vercel.app', 'me@example.com', true), 'Updated! https://a.vercel.app , sign in as me@example.com.');
   assert.match(lib.doneLine('https://a.vercel.app', 'me@example.com', false), /^Done! .*then Accounts -> Connect a bank\.$/);
+});
+
+// H214: the release tarball went to a fixed name in the shared temp folder (alopex-<pid>-...), which
+// another local user could pre-create as a symlink, and npm ran the backend packages' install
+// scripts. fails_when=the download leaves its own mkdtemp folder or npm ci runs install scripts
+test('the download unpacks from a private temp folder and npm ci runs no install scripts', () => {
+  const src = require('node:fs').readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  const download = src.slice(src.indexOf('async function download('), src.indexOf('async function main('));
+  assert.doesNotMatch(download, /os\.tmpdir\(\)/, 'no fixed path in the shared temp folder');
+  assert.match(download, /withTempFile\(/);
+  assert.match(src, /'ci', '--omit=dev', '--ignore-scripts'/);
 });

@@ -3,10 +3,10 @@
 
 import { buildRows, type EbTransaction, lookupKeys, normalizeIban, storedContent, type StoredRefs } from "./transaction-rows.ts";
 import { errorTag } from "./log-safe.ts";
+import { EB_API } from "./enable-banking.ts";
 import { accountType, pickBalance } from "./account-match.ts";
+import type { Db } from "./batch-update.ts";
 
-// deno-lint-ignore no-explicit-any
-type Db = { from(table: string): any };
 export type Deps = { fetch: typeof fetch; supabase: Db };
 
 export interface SyncAccount {
@@ -72,28 +72,21 @@ export function syncStatus(cursor: string | null, error: string | null): number 
   return error === "ASPSP_RATE_LIMIT_EXCEEDED" ? 429 : 502;
 }
 
-const EB = "https://api.enablebanking.com/accounts";
+const EB = `${EB_API}/accounts`;
 const OVERLAP_DAYS = 7;
 const FALLBACK_FIRST_SYNC_DAYS = 90;
 const DAY_MS = 24 * 3600 * 1000;
 
-// Statuses with which EB refuses an account id (dead or expired consent).
-const EB_REJECTED_STATUSES = new Set([401, 403, 404, 422]);
-
 type EbError = Error & { status?: number; code?: string };
-
-export { errorTag };
 
 // The id Enable Banking answers to now: a renewed consent can give the same bank
 // account a new id (eb_account_uid); null means uid is still it.
 const ebAccountId = (account: SyncAccount) => account.eb_account_uid || account.uid;
 
-const rejectedStatus = (err: EbError) => (err.status && EB_REJECTED_STATUSES.has(err.status) ? err.status : null);
-
 // What went wrong, as stored on accounts.sync_error for the dashboard: EB's error name when the
 // bank answered with one (e.g. ASPSP_RATE_LIMIT_EXCEEDED), else the HTTP status, a timeout
 // (the sync's deadline) or a network failure.
-export function syncErrorCode(err: unknown): string {
+function syncErrorCode(err: unknown): string {
   const e = err as EbError;
   if (typeof e?.code === "string") return e.code;
   if (e?.status) return `HTTP_${e.status}`;
@@ -116,7 +109,11 @@ async function getEb(fetch: Deps["fetch"], token: string, path: string) {
   return res.json();
 }
 
+const MAX_PAGES = 500;
+
 // Pushes into `into` page by page, so the pages read before a failure are not lost.
+// A key the bank already sent, or more than MAX_PAGES pages, would page until the run's deadline
+// (H163): stop with PAGING_LOOP instead, which saves the pages read and keeps the cursor.
 async function getAllTransactions(
   fetch: Deps["fetch"],
   token: string,
@@ -125,13 +122,19 @@ async function getAllTransactions(
   into: EbTransaction[],
 ) {
   let continuationKey: string | null = null;
+  const seen = new Set<string>();
   do {
+    if (seen.size >= MAX_PAGES) throw Object.assign(new Error("Too many pages"), { code: "PAGING_LOOP" });
     const params = new URLSearchParams(query);
     if (continuationKey) params.set("continuation_key", continuationKey);
     const data = await getEb(fetch, token, `${ebId}/transactions?${params}`);
     into.push(...(data.transactions || []));
     // longest can answer an empty page with a key: keep going until no key comes back.
     continuationKey = data.continuation_key || null;
+    if (continuationKey && seen.has(continuationKey)) {
+      throw Object.assign(new Error("Repeated continuation key"), { code: "PAGING_LOOP" });
+    }
+    if (continuationKey) seen.add(continuationKey);
   } while (continuationKey);
 }
 
@@ -166,8 +169,8 @@ async function fetchStoredRefs(supabase: Db, accountUid: string, transactions: E
   return stored;
 }
 
-// Rows and the cursor stay under the PK (uid). Never throws for EB failures: rejected carries
-// the status when EB refuses the id. cursor = the new last_synced, null when it must not move.
+// Rows and the cursor stay under the PK (uid). Never throws for EB failures: error names
+// the failure. cursor = the new last_synced, null when it must not move.
 export async function syncAccountTransactions(
   { fetch, supabase }: Deps,
   token: string,
@@ -180,10 +183,11 @@ export async function syncAccountTransactions(
   // Later syncs re-fetch an overlap before the cursor: banks post transactions days after their
   // booking_date, so a cursor of "today" would skip them forever. Upsert dedupes.
   // A first sync that ran out of time last run would restart longest from page 1 every run (the
-  // continuation key dies with the run): fall back to the last 90 days instead.
+  // continuation key dies with the run): fall back to the last 90 days instead. Same for one
+  // stopped by PAGING_LOOP, which would stop at the same page every run.
   const dateFrom = lastSynced
     ? new Date(Date.parse(lastSynced) - OVERLAP_DAYS * DAY_MS).toISOString().slice(0, 10)
-    : account.sync_error === "TIMEOUT"
+    : account.sync_error === "TIMEOUT" || account.sync_error === "PAGING_LOOP"
     ? new Date(Date.parse(today) - FALLBACK_FIRST_SYNC_DAYS * DAY_MS).toISOString().slice(0, 10)
     : null;
   const transactions: EbTransaction[] = [];
@@ -221,21 +225,22 @@ export async function syncAccountTransactions(
       }
     } catch (err) {
       console.error(`Supabase insert error: ${errorTag(err)}`);
-      return { upserted: 0, rejected: null, cursor: null, error: "SAVE_FAILED" };
+      return { upserted: 0, cursor: null, error: "SAVE_FAILED" };
     }
-    if (failure) return { upserted: rows.length, rejected: rejectedStatus(failure as EbError), cursor: null, error: syncErrorCode(failure) };
-    return { upserted: rows.length, rejected: null, cursor: today, error: null };
+    if (failure) return { upserted: rows.length, cursor: null, error: syncErrorCode(failure) };
+    return { upserted: rows.length, cursor: today, error: null };
   }
-  if (failure) return { upserted: 0, rejected: rejectedStatus(failure as EbError), cursor: null, error: syncErrorCode(failure) };
-  return { upserted: 0, rejected: null, cursor: today, error: null };
+  if (failure) return { upserted: 0, cursor: null, error: syncErrorCode(failure) };
+  return { upserted: 0, cursor: today, error: null };
 }
 
-// Older rows lack identification_hash (and iban) or account_type: ask EB once and store them.
-// A bank that sends no type gets "checking" (what unknown counts as), so the call is not
-// repeated. Best effort.
+// Older rows lack account_type, and some identification_hash (and iban): ask EB once and store
+// them. A bank that sends no type gets "checking" (what unknown counts as), so the call is not
+// repeated. A hash is only looked up with the type (H161): a bank whose details have none would
+// otherwise be asked on every run, toward its few unattended calls a day. A renewed consent
+// fills a missing hash too (matchPatch). Best effort.
 async function fillMissingIds({ fetch, supabase }: Deps, token: string, account: SyncAccount) {
-  const needType = account.account_type === null;
-  if (account.identification_hash && !needType) return;
+  if (account.account_type !== null) return;
   try {
     const details = await getEb(fetch, token, `${ebAccountId(account)}/details`);
     const patch: Record<string, unknown> = {};
@@ -247,8 +252,7 @@ async function fillMissingIds({ fetch, supabase }: Deps, token: string, account:
         console.error("Account ids not filled: no hash in details");
       }
     }
-    if (needType) patch.account_type = accountType(details?.cash_account_type) ?? "checking";
-    if (Object.keys(patch).length === 0) return;
+    patch.account_type = accountType(details?.cash_account_type) ?? "checking";
     const { error } = await supabase.from("accounts").update(patch).eq("uid", account.uid);
     if (error) throw error;
   } catch (err) {
@@ -285,7 +289,7 @@ export async function syncAccountBalance(deps: Deps, token: string, account: Syn
     const balance = pickBalance(data.balances);
     if (!balance) {
       console.log("No balance returned.");
-      return { row: null, rejected: null, renewed: false, ebFailed: false, error: null };
+      return { row: null, renewed: false, ebFailed: false, error: null };
     }
     const row = {
       account_uid: account.uid,
@@ -294,10 +298,10 @@ export async function syncAccountBalance(deps: Deps, token: string, account: Syn
       snapshot_date: today,
       user_id: account.user_id,
     };
-    return { row, rejected: null, renewed: false, ebFailed: false, error: null };
+    return { row, renewed: false, ebFailed: false, error: null };
   } catch (err) {
     console.error(`Failed to fetch balance: ${errorTag(err)}`);
     const renewed = await markForRenewal(deps.supabase, account, err as EbError, today);
-    return { row: null, rejected: rejectedStatus(err as EbError), renewed, ebFailed: true, error: syncErrorCode(err) };
+    return { row: null, renewed, ebFailed: true, error: syncErrorCode(err) };
   }
 }

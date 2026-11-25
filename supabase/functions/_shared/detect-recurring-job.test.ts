@@ -67,7 +67,8 @@ Deno.test("a read failure counts as failed for that user only", async () => {
 });
 
 Deno.test("accounts read failure is reported, not thrown", async () => {
-  const db = { from: () => ({ select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: null, error: { code: "XX000" } }) }) }) }) };
+  const failed = { range: () => Promise.resolve({ data: null, error: { code: "XX000" } }) };
+  const db = { from: () => ({ select: () => ({ order: () => ({ order: () => failed }) }) }) };
   assertEquals(await runDetection(db, recorder().rpc, "2026-10-20", always), { users: 0, streams: 0, failed: 1, skipped: 0 });
 });
 
@@ -244,4 +245,25 @@ Deno.test("S1b: a stream you confirmed is sent even when it is the oldest", asyn
   assertEquals(await detectUser(db, rpc, "u1", "2026-10-20"), 2000);
   const keys = sentKeys(calls[0]);
   assertEquals([keys.size, keys.has("m2000")], [2000, true]);
+});
+
+// H250: accounts were read with one .limit(1000), so on an instance with more accounts the users
+// after row 1000 never got subscription detection.
+Deno.test("every user is detected, even past 1000 accounts", async () => {
+  const accounts = Array.from({ length: 1500 }, (_, i) => ({ uid: `a${String(i).padStart(4, "0")}`, user_id: `u${String(Math.floor(i / 2)).padStart(4, "0")}` }));
+  const db = memoryDb({ accounts, v_transactions_eur: [] }, undefined, 1000);
+  const result = await runDetection(db, recorder().rpc, "2026-10-20", always);
+  assertEquals([result.users, result.failed], [750, 0]);
+});
+
+// H288: rows post-sync hasn't given a flow yet count as spending everywhere (the views read a null
+// flow on a debit as spend), but detection read only flow_type = 'spend' and missed them.
+Deno.test("a debit with no flow yet is detected like spend; a transfer still is not", async () => {
+  const s = seed("u1");
+  const db = memoryDb({ v_transactions_eur: s.v, transactions: s.transactions.map((t) => ({ ...t, flow_type: null })) });
+  const { calls, rpc } = recorder();
+  assertEquals(await detectUser(db, rpc, "u1", "2026-10-20"), 1);
+  assertEquals(calls[0].p_rows[0].typical_amount_eur, 10);
+  const transfers = memoryDb({ v_transactions_eur: s.v, transactions: s.transactions.map((t) => ({ ...t, flow_type: "transfer" })) });
+  assertEquals(await detectUser(transfers, recorder().rpc, "u1", "2026-10-20"), 0);
 });

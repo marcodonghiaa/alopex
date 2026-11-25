@@ -2,15 +2,15 @@
 // Per user: spend rows from transactions, their EUR share from v_transactions_eur (applies
 // personal_amount and the fx fallback), merged in memory by account_uid + entry_reference.
 // Logs counts and error tags only, never merchant names.
-import { type Db, PAGE_SIZE, readPages } from "./batch-update.ts";
+import { type Db, readPages } from "./batch-update.ts";
 import { errorTag } from "./log-safe.ts";
 import { type Charge, detectStreams } from "./recurring.ts";
+import type { Rpc } from "./batch-update.ts";
 
 const MAX_STREAMS = 2000; // upsert_detected_streams refuses more
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
-export type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 
 function pages(query: () => any, order: string[]): Promise<Row[]> {
   return readPages((from, to) => {
@@ -22,14 +22,16 @@ function pages(query: () => any, order: string[]): Promise<Row[]> {
 
 async function userCharges(db: Db, user: string): Promise<Charge[]> {
   const order = ["account_uid", "entry_reference"];
-  const spend = (t: string, cols: string) =>
-    db.from(t).select(cols).eq("user_id", user).eq("credit_debit_indicator", "DBIT").eq("flow_type", "spend");
-  const txs = await pages(
-    () => spend("transactions", "account_uid, entry_reference, merchant_key, currency, amount, booking_date, category, custom_name, creditor_name, bank_transaction_code, flow_type, credit_debit_indicator, deleted_at, transaction_type, transaction_type_source").is("deleted_at", null).not("merchant_key", "is", null),
+  const debits = (t: string, cols: string) => db.from(t).select(cols).eq("user_id", user).eq("credit_debit_indicator", "DBIT");
+  // A debit post-sync hasn't given a flow yet is spend, as in v_transactions_eur (H288).
+  const txs = (await pages(
+    () =>
+      debits("transactions", "account_uid, entry_reference, merchant_key, currency, amount, booking_date, category, custom_name, creditor_name, bank_transaction_code, flow_type, credit_debit_indicator, deleted_at, transaction_type, transaction_type_source")
+        .or("flow_type.is.null,flow_type.in.(spend)").is("deleted_at", null).not("merchant_key", "is", null),
     order,
-  );
+  )).map((t): Row => ({ ...t, flow_type: t.flow_type ?? "spend" }));
   const eur = new Map<string, number>();
-  for (const r of await pages(() => spend("v_transactions_eur", "account_uid, entry_reference, personal_signed_amount_eur"), order)) {
+  for (const r of await pages(() => debits("v_transactions_eur", "account_uid, entry_reference, personal_signed_amount_eur").eq("flow_type", "spend"), order)) {
     if (r.personal_signed_amount_eur != null) eur.set(`${r.account_uid}|${r.entry_reference}`, Math.abs(r.personal_signed_amount_eur));
   }
   return txs.map(({ entry_reference, ...t }) => ({
@@ -62,13 +64,15 @@ export async function runDetection(
   today: string,
   timeLeft: () => boolean,
 ): Promise<{ users: number; streams: number; failed: number; skipped: number }> {
-  const { data, error } = await db.from("accounts").select("user_id").order("user_id").limit(PAGE_SIZE);
-  if (error) {
+  // Every page (H250): one .limit(1000) left the users after account 1000 undetected.
+  let data: Row[];
+  try {
+    data = await readPages<Row>((from, to) => db.from("accounts").select("user_id").order("user_id").order("uid").range(from, to));
+  } catch (error) {
     console.error(`detect-recurring: accounts read failed: ${errorTag(error)}`);
     return { users: 0, streams: 0, failed: 1, skipped: 0 };
   }
-  // shortcut: one page of accounts (1000), plenty for a handful of users.
-  const ids = [...new Set((data as Row[]).map((r) => r.user_id as string))];
+  const ids = [...new Set(data.map((r) => r.user_id as string))];
   let users = 0, streams = 0, failed = 0, skipped = 0;
   for (const [i, user] of ids.entries()) {
     if (!timeLeft()) {

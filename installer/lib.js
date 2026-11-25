@@ -15,9 +15,13 @@ function projectEnv(previousRef, ref, url) {
 }
 
 // `supabase projects api-keys --output json`: match by prefix, not by position or field name.
+// cron: the key the scheduled sync stores in Vault (and so in pg_net's queue). A secret key named
+// "cron", when the owner made one, so it can be revoked without touching the main key; else the main one.
 function pickKeys(keys) {
-  const find = (prefix) => keys.find((k) => k.api_key?.startsWith(prefix))?.api_key || '';
-  return { publishable: find('sb_publishable_'), secret: find('sb_secret_') };
+  const find = (prefix, ok = () => true) => keys.find((k) => k.api_key?.startsWith(prefix) && ok(k))?.api_key || '';
+  const cron = find('sb_secret_', (k) => k.name === 'cron');
+  const secret = find('sb_secret_', (k) => k.name !== 'cron') || cron;
+  return { publishable: find('sb_publishable_'), secret, cron: cron || secret };
 }
 
 const sqlString = (value) => `'${String(value).replace(/'/g, "''")}'`;
@@ -38,12 +42,30 @@ function vaultSql(secrets) {
 }
 
 // Only the keys declared here are pushed, so every other remote auth setting stays as it is.
-function authConfigToml({ siteUrl } = {}) {
+// Shortest password the installer and Supabase Auth accept for a new password.
+const MIN_PASSWORD = 12;
+// minPassword only when it should be pushed: closeAuth passes it only to raise the project's.
+function authConfigToml({ siteUrl, minPassword } = {}) {
   const lines = ['project_id = "installer"', '', '[auth]', 'enable_signup = false'];
+  // The login guards every linked bank's data and the dashboard is public: 12 characters, not 6.
+  if (minPassword) lines.push(`minimum_password_length = ${minPassword}`);
   if (siteUrl) {
     lines.push(`site_url = "${siteUrl}"`, `additional_redirect_urls = ["${siteUrl}/reset-password"]`);
   }
   return `${lines.join('\n')}\n`;
+}
+
+// The project's minimum password length from `supabase config diff --output-format json` run
+// against a config declaring `declared`: the remote value when they differ, `declared` when auth
+// was compared and nothing differs, null when unknown (auth not returned, no JSON).
+function remotePasswordLength(output, declared) {
+  const line = String(output).split('\n').reverse().find((l) => l.trim().startsWith('{'));
+  let diff;
+  try { diff = JSON.parse(line); } catch { return null; }
+  if (!diff?.scope?.present?.includes('auth') || !Array.isArray(diff.changes)) return null;
+  const change = diff.changes.find((c) => c?.path?.join('.') === 'auth.minimum_password_length');
+  if (!change) return declared;
+  return Number.isInteger(change.remote) ? change.remote : null;
 }
 
 // `vercel deploy --prod` prints the deployment URL on stdout and "Aliased: https://..." for the
@@ -173,7 +195,7 @@ function orgsAfterCreate(run, name) {
 // used to answer the Email question with nothing (e2e #5).
 function loginProblem(email, password) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return 'That is not an email address. Type the one you will sign in with.';
-  if (password.length < 6) return 'The password needs at least 6 characters.';
+  if (password.length < MIN_PASSWORD) return `The password needs at least ${MIN_PASSWORD} characters.`;
   return null;
 }
 
@@ -192,4 +214,4 @@ const intro = (app, updating) =>
     ? `Updating ${app}: keeps your settings, applies what's new (a few minutes).`
     : `${app} setup: about 30 minutes the first time, most of it on Enable Banking's site.`;
 
-module.exports = { orgsAfterCreate, loginProblem, banner, intro, projectProblem, doneLine, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, projectEnv, pickKeys, vaultSql, authConfigToml, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };
+module.exports = { orgsAfterCreate, loginProblem, banner, intro, projectProblem, doneLine, USAGE, startup, parseArgs, installRoot, checkGeminiKey,  cleanPath, secretsEnv, pickAlias, refFromUrl, projectEnv, pickKeys, vaultSql, authConfigToml, remotePasswordLength, MIN_PASSWORD, vercelUrl, projectSlug, nodeTooOld, tarballUrl, sqlString };

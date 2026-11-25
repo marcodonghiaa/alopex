@@ -1,5 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { reapplyHandler, retiredFrom, userIdFrom } from "./handler.ts";
+import { reapplyHandler, retiredFrom } from "./handler.ts";
+import { userIdFrom } from "../_shared/caller.ts";
 import { memoryDb } from "../_shared/memory-db.test-helper.ts";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });

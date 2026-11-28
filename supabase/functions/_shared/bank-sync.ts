@@ -228,10 +228,24 @@ export async function syncAccountTransactions(
       return { upserted: 0, cursor: null, error: "SAVE_FAILED" };
     }
     if (failure) return { upserted: rows.length, cursor: null, error: syncErrorCode(failure) };
+    await deleteStalePending(supabase, account.uid, rows);
     return { upserted: rows.length, cursor: today, error: null };
   }
   if (failure) return { upserted: 0, cursor: null, error: syncErrorCode(failure) };
+  await deleteStalePending(supabase, account.uid, []);
   return { upserted: 0, cursor: today, error: null };
+}
+
+// After a run that read every page: the account's pending rows the bank no longer lists are gone
+// (booked under their own key, or dropped), so delete them, or they would count twice. A failed
+// delete is only logged: the next run tries again.
+async function deleteStalePending(supabase: Db, accountUid: string, rows: Record<string, unknown>[]) {
+  const keep = rows.filter((r) => r.pending).map((r) => `"${String(r.entry_reference).replace(/["\\]/g, "\\$&")}"`);
+  let query = supabase.from("transactions").delete().eq("account_uid", accountUid).eq("pending", true);
+  if (keep.length > 0) query = query.not("entry_reference", "in", `(${keep.join(",")})`);
+  const { error } = await query;
+  if (error) console.error(`Old pending rows not deleted: ${errorTag(error)}`);
+  console.log(`Pending rows: ${keep.length}`);
 }
 
 // Older rows lack account_type, and some identification_hash (and iban): ask EB once and store

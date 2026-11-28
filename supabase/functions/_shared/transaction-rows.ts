@@ -137,7 +137,14 @@ function mapToRow(tx: EbTransaction, accountUid: string, userId: string, entryRe
     ...(ownIbans && { own_counterparty: ownCounterparty(tx, ownIbans) }),
     raw: rawWithoutAccounts(tx),
     user_id: userId,
+    pending: tx.status === "PDNG",
   };
+}
+
+// A pending row's key: its bank ref when it has one, else the derived one, behind "p:" so it
+// never takes the key its booked copy gets. The sync deletes pending rows the bank stops listing.
+async function pendingKey(tx: EbTransaction, seen: Map<string, number>): Promise<string> {
+  return `p:${tx.entry_reference || (await entryReferenceFor(tx, seen)).slice(2)}`;
 }
 
 // ownIbans: the user's own accounts' IBANs, normalized (see normalizeIban); without it rows carry
@@ -153,7 +160,8 @@ export async function buildRows(
 ): Promise<Json[]> {
   const seen = new Map<string, number>();
   const byRef = new Map<string, Json>(); // one row per key, last wins
-  // Pending rows wait until booked: their id changes when booked, so they would count twice.
+  // Pending rows get their own "p:" keys: their id changes when booked, and the sync deletes
+  // them once the bank stops listing them (booked or dropped), so nothing counts twice.
   const booked = transactions.filter((tx) => tx.status !== "PDNG");
   const inBatch = new Map<string, Set<string>>();
   for (const tx of booked) if (tx.entry_reference) inBatch.set(tx.entry_reference, (inBatch.get(tx.entry_reference) ?? new Set()).add(contentOf(tx)));
@@ -162,6 +170,10 @@ export async function buildRows(
   const bareTaken = new Map<string, string>();
   for (const tx of booked) {
     const ref = tx.entry_reference ? await bankKey(tx, stored, inBatch, windowStart, bareTaken) : await entryReferenceFor(tx, seen);
+    byRef.set(ref, mapToRow(tx, accountUid, userId, ref, ownIbans));
+  }
+  for (const tx of transactions.filter((tx) => tx.status === "PDNG")) {
+    const ref = await pendingKey(tx, seen);
     byRef.set(ref, mapToRow(tx, accountUid, userId, ref, ownIbans));
   }
   return [...byRef.values()];

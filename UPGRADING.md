@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Pending card payments show up right away
+- **Migration:** `20270124000000_pending_transactions`. Apply it with `supabase db push --linked`, then `supabase functions deploy` (sync-bank, notify, detect-recurring changed), **before** updating the dashboard.
+- What changes: card payments the bank has not booked yet (often 1 to 3 days) are saved by the sync and shown as Pending in Activity. Once the bank books one, the next sync replaces the pending row with the booked one, so nothing counts twice. Pending rows never get a "Worth it?" push and don't count toward subscription detection. Banks that don't share pending payments work as before.
+- **Roll back:** redeploy the previous functions and dashboard, run `supabase/rollbacks/20270124000000_pending_transactions.down.sql` (it deletes the pending rows), then `supabase migration repair --status reverted 20270124000000 --linked`.
+
 ### Subscriptions: "I cancelled it"
 - **Migration:** `20270123000000_stream_cancelled`. Apply it with `supabase db push --linked` **before** updating the dashboard (dashboard first would fail with "Unknown stream action: cancel"). No function change.
 - What changes: swiping a subscription left (or its ⋯ menu on a computer) offers "I cancelled it", which moves it to Stopped right away instead of after the charges stop. A new charge after that day makes it active again. Undo or "Still active" puts it back.

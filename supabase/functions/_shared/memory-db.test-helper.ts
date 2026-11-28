@@ -30,7 +30,7 @@ export function memoryDb(tables: Record<string, Row[]>, failWrite?: "delete" | "
         gte: (c: string, v: string) => (filters.push((r) => r[c] >= v), q),
         not: (c: string, op: string, v: unknown) => {
           if (op === "is") filters.push((r) => (r[c] ?? null) !== v);
-          else filters.push((r) => !String(v).slice(1, -1).split(",").includes(r[c]));
+          else filters.push((r) => !String(v).slice(1, -1).split(",").map((x) => x.replace(/^"|"$/g, "")).includes(r[c]));
           return q;
         },
         // PostgREST or(): only the "col.is.null" and "col.in.(a,b)" terms the steps use.

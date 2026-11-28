@@ -42,6 +42,15 @@ function fakeSupabase(error: unknown = null, accounts: { iban: string | null }[]
         return query;
       },
       upsert: async (data: unknown, opts: unknown) => (writes.push({ table, op: "upsert", data, filters: [opts] }), { error }),
+      delete: () => {
+        const filters: unknown[] = [];
+        const query = {
+          eq: (col: string, val: unknown) => (filters.push(["eq", col, val]), query),
+          not: (col: string, op: string, val: unknown) => (filters.push(["not", col, op, val]), query),
+          then: (resolve: (v: unknown) => void) => (writes.push({ table, op: "delete", data: null, filters }), resolve({ error })),
+        };
+        return query;
+      },
       update: (data: unknown) => {
         const filters: unknown[] = [];
         const query = {
@@ -121,6 +130,7 @@ Deno.test("transactions: stored keys are looked up in chunks of 50, 4 requests a
         };
         return query;
       },
+      delete: () => ({ eq() { return this; }, then: (resolve: (v: unknown) => void) => resolve({ error: null }) }),
       upsert: async () => ({ error: null }),
     }),
   };
@@ -172,7 +182,7 @@ Deno.test("transactions: date_from re-reads 7 days before the cursor", async () 
   const result = await syncAccountTransactions({ fetch, supabase }, "t", account(), "2026-10-20", TODAY);
 
   assert(urls[0].includes("date_from=2026-10-13"));
-  assertEquals(writes, []);
+  assertEquals(writes.map((w) => w.op), ["delete"]); // only the old pending rows' cleanup
   assertEquals(result.cursor, TODAY); // no new rows still advances the cursor
 });
 
@@ -598,4 +608,69 @@ Deno.test("signOrRecord: a good key returns the token and leaves the account alo
   const db = memoryDb({ accounts: [{ uid: "pk", sync_error: null, sync_error_at: null }] });
   assertEquals(await signOrRecord(db, account({ sync_error: null }), () => Promise.resolve("jwt"), "t"), "jwt");
   assertEquals(db.tables.accounts[0].sync_error, null);
+});
+
+// Pending card payments: shown at once, swapped for the booked row once the bank books them.
+const PDNG = { ...TX, entry_reference: null, status: "PDNG", booking_date: "2026-10-27" };
+const pendingDb = (failWrite?: "delete") =>
+  memoryDb({
+    accounts: [],
+    transactions: [
+      { account_uid: "pk", entry_reference: "p:gone", pending: true },
+      { account_uid: "pk", entry_reference: "old-booked", pending: false },
+      { account_uid: "other", entry_reference: "p:theirs", pending: true },
+    ],
+  }, failWrite);
+const keys = (db: ReturnType<typeof memoryDb>) =>
+  db.tables.transactions.map((r) => `${r.account_uid}/${/^p:[0-9a-f]{24}$/.test(r.entry_reference) ? "p:new" : r.entry_reference}`).sort();
+
+Deno.test("transactions: pending rows are saved and those the bank no longer lists are deleted", async () => {
+  const { fetch } = fakeFetch({ "/transactions?": { body: { transactions: [TX, PDNG] } } });
+  const db = pendingDb();
+
+  const result = await syncAccountTransactions({ fetch, supabase: db as unknown as Deps["supabase"] }, "t", account(), "2026-10-20", TODAY);
+
+  assertEquals(result, { upserted: 2, cursor: TODAY, error: null });
+  assertEquals(keys(db), ["other/p:theirs", "pk/old-booked", "pk/p:new", "pk/r1"]);
+});
+
+Deno.test("transactions: no transactions at all still clears the account's old pending rows", async () => {
+  const { fetch } = fakeFetch({ "/transactions?": { body: { transactions: [] } } });
+  const db = pendingDb();
+
+  await syncAccountTransactions({ fetch, supabase: db as unknown as Deps["supabase"] }, "t", account(), "2026-10-20", TODAY);
+
+  assertEquals(keys(db), ["other/p:theirs", "pk/old-booked"]);
+});
+
+Deno.test("transactions: a run that did not read every page keeps the old pending rows", async () => {
+  const fetch = (async () => ({ ok: true, status: 200, json: async () => ({ transactions: [TX], continuation_key: "same" }) })) as unknown as Deps["fetch"];
+  const db = pendingDb();
+  const silence = console.error;
+  console.error = () => {};
+  try {
+    await syncAccountTransactions({ fetch, supabase: db as unknown as Deps["supabase"] }, "t", account(), "2026-10-20", TODAY);
+  } finally {
+    console.error = silence;
+  }
+
+  assert(keys(db).includes("pk/p:gone"));
+});
+
+Deno.test("transactions: a failed pending cleanup is logged and the sync still counts", async () => {
+  const { fetch } = fakeFetch({ "/transactions?": { body: { transactions: [TX] } } });
+  const db = pendingDb("delete");
+  const logged: string[] = [];
+  const silence = console.error;
+  console.error = (msg: string) => logged.push(msg);
+  let result;
+  try {
+    result = await syncAccountTransactions({ fetch, supabase: db as unknown as Deps["supabase"] }, "t", account(), "2026-10-20", TODAY);
+  } finally {
+    console.error = silence;
+  }
+
+  assertEquals(result, { upserted: 1, cursor: TODAY, error: null });
+  assert(logged.some((m) => m.startsWith("Old pending rows not deleted")));
+  assert(keys(db).includes("pk/p:gone"));
 });

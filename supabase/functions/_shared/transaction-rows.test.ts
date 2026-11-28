@@ -1,4 +1,4 @@
-import { assertEquals, assertMatch, assertNotEquals } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals, assertMatch, assertNotEquals } from "jsr:@std/assert@1.0.19";
 import { buildRows, type EbTransaction, lookupKeys, normalizeIban, ownCounterparty, storedContent } from "./transaction-rows.ts";
 
 const tx = (over: EbTransaction = {}): EbTransaction => ({
@@ -51,13 +51,28 @@ Deno.test("names a credit after the payer and a debit after the payee", async ()
   assertEquals(debit.creditor_name, "Spotify");
 });
 
-Deno.test("pending transactions are left out until the bank books them", async () => {
-  const rows = await buildRows(
-    [tx({ entry_reference: null, status: "PDNG", booking_date: null }), tx({ entry_reference: "b1", status: "BOOK" })],
-    "acc",
-    "u1",
-  );
-  assertEquals(rows.map((r) => (r as { entry_reference: string }).entry_reference), ["b1"]);
+Deno.test("pending transactions are kept as pending rows under their own key", async () => {
+  const pending = tx({ entry_reference: null, status: "PDNG", booking_date: null, transaction_date: "2026-11-27" });
+  const rows = await buildRows([pending, tx({ entry_reference: "b1", status: "BOOK" })], "acc", "u1");
+  const [b, p] = rows as { entry_reference: string; pending: boolean; booking_date: string }[];
+  assert(p.entry_reference.startsWith("p:"));
+  assertEquals(p.pending, true);
+  assertEquals(p.booking_date, "2026-11-27");
+  assertEquals([b.entry_reference, b.pending], ["b1", false]);
+});
+
+Deno.test("a pending row keeps its key across syncs, even when the bank gives it a ref", async () => {
+  const pending = tx({ entry_reference: "x9", status: "PDNG" });
+  const [a] = await buildRows([pending], "acc", "u1");
+  const [b] = await buildRows([{ ...pending }], "acc", "u1");
+  assertEquals(a.entry_reference, b.entry_reference);
+  assert(String(a.entry_reference).startsWith("p:"));
+});
+
+Deno.test("two identical pending charges on the same day are two rows", async () => {
+  const pending = tx({ entry_reference: null, status: "PDNG" });
+  const rows = await buildRows([pending, { ...pending }], "acc", "u1");
+  assertEquals(rows.length, 2);
 });
 
 Deno.test("merchant_key is the normalized creditor_name the row shows", async () => {

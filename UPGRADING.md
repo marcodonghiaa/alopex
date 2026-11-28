@@ -10,6 +10,11 @@ To roll a change back: run its file from `supabase/rollbacks/` in the Supabase S
 
 ## Unreleased
 
+### Subscriptions: "I cancelled it"
+- **Migration:** `20270123000000_stream_cancelled`. Apply it with `supabase db push --linked` **before** updating the dashboard (dashboard first would fail with "Unknown stream action: cancel"). No function change.
+- What changes: swiping a subscription left (or its ⋯ menu on a computer) offers "I cancelled it", which moves it to Stopped right away instead of after the charges stop. A new charge after that day makes it active again. Undo or "Still active" puts it back.
+- **Roll back:** run `supabase/rollbacks/20270123000000_stream_cancelled.down.sql`, then `supabase migration repair --status reverted 20270123000000 --linked`.
+
 ### Unused price_history table removed
 - **Migration:** `20270122000000_drop_price_history`. Apply it with `supabase db push --linked`. No function or dashboard change needed.
 - What changes: nothing you can see. Nothing has written `price_history` since `backfill-price-history.js` left the sync, and nothing has read it since `20270107000000`. Any old backfilled prices in it are deleted. Before, every signed-in user could read the whole table, so on a shared install anyone could see which symbols were backfilled.

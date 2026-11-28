@@ -20,7 +20,7 @@ export async function fetchEligibleTransactions(db: Db, userId: string, now: Dat
   const bookingFloor = new Date(now.getTime() - MAX_BOOKING_AGE_DAYS * 86400 * 1000).toISOString().slice(0, 10);
   const { data, error } = await db
     .from("transactions")
-    .select("entry_reference, account_uid, creditor_name, custom_name, amount, personal_amount, currency, category, flow_type, deleted_at")
+    .select("entry_reference, account_uid, creditor_name, custom_name, amount, personal_amount, currency, category, flow_type, deleted_at, pending")
     .eq("user_id", userId)
     .eq("credit_debit_indicator", "DBIT")
     .in("category", DISCRETIONARY_CATEGORIES)
@@ -31,10 +31,11 @@ export async function fetchEligibleTransactions(db: Db, userId: string, now: Dat
     .or(`booking_date.gte.${bookingFloor},booking_date.is.null`);
   if (error) throw error;
   const toEur = await latestRatesToEur(db, data.map((t: Row) => t.currency));
-  // A refunded, deleted or transfer row isn't a purchase to ask about; nor is one where my share
+  // A refunded, deleted or transfer row isn't a purchase to ask about, a pending one is asked about
+  // once booked (its booked row is a new row); nor is one where my share
   // (of a split) is under the minimum, e.g. a charge paid entirely for others.
   return data.filter((t: Row) =>
-    !t.deleted_at && t.flow_type !== "refunded" && t.flow_type !== "transfer" &&
+    !t.deleted_at && !t.pending && t.flow_type !== "refunded" && t.flow_type !== "transfer" &&
     myShare(t) * (toEur.get(t.currency) ?? 1) >= MIN_AMOUNT
   );
 }

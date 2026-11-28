@@ -267,3 +267,13 @@ Deno.test("a debit with no flow yet is detected like spend; a transfer still is 
   const transfers = memoryDb({ v_transactions_eur: s.v, transactions: s.transactions.map((t) => ({ ...t, flow_type: "transfer" })) });
   assertEquals(await detectUser(transfers, recorder().rpc, "u1", "2026-10-20"), 0);
 });
+
+// A pending charge is replaced by its booked row: counted as a charge, it would count twice.
+Deno.test("pending charges are left out of detection", async () => {
+  const { calls, rpc } = recorder();
+  const tables = build(["u1"]);
+  tables.transactions.push(tx("u1", "p:x", "2026-11-02", { pending: true }));
+  tables.v_transactions_eur.push(eur("u1", "p:x", -10));
+  await runDetection(memoryDb(tables), rpc, "2026-11-05", always);
+  assertEquals(calls[0].p_rows[0].last_charged, "2026-10-03");
+});

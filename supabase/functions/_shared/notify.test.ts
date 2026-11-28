@@ -29,13 +29,15 @@ Deno.test("worth-it window: created 3-24 h ago, booked within 7 days (UTC), one 
   assertEquals(late.calls.find((x) => x[0] === "or"), ["or", "booking_date.gte.2026-10-21,booking_date.is.null"]);
 });
 
-Deno.test("refunded, deleted and transfer rows are not prompted", async () => {
+Deno.test("refunded, deleted, transfer and pending rows are not prompted", async () => {
   const { db } = recorder([
     { entry_reference: "ok", amount: 20, flow_type: "spend", deleted_at: null },
     { entry_reference: "new", amount: 20, flow_type: null, deleted_at: null },
     { entry_reference: "refunded", flow_type: "refunded", deleted_at: null },
     { entry_reference: "deleted", flow_type: "spend", deleted_at: "2026-10-27T10:00:00Z" },
     { entry_reference: "transfer", flow_type: "transfer", deleted_at: null },
+    // Pending: asked about once the bank books it (its booked row is new), not twice.
+    { entry_reference: "pending", amount: 20, flow_type: "spend", deleted_at: null, pending: true },
   ]);
   assertEquals((await fetchEligibleTransactions(db, "user", NOW)).map((t) => t.entry_reference), ["ok", "new"]);
 });

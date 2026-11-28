@@ -27,7 +27,9 @@ async function userCharges(db: Db, user: string): Promise<Charge[]> {
   const txs = (await pages(
     () =>
       debits("transactions", "account_uid, entry_reference, merchant_key, currency, amount, booking_date, category, custom_name, creditor_name, bank_transaction_code, flow_type, credit_debit_indicator, deleted_at, transaction_type, transaction_type_source")
-        .or("flow_type.is.null,flow_type.in.(spend)").is("deleted_at", null).not("merchant_key", "is", null),
+        .or("flow_type.is.null,flow_type.in.(spend)").is("deleted_at", null).not("merchant_key", "is", null)
+        // A pending charge is replaced by its booked row once the bank books it: not a charge yet.
+        .not("pending", "is", true),
     order,
   )).map((t): Row => ({ ...t, flow_type: t.flow_type ?? "spend" }));
   const eur = new Map<string, number>();
